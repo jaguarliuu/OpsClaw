@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpsClaw Xshell Style Prototype</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=Noto+Sans+SC:wght@400;500;700&amp;display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0d1117;
+        --chrome: #151b23;
+        --panel: #18202a;
+        --panel-2: #1d2632;
+        --panel-3: #202c39;
+        --line: #2a3645;
+        --line-strong: #37516c;
+        --text: #d7e0ea;
+        --muted: #8b98a8;
+        --accent: #67b7ff;
+        --accent-soft: rgba(103, 183, 255, 0.14);
+        --ok: #84d68e;
+        --warn: #e2b366;
+        --danger: #ea857a;
+        --shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+        --radius: 10px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Noto Sans SC", sans-serif;
+      }
+
+      body {
+        background-image: linear-gradient(rgba(255, 255, 255, 0.012) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.012) 1px, transparent 1px);
+        background-size: 20px 20px;
+      }
+
+      button,
+      input,
+      textarea,
+      select {
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      .app {
+        display: grid;
+        grid-template-rows: 34px 42px minmax(0, 1fr) 24px;
+        min-height: 100vh;
+      }
+
+      .titlebar,
+      .toolbar,
+      .statusbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 12px;
+        background: var(--chrome);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .titlebar {
+        font-size: 0.82rem;
+      }
+
+      .menu,
+      .toolbar-left,
+      .toolbar-right,
+      .status-left,
+      .status-right,
+      .tab-row,
+      .host-path,
+      .section-tools,
+      .form-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .menu button,
+      .tool-button,
+      .mini-button,
+      .drawer-tab,
+      .tree-node,
+      .session-tab {
+        border: 1px solid transparent;
+        background: transparent;
+        color: inherit;
+      }
+
+      .menu button {
+        padding: 4px 8px;
+        border-radius: 6px;
+      }
+
+      .menu button:hover,
+      .tool-button:hover,
+      .mini-button:hover,
+      .drawer-tab:hover,
+      .session-tab:hover,
+      .tree-node:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+
+      .brand {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+
+      .tool-button,
+      .mini-button,
+      .drawer-tab {
+        padding: 6px 10px;
+        border-radius: 7px;
+      }
+
+      .tool-button,
+      .mini-button {
+        background: var(--panel);
+        border: 1px solid var(--line);
+      }
+
+      .tool-button.primary,
+      .mini-button.primary,
+      .drawer-tab.active {
+        border-color: var(--line-strong);
+        background: var(--accent-soft);
+        color: #eaf5ff;
+      }
+
+      .main {
+        display: grid;
+        grid-template-columns: 280px minmax(0, 1fr);
+        gap: 8px;
+        padding: 8px;
+        min-height: 0;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        min-width: 0;
+      }
+
+      .sidebar {
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+        min-height: 0;
+      }
+
+      .sidebar-section {
+        padding: 10px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .sidebar-section:last-child {
+        border-bottom: 0;
+      }
+
+      .section-title {
+        margin: 0 0 8px;
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .search {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--panel-2);
+        color: var(--text);
+      }
+
+      .tree {
+        min-height: 0;
+        overflow: auto;
+        padding: 10px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .tree-group {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        background: var(--panel-2);
+      }
+
+      .tree-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+        font-size: 0.78rem;
+        background: #202a36;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      }
+
+      .tree-list {
+        display: grid;
+      }
+
+      .tree-node {
+        display: grid;
+        gap: 3px;
+        width: 100%;
+        padding: 9px 10px;
+        text-align: left;
+        border-top: 1px solid rgba(255, 255, 255, 0.03);
+      }
+
+      .tree-node.active {
+        background: var(--accent-soft);
+        border-left: 2px solid var(--accent);
+        padding-left: 8px;
+      }
+
+      .tree-node strong,
+      .session-tab strong,
+      .result-row strong,
+      .audit-row strong {
+        font-size: 0.82rem;
+      }
+
+      .tree-node span,
+      .session-tab span,
+      .result-row span,
+      .audit-row span {
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+
+      .content {
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr) 250px;
+        gap: 8px;
+        min-height: 0;
+      }
+
+      .session-strip,
+      .quickbar,
+      .terminal-top,
+      .drawer-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 10px;
+      }
+
+      .session-strip,
+      .quickbar,
+      .drawer-head {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+
+      .session-tab {
+        padding: 8px 10px;
+        border-radius: 7px;
+        border: 1px solid var(--line);
+        background: var(--panel-2);
+        text-align: left;
+      }
+
+      .session-tab.active {
+        border-color: var(--line-strong);
+        background: rgba(103, 183, 255, 0.1);
+      }
+
+      .host-chip {
+        padding: 4px 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--panel-2);
+        font-size: 0.76rem;
+        color: var(--muted);
+      }
+
+      .command-input,
+      .prompt-input,
+      textarea,
+      select {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--panel-2);
+        color: var(--text);
+      }
+
+      .command-input,
+      .prompt-input,
+      textarea {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.82rem;
+      }
+
+      .quickbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto auto;
+      }
+
+      .terminal-wrap {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .terminal-top {
+        border-bottom: 1px solid var(--line);
+        background: #121821;
+        font-size: 0.78rem;
+        font-family: "IBM Plex Mono", monospace;
+      }
+
+      .screen {
+        min-height: 0;
+        overflow: auto;
+        padding: 14px 16px;
+        background: #0b1015;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.83rem;
+        line-height: 1.65;
+      }
+
+      .line {
+        display: block;
+        white-space: pre-wrap;
+      }
+
+      .line.command {
+        color: #bfe3ff;
+      }
+
+      .line.ok {
+        color: var(--ok);
+      }
+
+      .line.warn {
+        color: var(--warn);
+      }
+
+      .line.err {
+        color: var(--danger);
+      }
+
+      .line.meta {
+        color: #8ba4bd;
+      }
+
+      .promptbar {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 8px;
+        padding: 10px;
+        border-top: 1px solid var(--line);
+        background: #121821;
+      }
+
+      .prompt {
+        display: flex;
+        align-items: center;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--panel-2);
+        color: var(--muted);
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.78rem;
+      }
+
+      .drawer {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      .drawer-tabs {
+        display: flex;
+        gap: 6px;
+      }
+
+      .drawer-body {
+        min-height: 0;
+        overflow: auto;
+        padding: 10px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+
+      .drawer-pane {
+        display: none;
+      }
+
+      .drawer-pane.active {
+        display: block;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: 320px minmax(0, 1fr);
+        gap: 10px;
+      }
+
+      .form-card,
+      .table,
+      .info-card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-2);
+      }
+
+      .form-card,
+      .info-card {
+        padding: 10px;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 10px;
+      }
+
+      .field:last-child {
+        margin-bottom: 0;
+      }
+
+      .field label {
+        font-size: 0.76rem;
+        color: var(--muted);
+      }
+
+      textarea {
+        min-height: 96px;
+        resize: vertical;
+      }
+
+      .table-head,
+      .result-row,
+      .audit-row {
+        display: grid;
+        gap: 8px;
+        align-items: center;
+        padding: 9px 10px;
+      }
+
+      .table-head {
+        border-bottom: 1px solid var(--line);
+        font-size: 0.74rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        font-family: "IBM Plex Mono", monospace;
+      }
+
+      .fleet-table .table-head,
+      .fleet-table .result-row {
+        grid-template-columns: 1.4fr 0.9fr 0.8fr 0.8fr 0.9fr;
+      }
+
+      .audit-table .table-head,
+      .audit-table .audit-row {
+        grid-template-columns: 90px minmax(0, 1fr) 120px 100px;
+      }
+
+      .result-row + .result-row,
+      .audit-row + .audit-row {
+        border-top: 1px solid rgba(255, 255, 255, 0.04);
+      }
+
+      .tone {
+        display: inline-flex;
+        justify-content: center;
+        min-width: 64px;
+        padding: 3px 7px;
+        border-radius: 999px;
+        font-size: 0.72rem;
+      }
+
+      .tone.ok {
+        background: rgba(132, 214, 142, 0.12);
+        color: var(--ok);
+      }
+
+      .tone.warn {
+        background: rgba(226, 179, 102, 0.12);
+        color: var(--warn);
+      }
+
+      .tone.err {
+        background: rgba(234, 133, 122, 0.12);
+        color: var(--danger);
+      }
+
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .pill {
+        padding: 4px 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #202a36;
+        font-size: 0.74rem;
+        color: var(--muted);
+      }
+
+      .info-card h4 {
+        margin: 0 0 8px;
+        font-size: 0.8rem;
+      }
+
+      .info-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.78rem;
+        line-height: 1.55;
+      }
+
+      .statusbar {
+        border-top: 1px solid var(--line);
+        border-bottom: 0;
+        font-size: 0.74rem;
+        color: var(--muted);
+      }
+
+      @media (max-width: 1080px) {
+        .main {
+          grid-template-columns: 1fr;
+        }
+
+        .content {
+          grid-template-rows: auto auto minmax(360px, 1fr) 320px;
+        }
+
+        .split,
+        .quickbar,
+        .promptbar,
+        .fleet-table .table-head,
+        .fleet-table .result-row,
+        .audit-table .table-head,
+        .audit-table .audit-row {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="titlebar">
+        <div class="menu">
+          <button>文件</button>
+          <button>编辑</button>
+          <button>视图</button>
+          <button>会话</button>
+          <button>工具</button>
+          <button>AI</button>
+          <button>帮助</button>
+        </div>
+        <div class="brand">OpsClaw / Xshell-like workspace</div>
+      </header>
+
+      <section class="toolbar">
+        <div class="toolbar-left">
+          <button class="tool-button primary">新建连接</button>
+          <button class="tool-button">重连</button>
+          <button class="tool-button">分屏</button>
+          <button class="tool-button">批量执行</button>
+          <button class="tool-button">巡检模板</button>
+          <button class="tool-button">AI 总结</button>
+        </div>
+        <div class="toolbar-right">
+          <span class="pill">SSH</span>
+          <span class="pill">审计开启</span>
+          <span class="pill">代理 sh-a-01</span>
+        </div>
+      </section>
+
+      <div class="main">
+        <aside class="panel sidebar">
+          <section class="sidebar-section">
+            <h3 class="section-title">会话管理器</h3>
+            <input class="search" type="text" value="prod" aria-label="search sessions" />
+          </section>
+
+          <section class="sidebar-section">
+            <div class="section-tools">
+              <button class="mini-button">新建文件夹</button>
+              <button class="mini-button">导入主机</button>
+            </div>
+          </section>
+
+          <section class="tree">
+            <div class="tree-group">
+              <div class="tree-head">
+                <span>生产 / Redis</span>
+                <span class="muted">8</span>
+              </div>
+              <div class="tree-list">
+                <button class="tree-node active" data-node="redis-master-02">
+                  <strong>redis-master-02</strong>
+                  <span>master / sh-a / 38ms</span>
+                </button>
+                <button class="tree-node" data-node="db-replica-07">
+                  <strong>db-replica-07</strong>
+                  <span>replica / disk 92% / 52ms</span>
+                </button>
+                <button class="tree-node" data-node="db-replica-08">
+                  <strong>db-replica-08</strong>
+                  <span>replica / healthy / 44ms</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="tree-group">
+              <div class="tree-head">
+                <span>生产 / Market-Core</span>
+                <span class="muted">5</span>
+              </div>
+              <div class="tree-list">
+                <button class="tree-node" data-node="web-gateway-11">
+                  <strong>web-gateway-11</strong>
+                  <span>edge / failed unit / 31ms</span>
+                </button>
+                <button class="tree-node" data-node="schedule-prod-a">
+                  <strong>schedule-prod-a</strong>
+                  <span>scheduler / healthy / 27ms</span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section class="sidebar-section">
+            <h3 class="section-title">最近连接</h3>
+            <div class="pill-row">
+              <span class="pill">redis-master-02</span>
+              <span class="pill">db-replica-07</span>
+              <span class="pill">web-gateway-11</span>
+            </div>
+          </section>
+        </aside>
+
+        <main class="content">
+          <section class="session-strip">
+            <div class="tab-row">
+              <button class="session-tab active" data-node="redis-master-02">
+                <strong>redis-master-02</strong>
+                <span>shell</span>
+              </button>
+              <button class="session-tab" data-node="db-replica-07">
+                <strong>db-replica-07</strong>
+                <span>triage</span>
+              </button>
+              <button class="session-tab" data-node="web-gateway-11">
+                <strong>web-gateway-11</strong>
+                <span>edge</span>
+              </button>
+            </div>
+            <div class="host-path">
+              <span class="host-chip" id="chipUser">root@redis-master-02</span>
+              <span class="host-chip" id="chipRoute">route sh-a-01</span>
+              <span class="host-chip" id="chipLatency">38ms</span>
+            </div>
+          </section>
+
+          <section class="quickbar">
+            <input
+              id="quickCommand"
+              class="command-input"
+              type="text"
+              value="systemctl status redis --no-pager"
+              aria-label="quick command"
+            />
+            <button class="mini-button primary" id="runQuick">执行</button>
+            <button class="mini-button" id="copyTranscript">复制输出</button>
+            <button class="mini-button" id="clearTerminal">清屏</button>
+          </section>
+
+          <section class="panel terminal-wrap">
+            <div class="terminal-top">
+              <div id="terminalTitle">redis-master-02 / production / SSH shell</div>
+              <div class="pill-row">
+                <span class="pill">UTF-8</span>
+                <span class="pill">ANSI</span>
+                <span class="pill">Transcript On</span>
+              </div>
+            </div>
+            <div class="screen" id="screen"></div>
+            <div class="promptbar">
+              <div class="prompt" id="prompt">root@redis-master-02:~#</div>
+              <input
+                id="promptInput"
+                class="prompt-input"
+                type="text"
+                value="journalctl -u redis -n 20 --no-pager"
+                aria-label="prompt input"
+              />
+              <button class="mini-button primary" id="sendPrompt">发送</button>
+            </div>
+          </section>
+
+          <section class="drawer">
+            <div class="drawer-head">
+              <div class="drawer-tabs">
+                <button class="drawer-tab active" data-pane="fleet">批量执行</button>
+                <button class="drawer-tab" data-pane="inspection">巡检任务</button>
+                <button class="drawer-tab" data-pane="audit">审计日志</button>
+                <button class="drawer-tab" data-pane="ai">AI 摘要</button>
+              </div>
+              <span class="muted">辅助能力收在底部页签中</span>
+            </div>
+
+            <div class="drawer-body">
+              <div class="drawer-pane active" id="pane-fleet">
+                <div class="split">
+                  <div class="form-card">
+                    <div class="field">
+                      <label for="fleetGroup">目标分组</label>
+                      <select id="fleetGroup">
+                        <option>生产 / Redis</option>
+                        <option>生产 / Market-Core</option>
+                        <option>生产 / Payment-Edge</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="fleetCommand">命令</label>
+                      <textarea id="fleetCommand">df -h &amp;&amp; free -m &amp;&amp; systemctl --failed --no-pager</textarea>
+                    </div>
+                    <div class="field">
+                      <label>执行参数</label>
+                      <div class="pill-row">
+                        <span class="pill">并发 16</span>
+                        <span class="pill">超时 45s</span>
+                        <span class="pill">生产确认</span>
+                      </div>
+                    </div>
+                    <div class="form-row">
+                      <button class="mini-button primary" id="runFleet">执行分组命令</button>
+                      <button class="mini-button" id="fleetAi">生成摘要</button>
+                    </div>
+                  </div>
+
+                  <div class="table fleet-table">
+                    <div class="table-head">
+                      <div>Node</div>
+                      <div>Service</div>
+                      <div>Disk</div>
+                      <div>Latency</div>
+                      <div>Status</div>
+                    </div>
+                    <div id="fleetRows"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="drawer-pane" id="pane-inspection">
+                <div class="split">
+                  <div class="form-card">
+                    <div class="field">
+                      <label>巡检模板</label>
+                      <select>
+                        <option>Disk saturation sweep</option>
+                        <option>Systemd failed units</option>
+                        <option>Log keyword sentinel</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label>调度</label>
+                      <div class="pill-row">
+                        <span class="pill">cron */30 * * * *</span>
+                        <span class="pill">group prod-redis</span>
+                        <span class="pill">enabled</span>
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label>模板预览</label>
+                      <textarea>df -h
+df -i
+du -sh /data/* | sort -hr | head
+journalctl -u redis -n 20 --no-pager</textarea>
+                    </div>
+                  </div>
+
+                  <div class="table fleet-table">
+                    <div class="table-head">
+                      <div>Task</div>
+                      <div>Scope</div>
+                      <div>Last</div>
+                      <div>Risk</div>
+                      <div>Next</div>
+                    </div>
+                    <div class="result-row">
+                      <div><strong>Disk sweep</strong><span>prod-redis</span></div>
+                      <div>8 nodes</div>
+                      <div>11:00</div>
+                      <div><span class="tone warn">watch</span></div>
+                      <div>11:30</div>
+                    </div>
+                    <div class="result-row">
+                      <div><strong>Failed units</strong><span>market-core</span></div>
+                      <div>5 nodes</div>
+                      <div>10:00</div>
+                      <div><span class="tone err">1 issue</span></div>
+                      <div>12:00</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="drawer-pane" id="pane-audit">
+                <div class="table audit-table">
+                  <div class="table-head">
+                    <div>Time</div>
+                    <div>Event</div>
+                    <div>Mode</div>
+                    <div>State</div>
+                  </div>
+                  <div class="audit-row">
+                    <div>11:04</div>
+                    <div><strong>batch execution started</strong><span>prod-redis / 8 nodes / ops-jaguarliu</span></div>
+                    <div>manual</div>
+                    <div><span class="tone ok">logged</span></div>
+                  </div>
+                  <div class="audit-row">
+                    <div>10:58</div>
+                    <div><strong>ai summary requested</strong><span>disk-sweep-3181 / anomaly summary generated</span></div>
+                    <div>manual</div>
+                    <div><span class="tone ok">logged</span></div>
+                  </div>
+                  <div class="audit-row">
+                    <div>10:42</div>
+                    <div><strong>terminal opened</strong><span>redis-master-02 / route sh-a-01 / transcript on</span></div>
+                    <div>interactive</div>
+                    <div><span class="tone ok">logged</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="drawer-pane" id="pane-ai">
+                <div class="split">
+                  <div class="info-card">
+                    <h4>当前摘要</h4>
+                    <p id="aiSummaryText">
+                      Redis 集群整体健康，当前风险集中在一台副本节点的磁盘压力，以及一台边缘节点的 sidecar
+                      失败，不存在明显级联故障信号。
+                    </p>
+                  </div>
+                  <div class="info-card">
+                    <h4>建议动作</h4>
+                    <div class="pill-row" id="aiActions">
+                      <span class="pill">检查 /data 增长</span>
+                      <span class="pill">确认日志轮转</span>
+                      <span class="pill">复查 sidecar 部署包</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+
+      <footer class="statusbar">
+        <div class="status-left">
+          <span>SSH Connected</span>
+          <span>|</span>
+          <span id="statusHost">redis-master-02</span>
+          <span>|</span>
+          <span>CST</span>
+        </div>
+        <div class="status-right">
+          <span>Encoding UTF-8</span>
+          <span>|</span>
+          <span>Audit enabled</span>
+          <span>|</span>
+          <span>OpsClaw Preview</span>
+        </div>
+      </footer>
+    </div>
+
+    <script>
+      const hostData = {
+        "redis-master-02": {
+          title: "redis-master-02 / production / SSH shell",
+          user: "root@redis-master-02",
+          route: "route sh-a-01",
+          latency: "38ms",
+          prompt: "root@redis-master-02:~#",
+          screen: [
+            { tone: "meta", text: "Last login: Tue Mar 23 10:42:18 from bastion-sh-a-01" },
+            { tone: "command", text: "root@redis-master-02:~# redis-cli info replication | head -10" },
+            { tone: "", text: "role:master" },
+            { tone: "", text: "connected_slaves:2" },
+            { tone: "", text: "master_failover_state:no-failover" },
+            { tone: "ok", text: "master_repl_offset:484728181" },
+            { tone: "command", text: "root@redis-master-02:~# systemctl status redis --no-pager" },
+            { tone: "ok", text: "Active: active (running) since Tue 2026-03-23 07:12:14 CST" },
+            { tone: "", text: "Memory peak: 2.8G / Connections handled: 23891" }
+          ]
+        },
+        "db-replica-07": {
+          title: "db-replica-07 / production / SSH shell",
+          user: "root@db-replica-07",
+          route: "route sh-a-01",
+          latency: "52ms",
+          prompt: "root@db-replica-07:/data#",
+          screen: [
+            { tone: "meta", text: "Last login: Tue Mar 23 10:11:52 from bastion-sh-a-01" },
+            { tone: "command", text: "root@db-replica-07:/data# df -h" },
+            { tone: "", text: "Filesystem      Size  Used Avail Use% Mounted on" },
+            { tone: "warn", text: "/dev/vdb        500G  461G   19G  92% /data" },
+            { tone: "command", text: "root@db-replica-07:/data# journalctl -u redis -n 5 --no-pager" },
+            { tone: "err", text: "Log rotation skipped for 2 cycles after deployment hook timeout" }
+          ]
+        },
+        "db-replica-08": {
+          title: "db-replica-08 / production / SSH shell",
+          user: "root@db-replica-08",
+          route: "route sh-a-01",
+          latency: "44ms",
+          prompt: "root@db-replica-08:/data#",
+          screen: [
+            { tone: "meta", text: "Last login: Tue Mar 23 09:18:12 from bastion-sh-a-01" },
+            { tone: "command", text: "root@db-replica-08:/data# free -m" },
+            { tone: "", text: "Mem: 32120 9240 4984 181 17896 22110" },
+            { tone: "ok", text: "Swap: 4095 0 4095" }
+          ]
+        },
+        "web-gateway-11": {
+          title: "web-gateway-11 / market-core / SSH shell",
+          user: "ops@web-gateway-11",
+          route: "route sh-b-02",
+          latency: "31ms",
+          prompt: "ops@web-gateway-11:~$",
+          screen: [
+            { tone: "meta", text: "Session routed to edge pool / profile ops-limited" },
+            { tone: "command", text: "ops@web-gateway-11:~$ systemctl --failed --no-pager" },
+            { tone: "err", text: "ops-sidecar.service loaded failed failed rollout hook verifier" },
+            { tone: "command", text: "ops@web-gateway-11:~$ tail -n 5 /var/log/ops-sidecar.log" },
+            { tone: "err", text: "signature mismatch for deploy artifact build-4382" }
+          ]
+        },
+        "schedule-prod-a": {
+          title: "schedule-prod-a / market-core / SSH shell",
+          user: "ops@schedule-prod-a",
+          route: "route sh-b-02",
+          latency: "27ms",
+          prompt: "ops@schedule-prod-a:~$",
+          screen: [
+            { tone: "meta", text: "Last login: Tue Mar 23 08:01:10 from bastion-sh-b-02" },
+            { tone: "command", text: "ops@schedule-prod-a:~$ systemctl status scheduler --no-pager" },
+            { tone: "ok", text: "Active: active (running) since Tue 2026-03-23 05:02:16 CST" }
+          ]
+        }
+      };
+
+      const fleetState = [
+        { node: "redis-master-01", service: "healthy", disk: "58%", latency: "29ms", tone: "ok", status: "ok" },
+        { node: "redis-master-02", service: "healthy", disk: "62%", latency: "38ms", tone: "ok", status: "ok" },
+        { node: "db-replica-05", service: "healthy", disk: "72%", latency: "46ms", tone: "warn", status: "watch" },
+        { node: "db-replica-07", service: "degraded", disk: "92%", latency: "52ms", tone: "err", status: "critical" },
+        { node: "db-replica-08", service: "healthy", disk: "69%", latency: "44ms", tone: "ok", status: "ok" }
+      ];
+
+      const screen = document.getElementById("screen");
+      const chipUser = document.getElementById("chipUser");
+      const chipRoute = document.getElementById("chipRoute");
+      const chipLatency = document.getElementById("chipLatency");
+      const terminalTitle = document.getElementById("terminalTitle");
+      const prompt = document.getElementById("prompt");
+      const statusHost = document.getElementById("statusHost");
+      const fleetRows = document.getElementById("fleetRows");
+      const aiSummaryText = document.getElementById("aiSummaryText");
+      const aiActions = document.getElementById("aiActions");
+
+      let currentHost = "redis-master-02";
+
+      function renderHost(name) {
+        const host = hostData[name];
+        currentHost = name;
+        chipUser.textContent = host.user;
+        chipRoute.textContent = host.route;
+        chipLatency.textContent = host.latency;
+        terminalTitle.textContent = host.title;
+        prompt.textContent = host.prompt;
+        statusHost.textContent = name;
+        screen.innerHTML = host.screen.map((line) => `<span class="line ${line.tone || ""}">${line.text}</span>`).join("");
+        screen.scrollTop = screen.scrollHeight;
+
+        document.querySelectorAll("[data-node]").forEach((el) => {
+          el.classList.toggle("active", el.dataset.node === name);
+        });
+      }
+
+      function renderFleet() {
+        fleetRows.innerHTML = fleetState
+          .map(
+            (row) => `
+              <div class="result-row">
+                <div><strong>${row.node}</strong><span>${row.node.includes("master") ? "master" : "replica"}</span></div>
+                <div>${row.service}</div>
+                <div>${row.disk}</div>
+                <div>${row.latency}</div>
+                <div><span class="tone ${row.tone}">${row.status}</span></div>
+              </div>
+            `
+          )
+          .join("");
+      }
+
+      function appendCommand(inputId) {
+        const input = document.getElementById(inputId);
+        const value = input.value.trim();
+        if (!value) return;
+
+        const commandPrefix = prompt.textContent.endsWith("$") ? "$" : "#";
+        screen.insertAdjacentHTML(
+          "beforeend",
+          `<span class="line command">${prompt.textContent.replace(/[#$]$/, "").trim()}${commandPrefix} ${value}</span>
+           <span class="line meta">command captured, audit transcript updated</span>`
+        );
+        screen.scrollTop = screen.scrollHeight;
+      }
+
+      document.querySelectorAll(".tree-node, .session-tab").forEach((button) => {
+        button.addEventListener("click", () => renderHost(button.dataset.node));
+      });
+
+      document.getElementById("runQuick").addEventListener("click", () => appendCommand("quickCommand"));
+      document.getElementById("sendPrompt").addEventListener("click", () => appendCommand("promptInput"));
+
+      document.getElementById("quickCommand").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          appendCommand("quickCommand");
+        }
+      });
+
+      document.getElementById("promptInput").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          appendCommand("promptInput");
+        }
+      });
+
+      document.getElementById("clearTerminal").addEventListener("click", () => {
+        screen.innerHTML = "";
+      });
+
+      document.getElementById("copyTranscript").addEventListener("click", () => {
+        screen.insertAdjacentHTML("beforeend", '<span class="line meta">transcript copied to clipboard queue</span>');
+        screen.scrollTop = screen.scrollHeight;
+      });
+
+      document.getElementById("runFleet").addEventListener("click", () => {
+        fleetState[3].disk = "94%";
+        fleetState[3].status = "critical";
+        fleetState[3].tone = "err";
+        renderFleet();
+        aiSummaryText.textContent =
+          "最新批量执行显示 db-replica-07 的磁盘压力进一步升高，当前优先级高于其余节点，建议先处理存储占用再继续备份窗口。";
+        aiActions.innerHTML = `
+          <span class="pill">检查 /data 增长</span>
+          <span class="pill">确认日志轮转</span>
+          <span class="pill">必要时临时清理 staging</span>
+        `;
+      });
+
+      document.getElementById("fleetAi").addEventListener("click", () => {
+        aiSummaryText.textContent =
+          "当前异常主要集中在两个方向：Redis 副本磁盘占用过高，以及 edge 节点 sidecar 服务失败。没有看到 master 节点异常扩散。";
+        aiActions.innerHTML = `
+          <span class="pill">优先处理 db-replica-07</span>
+          <span class="pill">检查 sidecar 部署包</span>
+          <span class="pill">30 分钟后重跑巡检</span>
+        `;
+      });
+
+      document.querySelectorAll(".drawer-tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document.querySelectorAll(".drawer-tab").forEach((item) => item.classList.remove("active"));
+          document.querySelectorAll(".drawer-pane").forEach((pane) => pane.classList.remove("active"));
+          tab.classList.add("active");
+          document.getElementById(`pane-${tab.dataset.pane}`).classList.add("active");
+        });
+      });
+
+      renderFleet();
+      renderHost(currentHost);
+    </script>
+  </body>
+</html>
