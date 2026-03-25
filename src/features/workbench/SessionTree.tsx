@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import type {
@@ -98,6 +98,39 @@ export function SessionTree({
   const isEmpty = !isLoading && !errorMessage && groups.length === 0;
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const [contextMenuState, setContextMenuState] = useState<ContextMenuState | null>(null);
+  const [filterQuery, setFilterQuery] = useState('');
+
+  const displayGroups = filterQuery.trim()
+    ? groups
+        .map((g) => ({
+          ...g,
+          profiles: g.profiles.filter(
+            (p) =>
+              p.name.toLowerCase().includes(filterQuery.toLowerCase()) ||
+              p.host.toLowerCase().includes(filterQuery.toLowerCase()) ||
+              p.username.toLowerCase().includes(filterQuery.toLowerCase())
+          ),
+        }))
+        .filter((g) => g.profiles.length > 0)
+    : groups;
+
+  const isFilterEmpty = filterQuery.trim() !== '' && displayGroups.length === 0;
+
+  useLayoutEffect(() => {
+    if (!contextMenuState || !contextMenuRef.current) return;
+    const menu = contextMenuRef.current;
+    const rect = menu.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let x = contextMenuState.x;
+    let y = contextMenuState.y;
+    if (rect.right > vw) x = vw - rect.width - 8;
+    if (rect.bottom > vh) y = vh - rect.height - 8;
+    if (x < 0) x = 8;
+    if (y < 0) y = 8;
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+  }, [contextMenuState]);
 
   useEffect(() => {
     if (!contextMenuState) {
@@ -152,6 +185,36 @@ export function SessionTree({
         </div>
       </header>
 
+      <div className="border-b border-neutral-800/60 px-3 py-2">
+        <div className="relative">
+          <svg
+            className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-600"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0Z" />
+          </svg>
+          <input
+            type="text"
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            placeholder="过滤节点..."
+            className="w-full rounded-md bg-neutral-800/60 py-1.5 pl-7 pr-6 text-[12px] text-neutral-200 outline-none placeholder:text-neutral-600 focus:bg-neutral-800"
+          />
+          {filterQuery && (
+            <button
+              type="button"
+              onClick={() => setFilterQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-600 hover:text-neutral-400"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="min-h-0 overflow-auto px-2 py-3">
         {isLoading ? (
           <div className="px-2 text-sm text-neutral-500">正在加载节点...</div>
@@ -165,6 +228,10 @@ export function SessionTree({
           <div className="px-2 text-sm text-neutral-500">还没有保存的节点</div>
         ) : null}
 
+        {isFilterEmpty ? (
+          <div className="px-2 text-sm text-neutral-500">没有匹配的节点</div>
+        ) : null}
+
         <div
           className="min-h-full"
           onContextMenu={(event) => {
@@ -176,7 +243,7 @@ export function SessionTree({
             });
           }}
         >
-          {groups.map((group) => (
+          {displayGroups.map((group) => (
             <section className="mb-3" key={group.id}>
               <button
                 className="mb-1 flex w-full items-center justify-between rounded px-2 py-1 text-left text-[11px] text-neutral-500 transition-colors hover:bg-neutral-900/70"

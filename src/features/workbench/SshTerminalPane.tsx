@@ -1,7 +1,8 @@
+import { SearchAddon } from '@xterm/addon-search';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 import { buildTerminalWebSocketUrl } from '@/features/workbench/terminalSocket';
 import { useTerminalSettings } from '@/features/workbench/TerminalSettingsContext';
@@ -16,6 +17,7 @@ type ServerMessage =
 type SshTerminalPaneProps = {
   session: LiveSession;
   active: boolean;
+  show?: boolean;
   onStatusChange: (sessionId: string, status: ConnectionStatus, errorMessage?: string) => void;
 };
 
@@ -29,11 +31,12 @@ const RECONNECT_DELAYS_MS = [1000, 2000, 4000, 8000, 16000];
 const MAX_RECONNECT_ATTEMPTS = 5;
 
 export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPaneProps>(
-  function SshTerminalPane({ session, active, onStatusChange }, ref) {
+  function SshTerminalPane({ session, active, show, onStatusChange }, ref) {
     const { settings } = useTerminalSettings();
     const containerRef = useRef<HTMLDivElement | null>(null);
     const terminalRef = useRef<Terminal | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
+    const searchAddonRef = useRef<SearchAddon | null>(null);
     const websocketRef = useRef<WebSocket | null>(null);
     const initializedRef = useRef(false);
     const sessionIdRef = useRef(session.id);
@@ -46,6 +49,11 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
     const reconnectAttemptRef = useRef(0);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const everConnectedRef = useRef(false);
+
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const searchInputRef = useRef<HTMLInputElement | null>(null);
+    const [pendingPaste, setPendingPaste] = useState<string | null>(null);
 
     useEffect(() => {
       sessionIdRef.current = session.id;
@@ -114,6 +122,35 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
       });
     }, [sendResize]);
 
+    const findNext = useCallback(() => {
+      searchAddonRef.current?.findNext(searchQuery, { caseSensitive: false, incremental: false });
+    }, [searchQuery]);
+
+    const findPrev = useCallback(() => {
+      searchAddonRef.current?.findPrevious(searchQuery, { caseSensitive: false, incremental: false });
+    }, [searchQuery]);
+
+    const closeSearch = useCallback(() => {
+      setIsSearchOpen(false);
+      setSearchQuery('');
+      searchAddonRef.current?.findNext(''); // clear highlights
+      terminalRef.current?.focus();
+    }, []);
+
+    useEffect(() => {
+      if (isSearchOpen) {
+        setTimeout(() => searchInputRef.current?.focus(), 0);
+      }
+    }, [isSearchOpen]);
+
+    useEffect(() => {
+      if (!searchQuery) {
+        searchAddonRef.current?.findNext('');
+        return;
+      }
+      searchAddonRef.current?.findNext(searchQuery, { caseSensitive: false, incremental: true });
+    }, [searchQuery]);
+
     useImperativeHandle(ref, () => ({
       clear() {
         terminalRef.current?.clear();
@@ -152,11 +189,31 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
         theme: TERMINAL_THEMES[settings.themeName],
       });
       const fitAddon = new FitAddon();
+      const searchAddon = new SearchAddon();
 
       terminal.loadAddon(fitAddon);
+      terminal.loadAddon(searchAddon);
       terminal.open(containerRef.current);
       fitAddon.fit();
       terminal.focus();
+
+      terminal.attachCustomKeyEventHandler((domEvent) => {
+        if ((domEvent.ctrlKey || domEvent.metaKey) && domEvent.key === 'f' && domEvent.type === 'keydown') {
+          domEvent.preventDefault();
+          setIsSearchOpen((prev) => !prev);
+          return false;
+        }
+        return true;
+      });
+
+      const handlePaste = (event: ClipboardEvent) => {
+        const text = event.clipboardData?.getData('text') ?? '';
+        if (!text.includes('\n')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setPendingPaste(text);
+      };
+      containerRef.current.addEventListener('paste', handlePaste, { capture: true });
 
       const dataDisposable = terminal.onData((data) => {
         const websocket = websocketRef.current;
@@ -173,9 +230,11 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
 
       terminalRef.current = terminal;
       fitAddonRef.current = fitAddon;
+      searchAddonRef.current = searchAddon;
       initializedRef.current = true;
 
       return () => {
+        containerRef.current?.removeEventListener('paste', handlePaste, { capture: true });
         dataDisposable.dispose();
         resizeObserver.disconnect();
         if (resizeFrameRef.current !== null) {
@@ -191,6 +250,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
         terminal.dispose();
         terminalRef.current = null;
         fitAddonRef.current = null;
+        searchAddonRef.current = null;
         initializedRef.current = false;
       };
     }, [scheduleFitAndResize]);
@@ -353,10 +413,89 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
     }, [settings, sendResize]);
 
     return (
-      <div
-        className={active ? 'xterm-pane block h-full w-full' : 'xterm-pane hidden h-full w-full'}
-        ref={containerRef}
-      />
+      <div className={(show ?? active) ? 'relative block h-full w-full' : 'hidden h-full w-full'}>
+        <div className="xterm-pane h-full w-full" ref={containerRef} />
+
+        {isSearchOpen && (
+          <div className="absolute right-4 top-4 z-20 flex items-center gap-1 rounded-lg border border-neutral-700 bg-[#1e2025] px-2 py-1.5 shadow-xl">
+            <input
+              ref={searchInputRef}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.shiftKey ? findPrev() : findNext();
+                }
+                if (e.key === 'Escape') {
+                  closeSearch();
+                }
+              }}
+              placeholder="搜索..."
+              className="w-44 bg-transparent text-[13px] text-neutral-100 outline-none placeholder:text-neutral-600"
+            />
+            <button
+              type="button"
+              onClick={findPrev}
+              title="上一个 (Shift+Enter)"
+              className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 hover:bg-neutral-700 hover:text-neutral-100"
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              onClick={findNext}
+              title="下一个 (Enter)"
+              className="flex h-6 w-6 items-center justify-center rounded text-neutral-400 hover:bg-neutral-700 hover:text-neutral-100"
+            >
+              ↓
+            </button>
+            <button
+              type="button"
+              onClick={closeSearch}
+              title="关闭 (Esc)"
+              className="flex h-6 w-6 items-center justify-center rounded text-neutral-500 hover:bg-neutral-700 hover:text-neutral-200"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        {pendingPaste !== null && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60">
+            <div className="w-[480px] rounded-xl border border-neutral-700 bg-[#1e2025] p-5 shadow-2xl">
+              <h3 className="mb-2 text-[14px] font-semibold text-neutral-100">粘贴多行内容</h3>
+              <p className="mb-3 text-[12px] text-neutral-400">
+                即将粘贴 {pendingPaste.split('\n').length} 行内容，确认继续？
+              </p>
+              <pre className="mb-4 max-h-40 overflow-auto rounded-md bg-neutral-900 p-3 text-[12px] text-neutral-300 whitespace-pre-wrap break-all">
+                {pendingPaste.length > 500 ? pendingPaste.slice(0, 500) + '...' : pendingPaste}
+              </pre>
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPendingPaste(null)}
+                  className="rounded-md px-3 py-1.5 text-[13px] text-neutral-400 hover:bg-neutral-700 hover:text-neutral-100"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const ws = websocketRef.current;
+                    if (ws?.readyState === WebSocket.OPEN) {
+                      ws.send(JSON.stringify({ type: 'input', payload: pendingPaste }));
+                    }
+                    setPendingPaste(null);
+                  }}
+                  className="rounded-md bg-blue-600 px-3 py-1.5 text-[13px] text-white hover:bg-blue-500"
+                >
+                  确认粘贴
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     );
   }
 );
