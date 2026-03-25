@@ -5,6 +5,7 @@ import { CommandHistoryPanel } from '@/features/workbench/CommandHistoryPanel';
 import { QuickConnectModal } from '@/features/workbench/QuickConnectModal';
 import { LlmProviderSettings } from '@/features/workbench/LlmProviderSettings';
 import { AiAssistantPanel } from '@/features/workbench/AiAssistantPanel';
+import { CsvImportModal } from '@/features/workbench/CsvImportModal';
 import { useKeyboardShortcuts } from '@/features/workbench/useKeyboardShortcuts';
 import { TerminalWorkspace, type TerminalWorkspaceHandle } from '@/features/workbench/TerminalWorkspace';
 
@@ -237,6 +238,7 @@ export function WorkbenchPage() {
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
   const [isLlmSettingsOpen, setIsLlmSettingsOpen] = useState(false);
   const [isAiAssistantOpen, setIsAiAssistantOpen] = useState(false);
+  const [isCsvImportOpen, setIsCsvImportOpen] = useState(false);
   const [defaultProviderId, setDefaultProviderId] = useState<string | null>(null);
   const [nodeOnlineStatus, setNodeOnlineStatus] = useState<Record<string, boolean>>({});
   const terminalWorkspaceRef = useRef<TerminalWorkspaceHandle | null>(null);
@@ -699,6 +701,7 @@ export function WorkbenchPage() {
         onEditProfile={handleEditProfile}
         onMoveProfileToGroup={handleMoveProfileToGroup}
         onOpenNewConnection={openNewConnection}
+        onOpenCsvImport={() => setIsCsvImportOpen(true)}
         onRenameGroup={handleRequestRenameGroup}
         onSelectProfile={handleSelectProfile}
         onSelectSession={setActiveSessionId}
@@ -859,6 +862,12 @@ export function WorkbenchPage() {
         open={isAiAssistantOpen}
         providerId={defaultProviderId}
         onClose={() => setIsAiAssistantOpen(false)}
+      />
+
+      <CsvImportModal
+        open={isCsvImportOpen}
+        onClose={() => setIsCsvImportOpen(false)}
+        onSuccess={refreshWorkspaceDataInBackground}
       />
     </div>
   );

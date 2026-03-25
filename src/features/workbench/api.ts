@@ -257,3 +257,20 @@ export async function setDefaultLlmProvider(id: string): Promise<void> {
     throw new Error(payload.message ?? '设置默认 LLM 失败。');
   }
 }
+
+export type ImportResult = {
+  success: boolean;
+  row: number;
+  name?: string;
+  error?: string;
+};
+
+export async function importNodesFromCSV(csv: string): Promise<ImportResult[]> {
+  const response = await fetch(`${buildServerHttpBaseUrl()}/api/nodes/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ csv }),
+  });
+  const payload = await readJson<{ results: ImportResult[] }>(response);
+  return payload.results;
+}

@@ -18,6 +18,7 @@ type SessionTreeProps = {
   errorMessage: string | null;
   nodeOnlineStatus: Record<string, boolean>;
   onOpenNewConnection: () => void;
+  onOpenCsvImport: () => void;
   onCreateGroup: () => void;
   onActivateProfile: (profile: SavedConnectionProfile) => void;
   onDeleteProfile: (profile: SavedConnectionProfile) => void;
@@ -83,6 +84,7 @@ export function SessionTree({
   errorMessage,
   nodeOnlineStatus,
   onOpenNewConnection,
+  onOpenCsvImport,
   onCreateGroup,
   onActivateProfile,
   onDeleteProfile,
@@ -215,7 +217,17 @@ export function SessionTree({
         </div>
       </div>
 
-      <div className="min-h-0 overflow-auto px-2 py-3">
+      <div
+        className="min-h-0 overflow-auto px-2 py-3"
+        onContextMenu={(event) => {
+          event.preventDefault();
+          setContextMenuState({
+            type: 'root',
+            x: event.clientX,
+            y: event.clientY,
+          });
+        }}
+      >
         {isLoading ? (
           <div className="px-2 text-sm text-neutral-500">正在加载节点...</div>
         ) : null}
@@ -232,17 +244,7 @@ export function SessionTree({
           <div className="px-2 text-sm text-neutral-500">没有匹配的节点</div>
         ) : null}
 
-        <div
-          className="min-h-full"
-          onContextMenu={(event) => {
-            event.preventDefault();
-            setContextMenuState({
-              type: 'root',
-              x: event.clientX,
-              y: event.clientY,
-            });
-          }}
-        >
+        <div className="flex-1">
           {displayGroups.map((group) => (
             <section className="mb-3" key={group.id}>
               <button
@@ -350,6 +352,16 @@ export function SessionTree({
                 type="button"
               >
                 新建分组
+              </button>
+              <button
+                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-neutral-200 transition-colors hover:bg-neutral-800"
+                onClick={() => {
+                  onOpenCsvImport();
+                  setContextMenuState(null);
+                }}
+                type="button"
+              >
+                批量导入
               </button>
             </>
           ) : null}

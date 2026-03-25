@@ -10,6 +10,7 @@ import { createCommandHistoryStore } from './commandHistoryStore.js';
 import { createLlmProviderStore } from './llmProviderStore.js';
 import { streamChat } from './llmClient.js';
 import { createNodeStore, type AuthMode, type NodeInput } from './nodeStore.js';
+import { parseCSV } from './csvParser.js';
 
 type ClientMessage =
   | {
@@ -229,6 +230,70 @@ async function startServer() {
     );
 
     response.json(results);
+  });
+
+  app.post('/api/nodes/import', async (request, response) => {
+    try {
+      const csvText = request.body.csv;
+      if (typeof csvText !== 'string' || !csvText.trim()) {
+        response.status(400).json({ message: 'CSV 内容不能为空。' });
+        return;
+      }
+
+      const rows = parseCSV(csvText);
+      if (rows.length < 2) {
+        response.status(400).json({ message: 'CSV 至少需要包含标题行和一行数据。' });
+        return;
+      }
+
+      const headers = rows[0].map(h => h.trim());
+      const results: Array<{ success: boolean; row: number; name?: string; error?: string }> = [];
+
+      for (let i = 1; i < rows.length; i++) {
+        const cells = rows[i];
+        const rowData: Record<string, string> = {};
+        headers.forEach((h, idx) => { rowData[h] = cells[idx]?.trim() || ''; });
+
+        try {
+          const input: NodeInput = {
+            name: rowData.name || rowData.host,
+            host: rowData.host,
+            port: parseInt(rowData.port, 10),
+            username: rowData.username,
+            authMode: rowData.authMode as AuthMode,
+            password: rowData.password || undefined,
+            privateKey: rowData.privateKey || undefined,
+            passphrase: rowData.passphrase || undefined,
+            groupName: rowData.groupName || undefined,
+            jumpHostId: rowData.jumpHostId || undefined,
+          };
+
+          if (!input.host || !input.username || !input.authMode) {
+            throw new Error('缺少必填字段：host, username, authMode');
+          }
+          if (isNaN(input.port) || input.port < 1 || input.port > 65535) {
+            throw new Error('端口无效');
+          }
+          if (input.authMode !== 'password' && input.authMode !== 'privateKey') {
+            throw new Error('authMode 必须是 password 或 privateKey');
+          }
+
+          await nodeStore.createNode(input);
+          results.push({ success: true, row: i + 1, name: input.name });
+        } catch (error) {
+          results.push({
+            success: false,
+            row: i + 1,
+            error: error instanceof Error ? error.message : '创建失败',
+          });
+        }
+      }
+
+      response.json({ results });
+    } catch (error) {
+      console.error('[Import] error:', error);
+      response.status(500).json({ message: 'CSV 导入失败。' });
+    }
   });
 
   app.get('/api/groups', (_request, response) => {
