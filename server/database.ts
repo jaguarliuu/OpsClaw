@@ -96,6 +96,21 @@ function ensureNodeCredentialColumns(database: SqlDatabaseHandle) {
   }
 }
 
+function ensureCommandHistoryTable(database: SqlDatabaseHandle) {
+  database.run(`
+    CREATE TABLE IF NOT EXISTS command_history (
+      id TEXT PRIMARY KEY,
+      command TEXT NOT NULL,
+      node_id TEXT,
+      rank INTEGER NOT NULL DEFAULT 1,
+      last_used INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_ch_node_id ON command_history(node_id);`);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_ch_last_used ON command_history(last_used DESC);`);
+}
+
 let databasePromise: Promise<SqliteDatabase> | null = null;
 
 async function createDatabase(): Promise<SqliteDatabase> {
@@ -127,6 +142,7 @@ async function createDatabase(): Promise<SqliteDatabase> {
   database.run('PRAGMA foreign_keys = ON;');
   database.run(schema);
   ensureNodeCredentialColumns(database);
+  ensureCommandHistoryTable(database);
 
   let persistQueue = Promise.resolve();
 

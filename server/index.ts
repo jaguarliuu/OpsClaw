@@ -6,6 +6,7 @@ import type { ClientChannel, ConnectConfig } from 'ssh2';
 import { Client } from 'ssh2';
 import { WebSocket, WebSocketServer } from 'ws';
 
+import { createCommandHistoryStore } from './commandHistoryStore.js';
 import { createNodeStore, type AuthMode, type NodeInput } from './nodeStore.js';
 
 type ClientMessage =
@@ -166,6 +167,7 @@ function parseMoveNodeInput(payload: unknown) {
 
 async function startServer() {
   const nodeStore = await createNodeStore();
+  const commandHistoryStore = await createCommandHistoryStore();
   const app = express();
   const server = http.createServer(app);
   const websocketServer = new WebSocketServer({ noServer: true });
@@ -284,6 +286,47 @@ async function startServer() {
       response.status(400).json({
         message: error instanceof Error ? error.message : '分组删除失败。',
       });
+    }
+  });
+
+  // Command history routes — before /api/nodes/:id to avoid param conflicts
+  app.post('/api/commands', (request, response) => {
+    try {
+      const { command, nodeId } = request.body as { command?: unknown; nodeId?: unknown };
+      if (typeof command !== 'string' || !command.trim()) {
+        response.status(400).json({ message: '命令不能为空。' });
+        return;
+      }
+      const item = commandHistoryStore.upsertCommand(
+        command.trim(),
+        typeof nodeId === 'string' ? nodeId : null
+      );
+      response.status(201).json({ item });
+    } catch (error) {
+      console.error('[CommandHistory] upsert error:', error);
+      response.status(500).json({ message: '命令记录失败。' });
+    }
+  });
+
+  app.get('/api/commands/search', (request, response) => {
+    try {
+      const q = typeof request.query['q'] === 'string' ? request.query['q'] : '';
+      const nodeId = typeof request.query['nodeId'] === 'string' ? request.query['nodeId'] : undefined;
+      const items = commandHistoryStore.searchCommands(q, nodeId);
+      response.json({ items });
+    } catch (error) {
+      console.error('[CommandHistory] search error:', error);
+      response.status(500).json({ message: '命令搜索失败。' });
+    }
+  });
+
+  app.delete('/api/commands/:id', (request, response) => {
+    try {
+      commandHistoryStore.deleteCommand(request.params.id);
+      response.sendStatus(204);
+    } catch (error) {
+      console.error('[CommandHistory] delete error:', error);
+      response.status(500).json({ message: '命令删除失败。' });
     }
   });
 

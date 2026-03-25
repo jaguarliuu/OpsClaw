@@ -32,6 +32,14 @@ export type ConnectionFormValues = {
   jumpHostId: string;
 };
 
+export type CommandRecord = {
+  id: string;
+  command: string;
+  nodeId: string | null;
+  rank: number;
+  lastUsed: number; // Unix ms
+};
+
 export type ConnectionStatus = 'connecting' | 'connected' | 'error' | 'closed' | 'reconnecting';
 
 export type LiveSession = {

@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
+import { CommandHistoryPanel } from '@/features/workbench/CommandHistoryPanel';
 import { QuickConnectModal } from '@/features/workbench/QuickConnectModal';
 import { TerminalSettingsPanel } from '@/features/workbench/TerminalSettingsPanel';
 import { useKeyboardShortcuts } from '@/features/workbench/useKeyboardShortcuts';
+import { TerminalWorkspace, type TerminalWorkspaceHandle } from '@/features/workbench/TerminalWorkspace';
 
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ConnectionPanel } from '@/features/workbench/ConnectionPanel';
@@ -25,7 +27,6 @@ import {
   type NodeUpsertInput,
 } from '@/features/workbench/api';
 import { SessionTree } from '@/features/workbench/SessionTree';
-import { TerminalWorkspace } from '@/features/workbench/TerminalWorkspace';
 import type {
   ConnectionFormValues,
   ConnectionStatus,
@@ -229,8 +230,10 @@ export function WorkbenchPage() {
   const [moveDialogTargetGroupId, setMoveDialogTargetGroupId] = useState<string | null>(null);
   const [moveDialogError, setMoveDialogError] = useState<string | null>(null);
   const [isQuickConnectOpen, setIsQuickConnectOpen] = useState(false);
+  const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
   const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
   const [nodeOnlineStatus, setNodeOnlineStatus] = useState<Record<string, boolean>>({});
+  const terminalWorkspaceRef = useRef<TerminalWorkspaceHandle | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -639,6 +642,7 @@ export function WorkbenchPage() {
 
   useKeyboardShortcuts({
     onToggleQuickConnect: () => setIsQuickConnectOpen((prev) => !prev),
+    onToggleCommandHistory: () => setIsHistoryPanelOpen((prev) => !prev),
     onCloseActiveTab: () => {
       if (activeSessionId) handleCloseSession(activeSessionId);
     },
@@ -687,6 +691,7 @@ export function WorkbenchPage() {
       />
 
       <TerminalWorkspace
+        ref={terminalWorkspaceRef}
         activeSessionId={activeSessionId}
         canOpenConnectionConfig={selectedProfile !== null}
         onCloseSession={handleCloseSession}
@@ -815,6 +820,16 @@ export function WorkbenchPage() {
         }}
         open={isQuickConnectOpen}
         profiles={savedProfiles}
+      />
+
+      <CommandHistoryPanel
+        open={isHistoryPanelOpen}
+        activeNodeId={sessions.find((s) => s.id === activeSessionId)?.nodeId}
+        onClose={() => setIsHistoryPanelOpen(false)}
+        onExecute={(command) => {
+          terminalWorkspaceRef.current?.sendCommandToActive(command);
+          setIsHistoryPanelOpen(false);
+        }}
       />
 
       <TerminalSettingsPanel

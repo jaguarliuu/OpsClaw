@@ -7,6 +7,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { buildTerminalWebSocketUrl } from '@/features/workbench/terminalSocket';
 import { useTerminalSettings } from '@/features/workbench/TerminalSettingsContext';
 import { TERMINAL_THEMES } from '@/features/workbench/terminalSettings';
+import { recordCommand } from '@/features/workbench/api';
 import type { ConnectionStatus, LiveSession } from '@/features/workbench/types';
 
 type ServerMessage =
@@ -49,6 +50,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
     const reconnectAttemptRef = useRef(0);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const everConnectedRef = useRef(false);
+    const inputBufferRef = useRef('');
 
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -170,6 +172,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
         const websocket = websocketRef.current;
         if (websocket?.readyState === WebSocket.OPEN) {
           websocket.send(JSON.stringify({ type: 'input', payload: `${trimmed}\n` }));
+          void recordCommand({ command: trimmed, nodeId: session.nodeId });
         }
       },
     }));
@@ -220,6 +223,31 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
         if (websocket?.readyState === WebSocket.OPEN) {
           websocket.send(JSON.stringify({ type: 'input', payload: data }));
         }
+
+        // Shadow buffer: track typed input to record commands on Enter
+        if (data === '\r' || data === '\n') {
+          const cmd = inputBufferRef.current.trim();
+          if (cmd) void recordCommand({ command: cmd, nodeId: session.nodeId });
+          inputBufferRef.current = '';
+        } else if (data === '\x7f' || data === '\x08') {
+          // Backspace
+          inputBufferRef.current = inputBufferRef.current.slice(0, -1);
+        } else if (data === '\x15') {
+          // Ctrl+U: clear line
+          inputBufferRef.current = '';
+        } else if (data === '\x17') {
+          // Ctrl+W: delete last word
+          inputBufferRef.current = inputBufferRef.current.replace(/\s*\S+\s*$/, '');
+        } else if (data === '\x03' || data === '\x1c') {
+          // Ctrl+C / Ctrl+\: cancel
+          inputBufferRef.current = '';
+        } else if (data.startsWith('\x1b')) {
+          // ESC sequences (arrow keys, etc.) — can't track accurately, clear buffer
+          inputBufferRef.current = '';
+        } else if (data >= ' ') {
+          // Printable character
+          inputBufferRef.current += data;
+        }
       });
 
       const resizeObserver = new ResizeObserver(() => {
@@ -247,6 +275,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
         }
         pendingOutputRef.current = '';
         lastSizeRef.current = null;
+        inputBufferRef.current = '';
         terminal.dispose();
         terminalRef.current = null;
         fitAddonRef.current = null;

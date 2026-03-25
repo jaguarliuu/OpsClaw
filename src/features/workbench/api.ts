@@ -1,4 +1,4 @@
-import type { AuthMode } from '@/features/workbench/types';
+import type { AuthMode, CommandRecord } from '@/features/workbench/types';
 import { buildServerHttpBaseUrl } from '@/features/workbench/serverBase';
 
 export type NodeSummaryRecord = {
@@ -166,4 +166,32 @@ export async function fetchPingAll(): Promise<Record<string, { online: boolean; 
     throw new Error('ping-all 请求失败。');
   }
   return response.json() as Promise<Record<string, { online: boolean; latencyMs?: number }>>;
+}
+
+export async function recordCommand(input: { command: string; nodeId?: string }): Promise<CommandRecord> {
+  const response = await fetch(`${buildServerHttpBaseUrl()}/api/commands`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const payload = await readJson<{ item: CommandRecord }>(response);
+  return payload.item;
+}
+
+export async function searchCommands(q: string, nodeId?: string): Promise<CommandRecord[]> {
+  const params = new URLSearchParams({ q });
+  if (nodeId) params.set('nodeId', nodeId);
+  const response = await fetch(`${buildServerHttpBaseUrl()}/api/commands/search?${params.toString()}`);
+  const payload = await readJson<{ items: CommandRecord[] }>(response);
+  return payload.items;
+}
+
+export async function deleteCommand(id: string): Promise<void> {
+  const response = await fetch(`${buildServerHttpBaseUrl()}/api/commands/${id}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok && response.status !== 204) {
+    const payload = (await response.json()) as { message?: string };
+    throw new Error(payload.message ?? '删除历史命令失败。');
+  }
 }

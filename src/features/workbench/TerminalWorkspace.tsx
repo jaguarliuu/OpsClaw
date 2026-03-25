@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { SshTerminalPane, type SshTerminalPaneHandle } from '@/features/workbench/SshTerminalPane';
@@ -6,6 +6,10 @@ import type { ConnectionStatus, LiveSession } from '@/features/workbench/types';
 import { cn } from '@/lib/utils';
 
 type SplitLayout = 'single' | 'horizontal' | 'vertical';
+
+export type TerminalWorkspaceHandle = {
+  sendCommandToActive: (command: string) => void;
+};
 
 type TerminalWorkspaceProps = {
   activeSessionId: string | null;
@@ -46,7 +50,8 @@ function SplitVerticalIcon() {
   );
 }
 
-export function TerminalWorkspace({
+export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWorkspaceProps>(
+  function TerminalWorkspace({
   activeSessionId,
   canOpenConnectionConfig,
   sessions,
@@ -57,8 +62,15 @@ export function TerminalWorkspace({
   onToggleSidebar,
   onSelectSession,
   onSessionStatusChange,
-}: TerminalWorkspaceProps) {
+}: TerminalWorkspaceProps, ref: React.Ref<TerminalWorkspaceHandle>) {
   const terminalRefs = useRef<Record<string, SshTerminalPaneHandle | null>>({});
+
+  useImperativeHandle(ref, () => ({
+    sendCommandToActive(command: string) {
+      if (!activeSessionId) return;
+      terminalRefs.current[activeSessionId]?.sendCommand(command);
+    },
+  }), [activeSessionId]);
 
   const [splitLayout, setSplitLayout] = useState<SplitLayout>('single');
   const [paneSessionIds, setPaneSessionIds] = useState<[string | null, string | null]>([null, null]);
@@ -434,4 +446,4 @@ export function TerminalWorkspace({
       </div>
     </section>
   );
-}
+});
