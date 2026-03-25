@@ -111,6 +111,26 @@ function ensureCommandHistoryTable(database: SqlDatabaseHandle) {
   database.run(`CREATE INDEX IF NOT EXISTS idx_ch_last_used ON command_history(last_used DESC);`);
 }
 
+function ensureLlmProvidersTable(database: SqlDatabaseHandle) {
+  database.run(`
+    CREATE TABLE IF NOT EXISTS llm_providers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      provider_type TEXT NOT NULL CHECK (provider_type IN ('zhipu', 'minimax', 'qwen', 'deepseek')),
+      base_url TEXT,
+      api_key TEXT,
+      model TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      max_tokens INTEGER DEFAULT 4096,
+      temperature REAL DEFAULT 0.7,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_llm_enabled ON llm_providers(enabled);`);
+}
+
 let databasePromise: Promise<SqliteDatabase> | null = null;
 
 async function createDatabase(): Promise<SqliteDatabase> {
@@ -143,6 +163,7 @@ async function createDatabase(): Promise<SqliteDatabase> {
   database.run(schema);
   ensureNodeCredentialColumns(database);
   ensureCommandHistoryTable(database);
+  ensureLlmProvidersTable(database);
 
   let persistQueue = Promise.resolve();
 

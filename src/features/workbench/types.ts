@@ -56,3 +56,31 @@ export type LiveSession = {
   status: ConnectionStatus;
   errorMessage?: string;
 };
+
+export type LlmProviderType = 'zhipu' | 'minimax' | 'qwen' | 'deepseek';
+
+export type LlmProvider = {
+  id: string;
+  name: string;
+  providerType: LlmProviderType;
+  baseUrl: string | null;
+  apiKey: string;
+  model: string;
+  enabled: boolean;
+  isDefault: boolean;
+  maxTokens: number;
+  temperature: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type LlmMessage = {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+};
+
+export type LlmStreamChunk = {
+  type: 'content' | 'done' | 'error';
+  content?: string;
+  error?: string;
+};

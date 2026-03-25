@@ -7,6 +7,8 @@ import { Client } from 'ssh2';
 import { WebSocket, WebSocketServer } from 'ws';
 
 import { createCommandHistoryStore } from './commandHistoryStore.js';
+import { createLlmProviderStore } from './llmProviderStore.js';
+import { streamChat } from './llmClient.js';
 import { createNodeStore, type AuthMode, type NodeInput } from './nodeStore.js';
 
 type ClientMessage =
@@ -168,6 +170,7 @@ function parseMoveNodeInput(payload: unknown) {
 async function startServer() {
   const nodeStore = await createNodeStore();
   const commandHistoryStore = await createCommandHistoryStore();
+  const llmProviderStore = await createLlmProviderStore();
   const app = express();
   const server = http.createServer(app);
   const websocketServer = new WebSocketServer({ noServer: true });
@@ -327,6 +330,102 @@ async function startServer() {
     } catch (error) {
       console.error('[CommandHistory] delete error:', error);
       response.status(500).json({ message: '命令删除失败。' });
+    }
+  });
+
+  // LLM Provider routes
+  app.get('/api/llm/providers', (_request, response) => {
+    try {
+      const providers = llmProviderStore.listProviders();
+      response.json({ items: providers });
+    } catch (error) {
+      console.error('[LLM] list providers error:', error);
+      response.status(500).json({ message: 'LLM 配置读取失败。' });
+    }
+  });
+
+  app.post('/api/llm/providers', (request, response) => {
+    try {
+      const { name, providerType, baseUrl, apiKey, model, maxTokens, temperature } = request.body;
+      const provider = llmProviderStore.createProvider({
+        name,
+        providerType,
+        baseUrl,
+        apiKey,
+        model,
+        maxTokens,
+        temperature,
+      });
+      response.status(201).json({ item: provider });
+    } catch (error) {
+      console.error('[LLM] create provider error:', error);
+      response.status(500).json({ message: 'LLM 配置创建失败。' });
+    }
+  });
+
+  app.put('/api/llm/providers/:id', (request, response) => {
+    try {
+      const provider = llmProviderStore.updateProvider(request.params.id, request.body);
+      if (!provider) {
+        response.status(404).json({ message: 'LLM 配置不存在。' });
+        return;
+      }
+      response.json({ item: provider });
+    } catch (error) {
+      console.error('[LLM] update provider error:', error);
+      response.status(500).json({ message: 'LLM 配置更新失败。' });
+    }
+  });
+
+  app.delete('/api/llm/providers/:id', (request, response) => {
+    try {
+      llmProviderStore.deleteProvider(request.params.id);
+      response.sendStatus(204);
+    } catch (error) {
+      console.error('[LLM] delete provider error:', error);
+      response.status(500).json({ message: 'LLM 配置删除失败。' });
+    }
+  });
+
+  app.put('/api/llm/providers/:id/default', (request, response) => {
+    try {
+      llmProviderStore.setDefaultProvider(request.params.id);
+      response.sendStatus(204);
+    } catch (error) {
+      console.error('[LLM] set default provider error:', error);
+      response.status(500).json({ message: '设置默认 LLM 失败。' });
+    }
+  });
+
+  app.post('/api/llm/chat', async (request, response) => {
+    try {
+      const { providerId, messages } = request.body;
+      const provider = llmProviderStore.getProvider(providerId);
+      
+      if (!provider) {
+        response.status(404).json({ message: 'LLM 配置不存在。' });
+        return;
+      }
+
+      if (!provider.enabled) {
+        response.status(400).json({ message: 'LLM 配置已禁用。' });
+        return;
+      }
+
+      response.setHeader('Content-Type', 'text/event-stream');
+      response.setHeader('Cache-Control', 'no-cache');
+      response.setHeader('Connection', 'keep-alive');
+
+      for await (const chunk of streamChat(provider, messages)) {
+        response.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      }
+
+      response.end();
+    } catch (error) {
+      console.error('[LLM] chat error:', error);
+      if (!response.headersSent) {
+        response.status(500).json({ message: 'AI 对话失败。' });
+      }
     }
   });
 
@@ -687,3 +786,4 @@ void startServer().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+

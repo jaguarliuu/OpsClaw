@@ -1,4 +1,4 @@
-import type { AuthMode, CommandRecord } from '@/features/workbench/types';
+import type { AuthMode, CommandRecord, LlmProvider } from '@/features/workbench/types';
 import { buildServerHttpBaseUrl } from '@/features/workbench/serverBase';
 
 export type NodeSummaryRecord = {
@@ -193,5 +193,67 @@ export async function deleteCommand(id: string): Promise<void> {
   if (!response.ok && response.status !== 204) {
     const payload = (await response.json()) as { message?: string };
     throw new Error(payload.message ?? '删除历史命令失败。');
+  }
+}
+
+export async function fetchLlmProviders(): Promise<LlmProvider[]> {
+  const response = await fetch(`${buildServerHttpBaseUrl()}/api/llm/providers`);
+  const payload = await readJson<{ items: LlmProvider[] }>(response);
+  return payload.items;
+}
+
+export async function createLlmProvider(input: {
+  name: string;
+  providerType: string;
+  baseUrl?: string;
+  apiKey: string;
+  model: string;
+  maxTokens?: number;
+  temperature?: number;
+}): Promise<LlmProvider> {
+  const response = await fetch(`${buildServerHttpBaseUrl()}/api/llm/providers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const payload = await readJson<{ item: LlmProvider }>(response);
+  return payload.item;
+}
+
+export async function updateLlmProvider(id: string, input: Partial<{
+  name: string;
+  providerType: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  maxTokens: number;
+  temperature: number;
+}>): Promise<LlmProvider> {
+  const response = await fetch(`${buildServerHttpBaseUrl()}/api/llm/providers/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const payload = await readJson<{ item: LlmProvider }>(response);
+  return payload.item;
+}
+
+export async function deleteLlmProvider(id: string): Promise<void> {
+  const response = await fetch(`${buildServerHttpBaseUrl()}/api/llm/providers/${id}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok && response.status !== 204) {
+    const payload = (await response.json()) as { message?: string };
+    throw new Error(payload.message ?? '删除 LLM 配置失败。');
+  }
+}
+
+export async function setDefaultLlmProvider(id: string): Promise<void> {
+  const response = await fetch(`${buildServerHttpBaseUrl()}/api/llm/providers/${id}/default`, {
+    method: 'PUT',
+  });
+  if (!response.ok && response.status !== 204) {
+    const payload = (await response.json()) as { message?: string };
+    throw new Error(payload.message ?? '设置默认 LLM 失败。');
   }
 }

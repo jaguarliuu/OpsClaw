@@ -1,4 +1,5 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { Sparkles } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { SshTerminalPane, type SshTerminalPaneHandle } from '@/features/workbench/SshTerminalPane';
@@ -13,15 +14,14 @@ export type TerminalWorkspaceHandle = {
 
 type TerminalWorkspaceProps = {
   activeSessionId: string | null;
-  canOpenConnectionConfig: boolean;
   sessions: LiveSession[];
   sidebarCollapsed: boolean;
   onCloseSession: (sessionId: string) => void;
-  onOpenConnectionConfig: () => void;
   onOpenNewConnection: () => void;
   onToggleSidebar: () => void;
   onSelectSession: (sessionId: string) => void;
   onSessionStatusChange: (sessionId: string, status: ConnectionStatus, errorMessage?: string) => void;
+  onOpenAiAssistant: () => void;
 };
 
 function SingleIcon() {
@@ -53,15 +53,14 @@ function SplitVerticalIcon() {
 export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWorkspaceProps>(
   function TerminalWorkspace({
   activeSessionId,
-  canOpenConnectionConfig,
   sessions,
   sidebarCollapsed,
   onCloseSession,
-  onOpenConnectionConfig,
   onOpenNewConnection,
   onToggleSidebar,
   onSelectSession,
   onSessionStatusChange,
+  onOpenAiAssistant,
 }: TerminalWorkspaceProps, ref: React.Ref<TerminalWorkspaceHandle>) {
   const terminalRefs = useRef<Record<string, SshTerminalPaneHandle | null>>({});
 
@@ -297,13 +296,13 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
           </div>
 
           <Button
-            className="text-neutral-400 disabled:text-neutral-700"
-            disabled={!canOpenConnectionConfig}
-            onClick={onOpenConnectionConfig}
+            className="text-neutral-400 hover:text-blue-400 transition-colors"
+            onClick={onOpenAiAssistant}
             size="sm"
             variant="ghost"
+            title="AI 助手"
           >
-            配置
+            <Sparkles className="h-4 w-4" />
           </Button>
         </div>
       </header>

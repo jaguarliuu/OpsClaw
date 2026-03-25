@@ -8,6 +8,8 @@ type ShortcutHandlers = {
   onSwitchToNextTab: () => void;
   onToggleQuickConnect: () => void;
   onToggleCommandHistory: () => void;
+  onToggleLlmSettings: () => void;
+  onToggleAiAssistant: () => void;
 };
 
 export function useKeyboardShortcuts(handlers: ShortcutHandlers): void {
@@ -37,6 +39,14 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): void {
         case 'r':
           e.preventDefault();
           handlersRef.current.onToggleCommandHistory();
+          break;
+        case 'l':
+          e.preventDefault();
+          handlersRef.current.onToggleLlmSettings();
+          break;
+        case 'a':
+          e.preventDefault();
+          handlersRef.current.onToggleAiAssistant();
           break;
         case 'w':
           e.preventDefault();
