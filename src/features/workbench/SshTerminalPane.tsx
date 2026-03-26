@@ -7,7 +7,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { buildTerminalWebSocketUrl } from '@/features/workbench/terminalSocket';
 import { useTerminalSettings } from '@/features/workbench/TerminalSettingsContext';
 import { TERMINAL_THEMES } from '@/features/workbench/terminalSettings';
-import { recordCommand } from '@/features/workbench/api';
+import { recordCommand, searchCommands } from '@/features/workbench/api';
 import type { ConnectionStatus, LiveSession } from '@/features/workbench/types';
 
 type ServerMessage =
@@ -56,6 +56,8 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
     const [searchQuery, setSearchQuery] = useState('');
     const searchInputRef = useRef<HTMLInputElement | null>(null);
     const [pendingPaste, setPendingPaste] = useState<string | null>(null);
+    const [suggestion, setSuggestion] = useState<string | null>(null);
+    const suggestionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
       sessionIdRef.current = session.id;
@@ -153,6 +155,25 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
       searchAddonRef.current?.findNext(searchQuery, { caseSensitive: false, incremental: true });
     }, [searchQuery]);
 
+    const fetchSuggestion = useCallback((input: string) => {
+      if (suggestionTimerRef.current) clearTimeout(suggestionTimerRef.current);
+
+      if (input.length < 2) {
+        setSuggestion(null);
+        return;
+      }
+
+      suggestionTimerRef.current = setTimeout(() => {
+        void searchCommands(input, session.nodeId).then(results => {
+          if (results.length > 0 && results[0].command.startsWith(input)) {
+            setSuggestion(results[0].command);
+          } else {
+            setSuggestion(null);
+          }
+        });
+      }, 150);
+    }, [session.nodeId]);
+
     useImperativeHandle(ref, () => ({
       clear() {
         terminalRef.current?.clear();
@@ -219,6 +240,20 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
       containerRef.current.addEventListener('paste', handlePaste, { capture: true });
 
       const dataDisposable = terminal.onData((data) => {
+        // Handle Tab for suggestion acceptance
+        if (data === '\t' && suggestion && inputBufferRef.current) {
+          const remaining = suggestion.slice(inputBufferRef.current.length);
+          if (remaining) {
+            const websocket = websocketRef.current;
+            if (websocket?.readyState === WebSocket.OPEN) {
+              websocket.send(JSON.stringify({ type: 'input', payload: remaining }));
+            }
+            inputBufferRef.current = suggestion;
+            setSuggestion(null);
+            return;
+          }
+        }
+
         const websocket = websocketRef.current;
         if (websocket?.readyState === WebSocket.OPEN) {
           websocket.send(JSON.stringify({ type: 'input', payload: data }));
@@ -229,24 +264,31 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
           const cmd = inputBufferRef.current.trim();
           if (cmd) void recordCommand({ command: cmd, nodeId: session.nodeId });
           inputBufferRef.current = '';
+          setSuggestion(null);
         } else if (data === '\x7f' || data === '\x08') {
           // Backspace
           inputBufferRef.current = inputBufferRef.current.slice(0, -1);
+          fetchSuggestion(inputBufferRef.current);
         } else if (data === '\x15') {
           // Ctrl+U: clear line
           inputBufferRef.current = '';
+          setSuggestion(null);
         } else if (data === '\x17') {
           // Ctrl+W: delete last word
           inputBufferRef.current = inputBufferRef.current.replace(/\s*\S+\s*$/, '');
+          fetchSuggestion(inputBufferRef.current);
         } else if (data === '\x03' || data === '\x1c') {
           // Ctrl+C / Ctrl+\: cancel
           inputBufferRef.current = '';
+          setSuggestion(null);
         } else if (data.startsWith('\x1b')) {
           // ESC sequences (arrow keys, etc.) — can't track accurately, clear buffer
           inputBufferRef.current = '';
-        } else if (data >= ' ') {
-          // Printable character
+          setSuggestion(null);
+        } else if (data >= ' ' && data !== '\t') {
+          // Printable character (excluding tab which we handled above)
           inputBufferRef.current += data;
+          fetchSuggestion(inputBufferRef.current);
         }
       });
 
@@ -521,6 +563,16 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
                   确认粘贴
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {suggestion && inputBufferRef.current && (
+          <div className="absolute bottom-4 left-4 z-20 rounded-lg border border-blue-500/30 bg-[#1e2025]/95 px-3 py-2 shadow-xl">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-neutral-500">建议:</span>
+              <span className="font-mono text-[12px] text-neutral-300">{suggestion}</span>
+              <span className="text-[10px] text-neutral-600">按 Tab 接受</span>
             </div>
           </div>
         )}

@@ -639,7 +639,9 @@ async function startServer() {
         return;
       }
 
-      flushTimer = setTimeout(flushTerminalData, 8);
+      // Flush immediately for small data (interactive typing), batch for large output
+      const delay = pendingTerminalData.length < 10 ? 0 : 8;
+      flushTimer = setTimeout(flushTerminalData, delay);
     };
 
     const cleanup = () => {
