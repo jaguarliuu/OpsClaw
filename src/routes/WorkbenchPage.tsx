@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 import { CommandHistoryPanel } from '@/features/workbench/CommandHistoryPanel';
 import { QuickConnectModal } from '@/features/workbench/QuickConnectModal';
 import { LlmProviderSettings } from '@/features/workbench/LlmProviderSettings';
 import { AiAssistantPanel } from '@/features/workbench/AiAssistantPanel';
 import { CsvImportModal } from '@/features/workbench/CsvImportModal';
+import { TerminalSettingsPanel } from '@/features/workbench/TerminalSettingsPanel';
 import { useKeyboardShortcuts } from '@/features/workbench/useKeyboardShortcuts';
 import { TerminalWorkspace, type TerminalWorkspaceHandle } from '@/features/workbench/TerminalWorkspace';
 
@@ -21,7 +21,6 @@ import {
   fetchNode,
   fetchNodes,
   fetchPingAll,
-  fetchLlmProviders,
   moveNodeToGroup,
   renameGroup,
   updateNode,
@@ -210,7 +209,6 @@ async function loadWorkspaceData() {
 }
 
 export function WorkbenchPage() {
-  const navigate = useNavigate();
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<ConnectionFormValues>(defaultFormValues);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -239,7 +237,7 @@ export function WorkbenchPage() {
   const [isLlmSettingsOpen, setIsLlmSettingsOpen] = useState(false);
   const [isAiAssistantOpen, setIsAiAssistantOpen] = useState(false);
   const [isCsvImportOpen, setIsCsvImportOpen] = useState(false);
-  const [defaultProviderId, setDefaultProviderId] = useState<string | null>(null);
+  const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
   const [nodeOnlineStatus, setNodeOnlineStatus] = useState<Record<string, boolean>>({});
   const terminalWorkspaceRef = useRef<TerminalWorkspaceHandle | null>(null);
 
@@ -292,25 +290,6 @@ export function WorkbenchPage() {
     const id = setInterval(poll, 30_000);
     return () => clearInterval(id);
   }, []);
-
-  useEffect(() => {
-    void fetchLlmProviders()
-      .then((providers) => {
-        const defaultProvider = providers.find((p) => p.isDefault);
-        setDefaultProviderId(defaultProvider?.id ?? null);
-      })
-      .catch(() => {});
-  }, []);
-
-  const reloadDefaultProvider = () => {
-    void fetchLlmProviders()
-      .then((providers) => {
-        const defaultProvider = providers.find((p) => p.isDefault);
-        setDefaultProviderId(defaultProvider?.id ?? null);
-      })
-      .catch(() => {});
-  };
-
 
 
   const refreshWorkspaceData = async () => {
@@ -686,7 +665,7 @@ export function WorkbenchPage() {
   });
 
   return (
-    <div className="flex min-h-screen bg-[#111214]">
+    <div className="flex min-h-screen bg-[var(--app-bg-base)]">
       <SessionTree
         activeSessionId={activeSessionId}
         collapsed={isSidebarCollapsed}
@@ -706,7 +685,7 @@ export function WorkbenchPage() {
         onSelectProfile={handleSelectProfile}
         onSelectSession={setActiveSessionId}
         onToggleCollapse={() => setIsSidebarCollapsed((current) => !current)}
-        onOpenSettings={() => navigate('/settings')}
+        onOpenSettings={() => setIsSettingsPanelOpen(true)}
         selectedProfileId={selectedProfileId}
         sessions={sessions}
       />
@@ -855,12 +834,10 @@ export function WorkbenchPage() {
       <LlmProviderSettings
         open={isLlmSettingsOpen}
         onClose={() => setIsLlmSettingsOpen(false)}
-        onProviderChange={reloadDefaultProvider}
       />
 
       <AiAssistantPanel
         open={isAiAssistantOpen}
-        providerId={defaultProviderId}
         onClose={() => setIsAiAssistantOpen(false)}
       />
 
@@ -868,6 +845,11 @@ export function WorkbenchPage() {
         open={isCsvImportOpen}
         onClose={() => setIsCsvImportOpen(false)}
         onSuccess={refreshWorkspaceDataInBackground}
+      />
+
+      <TerminalSettingsPanel
+        open={isSettingsPanelOpen}
+        onClose={() => setIsSettingsPanelOpen(false)}
       />
     </div>
   );

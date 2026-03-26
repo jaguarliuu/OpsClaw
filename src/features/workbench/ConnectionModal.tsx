@@ -147,7 +147,7 @@ export function ConnectionModal({
 
           <div className="grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4">
             <Label className="pt-2 text-xs font-medium text-neutral-300">凭据</Label>
-            <div className="rounded-md border border-neutral-700 bg-neutral-800/80 p-4">
+            <div className="rounded-md border border-[var(--app-border-strong)] bg-[var(--app-bg-elevated3)]/80 p-4">
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label className="text-xs text-neutral-400">用户名</Label>
@@ -205,7 +205,7 @@ export function ConnectionModal({
           <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-4">
             <Label className="text-xs font-medium text-neutral-300">更多配置</Label>
             <div className="flex items-center gap-3 text-xs">
-              <span className="rounded-full border border-neutral-700 bg-neutral-800 px-2.5 py-1 text-neutral-400">
+              <span className="rounded-full border border-[var(--app-border-strong)] bg-[var(--app-bg-elevated3)] px-2.5 py-1 text-neutral-400">
                 无标签 / normal
               </span>
               <button className="text-blue-400 transition-colors hover:text-blue-300" type="button">

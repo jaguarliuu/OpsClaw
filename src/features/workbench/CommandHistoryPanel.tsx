@@ -110,11 +110,11 @@ export function CommandHistoryPanel({ open, activeNodeId, onClose, onExecute }: 
       <DialogPortal>
         <DialogOverlay />
         <DialogPrimitive.Content
-          className="fixed left-1/2 top-[15vh] z-50 w-[620px] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-xl border border-neutral-700 bg-[#1a1c22] shadow-2xl outline-none"
+          className="fixed left-1/2 top-[15vh] z-50 w-[620px] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-xl border border-[var(--app-border-strong)] bg-[#1a1c22] shadow-2xl outline-none"
           onKeyDown={handleKeyDown}
         >
           {/* Search bar */}
-          <div className="flex items-center gap-2 border-b border-neutral-700/60 px-4 py-3">
+          <div className="flex items-center gap-2 border-b border-[var(--app-border-strong)]/60 px-4 py-3">
             <svg
               className="h-4 w-4 shrink-0 text-neutral-500"
               fill="none"
@@ -162,7 +162,7 @@ export function CommandHistoryPanel({ open, activeNodeId, onClose, onExecute }: 
                   key={item.id}
                   className={cn(
                     'group flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors',
-                    index === activeIndex ? 'bg-neutral-700/50' : 'hover:bg-neutral-800/60'
+                    index === activeIndex ? 'bg-neutral-700/50' : 'hover:bg-[var(--app-bg-elevated3)]/60'
                   )}
                   onMouseEnter={() => setActiveIndex(index)}
                   onClick={() => {

@@ -446,7 +446,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
         <div className="xterm-pane h-full w-full" ref={containerRef} />
 
         {isSearchOpen && (
-          <div className="absolute right-4 top-4 z-20 flex items-center gap-1 rounded-lg border border-neutral-700 bg-[#1e2025] px-2 py-1.5 shadow-xl">
+          <div className="absolute right-4 top-4 z-20 flex items-center gap-1 rounded-lg border border-[var(--app-border-strong)] bg-[#1e2025] px-2 py-1.5 shadow-xl">
             <input
               ref={searchInputRef}
               value={searchQuery}
@@ -491,7 +491,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
 
         {pendingPaste !== null && (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60">
-            <div className="w-[480px] rounded-xl border border-neutral-700 bg-[#1e2025] p-5 shadow-2xl">
+            <div className="w-[480px] rounded-xl border border-[var(--app-border-strong)] bg-[#1e2025] p-5 shadow-2xl">
               <h3 className="mb-2 text-[14px] font-semibold text-neutral-100">粘贴多行内容</h3>
               <p className="mb-3 text-[12px] text-neutral-400">
                 即将粘贴 {pendingPaste.split('\n').length} 行内容，确认继续？

@@ -49,7 +49,7 @@ export function TerminalSettingsTab() {
                   'group flex items-center gap-4 rounded-xl border px-5 py-4 text-left transition-all duration-200',
                   isActive
                     ? 'border-blue-500/50 bg-[#1e2025] shadow-lg shadow-blue-500/5'
-                    : 'border-neutral-800/50 hover:border-neutral-700/50 hover:bg-[#17181b]'
+                    : 'border-neutral-800/50 hover:border-[var(--app-border-strong)]/50 hover:bg-[#17181b]'
                 )}
               >
                 <div
@@ -124,7 +124,7 @@ export function TerminalSettingsTab() {
               step={1}
               value={settings.fontSize}
               onChange={(e) => updateSettings({ fontSize: Number(e.target.value) })}
-              className="w-full h-2 bg-neutral-800/50 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition-colors"
+              className="w-full h-2 bg-[var(--app-bg-elevated3)]/50 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition-colors"
             />
             <div className="flex justify-between text-xs text-neutral-600">
               <span>10px</span><span>20px</span>
@@ -144,7 +144,7 @@ export function TerminalSettingsTab() {
               step={0.05}
               value={settings.lineHeight}
               onChange={(e) => updateSettings({ lineHeight: Math.round(parseFloat(e.target.value) * 100) / 100 })}
-              className="w-full h-2 bg-neutral-800/50 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition-colors"
+              className="w-full h-2 bg-[var(--app-bg-elevated3)]/50 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition-colors"
             />
             <div className="flex justify-between text-xs text-neutral-600">
               <span>1.0</span><span>1.8</span>

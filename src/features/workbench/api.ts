@@ -207,7 +207,7 @@ export async function createLlmProvider(input: {
   providerType: string;
   baseUrl?: string;
   apiKey: string;
-  model: string;
+  models: string[];
   maxTokens?: number;
   temperature?: number;
 }): Promise<LlmProvider> {
@@ -225,7 +225,7 @@ export async function updateLlmProvider(id: string, input: Partial<{
   providerType: string;
   baseUrl: string;
   apiKey: string;
-  model: string;
+  models: string[];
   maxTokens: number;
   temperature: number;
 }>): Promise<LlmProvider> {

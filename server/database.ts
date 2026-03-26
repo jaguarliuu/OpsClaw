@@ -129,6 +129,23 @@ function ensureLlmProvidersTable(database: SqlDatabaseHandle) {
     );
   `);
   database.run(`CREATE INDEX IF NOT EXISTS idx_llm_enabled ON llm_providers(enabled);`);
+
+  const result = database.exec('PRAGMA table_info(llm_providers);');
+  const rows = result[0]?.values ?? [];
+  const cols = new Set(rows.map((r) => r[1]).filter((v): v is string => typeof v === 'string'));
+
+  if (cols.has('model') && !cols.has('models')) {
+    const data = database.exec('SELECT id, model FROM llm_providers;');
+    database.run('ALTER TABLE llm_providers ADD COLUMN models TEXT;');
+    if (data[0]?.values) {
+      for (const row of data[0].values) {
+        database.run('UPDATE llm_providers SET models = :m WHERE id = :i;', {
+          ':m': JSON.stringify([row[1]]),
+          ':i': row[0],
+        });
+      }
+    }
+  }
 }
 
 let databasePromise: Promise<SqliteDatabase> | null = null;

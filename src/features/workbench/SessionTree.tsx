@@ -171,12 +171,12 @@ export function SessionTree({
   return (
     <aside
       className={cn(
-        'grid min-h-screen shrink-0 grid-rows-[auto_1fr_auto] overflow-hidden border-r border-neutral-800 bg-[#141519] transition-[width,opacity,border-color] duration-200 ease-out',
+        'grid min-h-screen shrink-0 grid-rows-[auto_1fr_auto] overflow-hidden border-r border-[var(--app-border-default)] bg-[var(--app-bg-elevated)] transition-[width,opacity,border-color] duration-200 ease-out',
         collapsed ? 'w-0 border-r-transparent opacity-0' : 'w-[276px] opacity-100'
       )}
     >
-      <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
-        <strong className="text-[15px] font-medium text-neutral-100">连接管理器</strong>
+      <header className="flex items-center justify-between border-b border-[var(--app-border-default)] px-4 py-3">
+        <strong className="text-[15px] font-medium text-[var(--app-text-primary)]">连接管理器</strong>
         <div className="flex items-center gap-1">
           <Button onClick={onOpenNewConnection} size="sm" variant="ghost">
             新建
@@ -187,7 +187,7 @@ export function SessionTree({
         </div>
       </header>
 
-      <div className="border-b border-neutral-800/60 px-3 py-2">
+      <div className="border-b border-[var(--app-border-default)]/60 px-3 py-2">
         <div className="relative">
           <svg
             className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-600"
@@ -203,7 +203,7 @@ export function SessionTree({
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
             placeholder="过滤节点..."
-            className="w-full rounded-md bg-neutral-800/60 py-1.5 pl-7 pr-6 text-[12px] text-neutral-200 outline-none placeholder:text-neutral-600 focus:bg-neutral-800"
+            className="w-full rounded-md bg-[var(--app-bg-elevated3)]/60 py-1.5 pl-7 pr-6 text-[12px] text-[var(--app-text-secondary)] outline-none placeholder:text-neutral-600 focus:bg-[var(--app-bg-elevated3)]"
           />
           {filterQuery && (
             <button
@@ -280,8 +280,8 @@ export function SessionTree({
                       className={cn(
                         'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors',
                         isActive
-                          ? 'bg-neutral-800 text-neutral-100'
-                          : 'text-neutral-300 hover:bg-neutral-800'
+                          ? 'bg-[var(--app-bg-elevated3)] text-[var(--app-text-primary)]'
+                          : 'text-[var(--app-text-secondary)] hover:bg-[var(--app-bg-elevated3)]'
                       )}
                       key={profile.id}
                       onClick={() => {
@@ -324,7 +324,7 @@ export function SessionTree({
 
       {contextMenuState ? (
         <div
-          className="fixed z-50 min-w-40 rounded-md border border-neutral-800 bg-[#17191d] p-1 shadow-[0_14px_40px_rgba(0,0,0,0.45)]"
+          className="fixed z-50 min-w-40 rounded-md border border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] p-1 shadow-[0_14px_40px_rgba(0,0,0,0.45)]"
           ref={contextMenuRef}
           style={{
             left: contextMenuState.x,
@@ -334,7 +334,7 @@ export function SessionTree({
           {contextMenuState.type === 'root' ? (
             <>
               <button
-                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-neutral-200 transition-colors hover:bg-neutral-800"
+                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-bg-elevated3)]"
                 onClick={() => {
                   onOpenNewConnection();
                   setContextMenuState(null);
@@ -344,7 +344,7 @@ export function SessionTree({
                 新建连接
               </button>
               <button
-                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-neutral-200 transition-colors hover:bg-neutral-800"
+                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-bg-elevated3)]"
                 onClick={() => {
                   onCreateGroup();
                   setContextMenuState(null);
@@ -354,7 +354,7 @@ export function SessionTree({
                 新建分组
               </button>
               <button
-                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-neutral-200 transition-colors hover:bg-neutral-800"
+                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-bg-elevated3)]"
                 onClick={() => {
                   onOpenCsvImport();
                   setContextMenuState(null);
@@ -369,7 +369,7 @@ export function SessionTree({
           {contextMenuState.type === 'group' ? (
             <>
               <button
-                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-neutral-200 transition-colors hover:bg-neutral-800"
+                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-bg-elevated3)]"
                 onClick={() => {
                   onCreateGroup();
                   setContextMenuState(null);
@@ -381,7 +381,7 @@ export function SessionTree({
               {!contextMenuState.group.isDefault ? (
                 <>
                   <button
-                    className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-neutral-200 transition-colors hover:bg-neutral-800"
+                    className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-bg-elevated3)]"
                     onClick={() => {
                       onRenameGroup(contextMenuState.group);
                       setContextMenuState(null);
@@ -390,7 +390,7 @@ export function SessionTree({
                   >
                     重命名
                   </button>
-                  <div className="my-1 h-px bg-neutral-800" />
+                  <div className="my-1 h-px bg-[var(--app-bg-elevated3)]" />
                   <button
                     className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-red-300 transition-colors hover:bg-red-500/10 hover:text-red-200"
                     onClick={() => {
@@ -409,7 +409,7 @@ export function SessionTree({
           {contextMenuState.type === 'profile' ? (
             <>
               <button
-                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-neutral-200 transition-colors hover:bg-neutral-800"
+                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-bg-elevated3)]"
                 onClick={() => {
                   onActivateProfile(contextMenuState.profile);
                   setContextMenuState(null);
@@ -419,7 +419,7 @@ export function SessionTree({
                 连接
               </button>
               <button
-                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-neutral-200 transition-colors hover:bg-neutral-800"
+                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-bg-elevated3)]"
                 onClick={() => {
                   onEditProfile(contextMenuState.profile);
                   setContextMenuState(null);
@@ -429,7 +429,7 @@ export function SessionTree({
                 配置
               </button>
               <button
-                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-neutral-200 transition-colors hover:bg-neutral-800"
+                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-bg-elevated3)]"
                 onClick={() => {
                   onMoveProfileToGroup(contextMenuState.profile);
                   setContextMenuState(null);
@@ -438,7 +438,7 @@ export function SessionTree({
               >
                 移动到分组
               </button>
-              <div className="my-1 h-px bg-neutral-800" />
+              <div className="my-1 h-px bg-[var(--app-bg-elevated3)]" />
               <button
                 className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-red-300 transition-colors hover:bg-red-500/10 hover:text-red-200"
                 onClick={() => {
@@ -455,11 +455,11 @@ export function SessionTree({
       ) : null}
 
       {/* Bottom nav */}
-      <footer className="border-t border-neutral-800 px-2 py-2">
+      <footer className="border-t border-[var(--app-border-default)] px-2 py-2">
         <button
           type="button"
           onClick={onOpenSettings}
-          className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-neutral-500 transition-colors hover:bg-neutral-800/60 hover:text-neutral-300"
+          className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-neutral-500 transition-colors hover:bg-[var(--app-bg-elevated3)]/60 hover:text-[var(--app-text-secondary)]"
         >
           <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />

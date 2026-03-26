@@ -65,7 +65,7 @@ export type LlmProvider = {
   providerType: LlmProviderType;
   baseUrl: string | null;
   apiKey: string;
-  model: string;
+  models: string[];
   enabled: boolean;
   isDefault: boolean;
   maxTokens: number;

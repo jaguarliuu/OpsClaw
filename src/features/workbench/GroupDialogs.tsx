@@ -133,7 +133,7 @@ export function MoveProfileDialog({
                       'flex items-center justify-between rounded-md border px-3 py-3 text-left transition-colors',
                       isSelected
                         ? 'border-blue-500 bg-blue-500/10 text-neutral-100'
-                        : 'border-neutral-800 bg-neutral-900/70 text-neutral-300 hover:border-neutral-700 hover:bg-neutral-900'
+                        : 'border-neutral-800 bg-neutral-900/70 text-neutral-300 hover:border-[var(--app-border-strong)] hover:bg-neutral-900'
                     )}
                     key={group.id}
                     onClick={() => onSelectGroup(group.id)}

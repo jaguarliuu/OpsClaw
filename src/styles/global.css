@@ -3,6 +3,8 @@
 @theme {
   --color-app-bg: #111214;
   --font-sans:
+    "Source Han Sans SC",
+    "Noto Sans CJK SC",
     "PingFang SC",
     "Hiragino Sans GB",
     "Microsoft YaHei UI",
@@ -31,8 +33,10 @@
   }
 
   body {
-    @apply bg-[color:var(--color-app-bg)] text-neutral-100 antialiased;
+    background-color: var(--app-bg-base);
+    color: var(--app-text-primary);
     font-family: var(--font-sans);
+    @apply antialiased;
   }
 
   button,

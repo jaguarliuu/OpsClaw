@@ -72,12 +72,12 @@ export function ConnectionPanel({
     <aside
       aria-hidden={!open}
       className={cn(
-        'overflow-hidden border-l border-neutral-800 bg-[#15171b] transition-[width,opacity] duration-200 ease-out',
+        'overflow-hidden border-l border-[var(--app-border-default)] bg-[var(--app-bg-elevated)] transition-[width,opacity] duration-200 ease-out',
         open ? 'w-[392px] opacity-100' : 'w-0 opacity-0'
       )}
     >
       <div className="grid h-full min-h-screen grid-rows-[auto_minmax(0,1fr)_auto]">
-        <header className="flex items-center justify-between border-b border-neutral-800 px-5 py-3">
+        <header className="flex items-center justify-between border-b border-[var(--app-border-default)] px-5 py-3">
           <div>
             <h2 className="text-sm font-semibold text-neutral-100">{title}</h2>
             <p className="mt-1 text-xs text-neutral-500">需要配置时展开，不需要时收起</p>
@@ -131,7 +131,7 @@ export function ConnectionPanel({
 
             <div className="grid gap-2">
               <Label className="text-xs text-neutral-400">验证方式</Label>
-              <div className="flex items-center gap-8 rounded-md border border-neutral-800 bg-[#111317] px-3 py-3">
+              <div className="flex items-center gap-8 rounded-md border border-[var(--app-border-default)] bg-[var(--app-bg-base)] px-3 py-3">
                 <AuthOptionButton
                   active={formValues.authMode === 'password'}
                   onClick={() => {
@@ -204,7 +204,7 @@ export function ConnectionPanel({
                 disabled={isSubmitting}
                 value={formValues.jumpHostId}
                 onChange={(e) => onChange('jumpHostId', e.target.value)}
-                className="h-9 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 text-[13px] text-neutral-100 outline-none focus:border-neutral-500 disabled:opacity-50"
+                className="h-9 w-full rounded-md border border-[var(--app-border-strong)] bg-neutral-900 px-3 text-[13px] text-neutral-100 outline-none focus:border-neutral-500 disabled:opacity-50"
               >
                 <option value="">无（直连）</option>
                 {savedProfiles
@@ -219,7 +219,7 @@ export function ConnectionPanel({
           </div>
         </div>
 
-        <footer className="flex items-center justify-between gap-3 border-t border-neutral-800 px-5 py-4">
+        <footer className="flex items-center justify-between gap-3 border-t border-[var(--app-border-default)] px-5 py-4">
           <div>
             {canDelete ? (
               <Button

@@ -11,7 +11,7 @@ export type StoredLlmProvider = {
   providerType: LlmProviderType;
   baseUrl: string | null;
   apiKey: string; // 已解密
-  model: string;
+  models: string[];
   enabled: boolean;
   isDefault: boolean;
   maxTokens: number;
@@ -25,7 +25,7 @@ export type LlmProviderInput = {
   providerType: LlmProviderType;
   baseUrl?: string;
   apiKey: string;
-  model: string;
+  models: string[];
   maxTokens?: number;
   temperature?: number;
 };
@@ -70,13 +70,15 @@ async function getVault() {
 function mapProviderRow(row: SqlRow): StoredLlmProvider {
   const vault = vaultInstance!;
   const encryptedKey = row.api_key as string | null;
+  const modelsJson = row.models as string | null;
+  const models = modelsJson ? JSON.parse(modelsJson) : [];
   return {
     id: row.id as string,
     name: row.name as string,
     providerType: row.provider_type as LlmProviderType,
     baseUrl: row.base_url as string | null,
     apiKey: (encryptedKey ? vault.decrypt(encryptedKey) : null) ?? '',
-    model: row.model as string,
+    models,
     enabled: Boolean(row.enabled),
     isDefault: Boolean(row.is_default),
     maxTokens: (row.max_tokens as number) || 4096,
@@ -120,13 +122,14 @@ export async function createLlmProviderStore() {
     const id = randomUUID();
     const now = new Date().toISOString();
     const encryptedApiKey = input.apiKey ? vaultInstance!.encrypt(input.apiKey) : null;
+    const modelsJson = JSON.stringify(input.models);
 
     database.run(
       `INSERT INTO llm_providers (
-        id, name, provider_type, base_url, api_key, model,
+        id, name, provider_type, base_url, api_key, models,
         enabled, is_default, max_tokens, temperature, created_at, updated_at
       ) VALUES (
-        :id, :name, :providerType, :baseUrl, :apiKey, :model,
+        :id, :name, :providerType, :baseUrl, :apiKey, :models,
         1, 0, :maxTokens, :temperature, :createdAt, :updatedAt
       )`,
       {
@@ -135,7 +138,7 @@ export async function createLlmProviderStore() {
         ':providerType': input.providerType,
         ':baseUrl': input.baseUrl ?? null,
         ':apiKey': encryptedApiKey,
-        ':model': input.model,
+        ':models': modelsJson,
         ':maxTokens': input.maxTokens ?? 4096,
         ':temperature': input.temperature ?? 0.7,
         ':createdAt': now,
@@ -171,9 +174,9 @@ export async function createLlmProviderStore() {
       updates.push('api_key = :apiKey');
       params[':apiKey'] = input.apiKey ? vaultInstance!.encrypt(input.apiKey) : null;
     }
-    if (input.model !== undefined) {
-      updates.push('model = :model');
-      params[':model'] = input.model;
+    if (input.models !== undefined) {
+      updates.push('models = :models');
+      params[':models'] = JSON.stringify(input.models);
     }
     if (input.maxTokens !== undefined) {
       updates.push('max_tokens = :maxTokens');

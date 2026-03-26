@@ -21,14 +21,15 @@ const PROVIDER_BASE_URLS = {
 
 export async function* streamChat(
   provider: StoredLlmProvider,
+  modelName: string,
   messages: LlmMessage[]
 ): AsyncGenerator<LlmStreamChunk> {
   try {
     const baseUrl = provider.baseUrl || PROVIDER_BASE_URLS[provider.providerType];
 
     const model: Model<'openai-completions'> = {
-      id: provider.model,
-      name: provider.model,
+      id: modelName,
+      name: modelName,
       api: 'openai-completions',
       provider: provider.providerType,
       baseUrl,

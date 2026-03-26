@@ -30,6 +30,34 @@ export type XtermTheme = {
   brightWhite: string;
 };
 
+export type AppTheme = {
+  mode: 'dark' | 'light';
+  bg: {
+    base: string;
+    elevated: string;
+    elevated2: string;
+    elevated3: string;
+  };
+  text: {
+    primary: string;
+    secondary: string;
+    tertiary: string;
+  };
+  border: {
+    default: string;
+    strong: string;
+  };
+  accent: {
+    primary: string;
+    primaryHover: string;
+  };
+  status: {
+    success: string;
+    warning: string;
+    error: string;
+  };
+};
+
 export type TerminalFontFamily =
   | '"IBM Plex Mono", monospace'
   | '"JetBrains Mono", monospace'
@@ -47,6 +75,49 @@ export type TerminalSettings = {
 };
 
 export const TERMINAL_SETTINGS_KEY = 'opsclaw:terminal-settings';
+
+export const APP_THEMES: Record<TerminalThemeName, AppTheme> = {
+  'OpsClaw Dark': {
+    mode: 'dark',
+    bg: { base: '#111214', elevated: '#141519', elevated2: '#17181b', elevated3: '#1e2025' },
+    text: { primary: '#e5e7eb', secondary: '#9ca3af', tertiary: '#6b7280' },
+    border: { default: '#262626', strong: '#404040' },
+    accent: { primary: '#3b82f6', primaryHover: '#2563eb' },
+    status: { success: '#10b981', warning: '#fbbf24', error: '#ef4444' },
+  },
+  'Dracula': {
+    mode: 'dark',
+    bg: { base: '#282a36', elevated: '#2d2f3b', elevated2: '#343746', elevated3: '#3d4051' },
+    text: { primary: '#f8f8f2', secondary: '#a0a0a0', tertiary: '#6272a4' },
+    border: { default: '#44475a', strong: '#5a5d70' },
+    accent: { primary: '#bd93f9', primaryHover: '#a87fe8' },
+    status: { success: '#50fa7b', warning: '#f1fa8c', error: '#ff5555' },
+  },
+  'Catppuccin Mocha': {
+    mode: 'dark',
+    bg: { base: '#1e1e2e', elevated: '#24243e', elevated2: '#2a2a40', elevated3: '#313244' },
+    text: { primary: '#cdd6f4', secondary: '#a6adc8', tertiary: '#7f849c' },
+    border: { default: '#45475a', strong: '#585b70' },
+    accent: { primary: '#89b4fa', primaryHover: '#74a0e8' },
+    status: { success: '#a6e3a1', warning: '#f9e2af', error: '#f38ba8' },
+  },
+  'Solarized Dark': {
+    mode: 'dark',
+    bg: { base: '#002b36', elevated: '#073642', elevated2: '#0d4450', elevated3: '#13525e' },
+    text: { primary: '#fdf6e3', secondary: '#93a1a1', tertiary: '#657b83' },
+    border: { default: '#073642', strong: '#0d4450' },
+    accent: { primary: '#268bd2', primaryHover: '#2176b8' },
+    status: { success: '#859900', warning: '#b58900', error: '#dc322f' },
+  },
+  'Light': {
+    mode: 'light',
+    bg: { base: '#ffffff', elevated: '#f9fafb', elevated2: '#f3f4f6', elevated3: '#e5e7eb' },
+    text: { primary: '#111827', secondary: '#6b7280', tertiary: '#9ca3af' },
+    border: { default: '#e5e7eb', strong: '#d1d5db' },
+    accent: { primary: '#3b82f6', primaryHover: '#2563eb' },
+    status: { success: '#10b981', warning: '#f59e0b', error: '#ef4444' },
+  },
+};
 
 export const TERMINAL_THEMES: Record<TerminalThemeName, XtermTheme> = {
   // OpsClaw custom dark theme

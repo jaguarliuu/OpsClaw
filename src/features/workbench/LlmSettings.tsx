@@ -40,7 +40,7 @@ export function LlmSettings() {
     name: '',
     providerType: 'zhipu' as LlmProviderType,
     apiKey: '',
-    model: 'glm-4-plus',
+    models: ['glm-4-plus'],
   });
 
   useEffect(() => {
@@ -59,7 +59,7 @@ export function LlmSettings() {
     const updated = await fetchLlmProviders();
     setProviders(updated);
     setEditing(null);
-    setFormData({ name: '', providerType: 'zhipu', apiKey: '', model: 'glm-4-plus' });
+    setFormData({ name: '', providerType: 'zhipu', apiKey: '', models: ['glm-4-plus'] });
   };
 
   const handleDelete = async (id: string) => {
@@ -78,13 +78,13 @@ export function LlmSettings() {
       name: provider.name,
       providerType: provider.providerType,
       apiKey: provider.apiKey,
-      model: provider.model,
+      models: provider.models,
     });
   };
 
   const handleCancelEdit = () => {
     setEditing(null);
-    setFormData({ name: '', providerType: 'zhipu', apiKey: '', model: 'glm-4-plus' });
+    setFormData({ name: '', providerType: 'zhipu', apiKey: '', models: ['glm-4-plus'] });
   };
 
   return (
@@ -102,7 +102,7 @@ export function LlmSettings() {
         ) : (
           <div className="space-y-3">
             {providers.map(p => (
-              <div key={p.id} className="group p-5 bg-[#17181b] rounded-xl border border-neutral-800/50 hover:border-neutral-700/50 transition-all duration-200">
+              <div key={p.id} className="group p-5 bg-[#17181b] rounded-xl border border-neutral-800/50 hover:border-[var(--app-border-strong)]/50 transition-all duration-200">
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-2">
@@ -114,9 +114,9 @@ export function LlmSettings() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-neutral-500">
-                      <span className="px-2 py-0.5 bg-neutral-800/50 rounded">{p.providerType}</span>
+                      <span className="px-2 py-0.5 bg-[var(--app-bg-elevated3)]/50 rounded">{p.providerType}</span>
                       <span className="text-neutral-700">·</span>
-                      <span className="font-mono">{p.model}</span>
+                      <span className="font-mono">{p.models.join(', ')}</span>
                     </div>
                   </div>
                   <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
@@ -161,7 +161,7 @@ export function LlmSettings() {
             <Label className="text-sm font-medium text-neutral-300">提供商</Label>
             <Select
               value={formData.providerType}
-              onValueChange={(v: string) => setFormData({ ...formData, providerType: v as LlmProviderType, model: PRESET_MODELS[v as LlmProviderType][0].value })}
+              onValueChange={(v: string) => setFormData({ ...formData, providerType: v as LlmProviderType, models: [PRESET_MODELS[v as LlmProviderType][0].value] })}
             >
               <SelectTrigger className="h-10 bg-[#0a0b0d] border-neutral-800/50 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all">
                 <SelectValue />
@@ -176,24 +176,26 @@ export function LlmSettings() {
           </div>
 
           <div className="space-y-2">
-            <Label className="text-sm font-medium text-neutral-300">模型</Label>
-            <Input
-              placeholder="例如：glm-4-plus"
-              value={formData.model}
-              onChange={e => setFormData({ ...formData, model: e.target.value })}
-              className="h-10 bg-[#0a0b0d] border-neutral-800/50 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all font-mono text-sm"
-            />
-            <div className="flex items-center gap-2 text-xs text-neutral-500 pt-1">
-              <span>常用：</span>
-              {PRESET_MODELS[formData.providerType].map((m) => (
-                <button
-                  key={m.value}
-                  type="button"
-                  onClick={() => setFormData({ ...formData, model: m.value })}
-                  className="px-2 py-1 bg-neutral-800/30 hover:bg-neutral-800/60 text-neutral-400 hover:text-neutral-200 rounded transition-all duration-150 font-mono"
-                >
-                  {m.value}
-                </button>
+            <Label className="text-sm font-medium text-neutral-300">模型（可多选）</Label>
+            <div className="space-y-2 mt-2">
+              {PRESET_MODELS[formData.providerType].map(m => (
+                <label key={m.value} className="flex items-center gap-2 text-sm text-neutral-300">
+                  <input
+                    type="checkbox"
+                    checked={formData.models.includes(m.value)}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      setFormData({
+                        ...formData,
+                        models: checked
+                          ? [...formData.models, m.value]
+                          : formData.models.filter(v => v !== m.value),
+                      });
+                    }}
+                    className="w-4 h-4"
+                  />
+                  {m.label}
+                </label>
               ))}
             </div>
           </div>
@@ -211,11 +213,11 @@ export function LlmSettings() {
 
           <div className="flex gap-3 pt-2">
             {editing && (
-              <Button onClick={handleCancelEdit} variant="secondary" className="flex-1 h-10 hover:bg-neutral-800 transition-colors">
+              <Button onClick={handleCancelEdit} variant="secondary" className="flex-1 h-10 hover:bg-[var(--app-bg-elevated3)] transition-colors">
                 取消
               </Button>
             )}
-            <Button onClick={handleSave} disabled={!formData.name || !formData.apiKey || !formData.model} className="flex-1 h-10 bg-blue-600 hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <Button onClick={handleSave} disabled={!formData.name || !formData.apiKey || formData.models.length === 0} className="flex-1 h-10 bg-blue-600 hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
               {editing ? '保存' : '添加提供商'}
             </Button>
           </div>

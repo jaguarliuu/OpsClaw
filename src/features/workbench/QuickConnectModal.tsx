@@ -70,7 +70,7 @@ export function QuickConnectModal({ open, profiles, onClose, onConnect }: Props)
         <DialogOverlay />
         <DialogPrimitive.Content
           className="fixed left-1/2 top-[18%] z-50 w-[min(540px,calc(100vw-24px))]
-                     -translate-x-1/2 rounded-xl border border-neutral-700
+                     -translate-x-1/2 rounded-xl border border-[var(--app-border-strong)]
                      bg-[#1c1e22] shadow-2xl outline-none"
           onEscapeKeyDown={onClose}
           onOpenAutoFocus={(e) => {
@@ -99,7 +99,7 @@ export function QuickConnectModal({ open, profiles, onClose, onConnect }: Props)
               type="text"
               value={query}
             />
-            <kbd className="rounded border border-neutral-700 bg-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-500">
+            <kbd className="rounded border border-[var(--app-border-strong)] bg-[var(--app-bg-elevated3)] px-1.5 py-0.5 text-[11px] text-neutral-500">
               esc
             </kbd>
           </div>
@@ -116,7 +116,7 @@ export function QuickConnectModal({ open, profiles, onClose, onConnect }: Props)
                   key={profile.id}
                   className={cn(
                     'flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors',
-                    index === selectedIndex ? 'bg-neutral-800' : 'hover:bg-neutral-800/60'
+                    index === selectedIndex ? 'bg-[var(--app-bg-elevated3)]' : 'hover:bg-[var(--app-bg-elevated3)]/60'
                   )}
                   onClick={() => {
                     onConnect(profile);
@@ -133,7 +133,7 @@ export function QuickConnectModal({ open, profiles, onClose, onConnect }: Props)
                       {profile.username}@{profile.host}:{profile.port}
                     </div>
                   </div>
-                  <span className="shrink-0 rounded-full border border-neutral-700 bg-neutral-900 px-2 py-0.5 text-[11px] text-neutral-400">
+                  <span className="shrink-0 rounded-full border border-[var(--app-border-strong)] bg-neutral-900 px-2 py-0.5 text-[11px] text-neutral-400">
                     {profile.group}
                   </span>
                 </button>

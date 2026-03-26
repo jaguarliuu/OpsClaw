@@ -90,7 +90,7 @@ export function CsvImportModal({ open, onClose, onSuccess }: Props) {
           </div>
 
           <div className="space-y-3">
-            <label className="relative flex items-center justify-center h-32 border-2 border-dashed border-neutral-800 rounded-lg hover:border-neutral-700 transition-colors cursor-pointer bg-[#0a0b0d]/30">
+            <label className="relative flex items-center justify-center h-32 border-2 border-dashed border-neutral-800 rounded-lg hover:border-[var(--app-border-strong)] transition-colors cursor-pointer bg-[#0a0b0d]/30">
               <input
                 type="file"
                 accept=".csv"

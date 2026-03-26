@@ -11,6 +11,7 @@ import {
   TERMINAL_THEMES,
 } from '@/features/workbench/terminalSettings';
 import type { TerminalThemeName } from '@/features/workbench/terminalSettings';
+import { LlmProviderSettings } from '@/features/workbench/LlmProviderSettings';
 import { cn } from '@/lib/utils';
 
 const THEME_NAMES: TerminalThemeName[] = [
@@ -21,14 +22,18 @@ const THEME_NAMES: TerminalThemeName[] = [
   'Light',
 ];
 
+type SettingsTab = 'appearance' | 'llm';
+
 type Props = {
   open: boolean;
   onClose: () => void;
+  initialTab?: SettingsTab;
 };
 
-export function TerminalSettingsPanel({ open, onClose }: Props) {
+export function TerminalSettingsPanel({ open, onClose, initialTab = 'appearance' }: Props) {
   const { settings, updateSettings } = useTerminalSettings();
   const [scrollbackRaw, setScrollbackRaw] = useState(String(settings.scrollback));
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(v) => !v && onClose()}>
@@ -36,25 +41,55 @@ export function TerminalSettingsPanel({ open, onClose }: Props) {
         <DialogOverlay />
         <DialogPrimitive.Content
           className="fixed right-0 top-0 z-50 flex h-full w-[min(400px,100vw)] flex-col
-                     border-l border-neutral-700 bg-[#141519] shadow-2xl outline-none"
+                     border-l border-[var(--app-border-strong)] bg-[var(--app-bg-elevated)] shadow-2xl outline-none"
           onEscapeKeyDown={onClose}
         >
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-4">
-            <h2 className="text-[14px] font-semibold text-neutral-100">终端显示设置</h2>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded p-1 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-300"
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-              </svg>
-            </button>
+          <div className="border-b border-[var(--app-border-default)]">
+            <div className="flex items-center justify-between px-5 py-4">
+              <h2 className="text-[14px] font-semibold text-[var(--app-text-primary)]">设置</h2>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded p-1 text-neutral-500 transition-colors hover:bg-[var(--app-bg-elevated3)] hover:text-neutral-300"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            {/* Tabs */}
+            <div className="flex gap-1 px-5">
+              <button
+                type="button"
+                onClick={() => setActiveTab('appearance')}
+                className={cn(
+                  'px-4 py-2 text-[13px] font-medium transition-colors border-b-2',
+                  activeTab === 'appearance'
+                    ? 'border-[var(--app-accent-primary)] text-[var(--app-text-primary)]'
+                    : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text-primary)]'
+                )}
+              >
+                外观
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('llm')}
+                className={cn(
+                  'px-4 py-2 text-[13px] font-medium transition-colors border-b-2',
+                  activeTab === 'llm'
+                    ? 'border-[var(--app-accent-primary)] text-[var(--app-text-primary)]'
+                    : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text-primary)]'
+                )}
+              >
+                LLM 配置
+              </button>
+            </div>
           </div>
 
           {/* Body */}
           <div className="flex-1 overflow-auto px-5 py-5">
+            {activeTab === 'appearance' && (
             <div className="grid gap-7">
 
               {/* Color Theme */}
@@ -72,8 +107,8 @@ export function TerminalSettingsPanel({ open, onClose }: Props) {
                         className={cn(
                           'flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
                           isActive
-                            ? 'border-blue-500 bg-neutral-800'
-                            : 'border-neutral-800 hover:border-neutral-700 hover:bg-neutral-900'
+                            ? 'border-blue-500 bg-[var(--app-bg-elevated3)]'
+                            : 'border-[var(--app-border-default)] hover:border-[var(--app-border-strong)] hover:bg-neutral-900'
                         )}
                       >
                         {/* Color preview: show bg + 4 ANSI sample colors */}
@@ -97,7 +132,7 @@ export function TerminalSettingsPanel({ open, onClose }: Props) {
                           </div>
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="text-[13px] font-medium text-neutral-100">{name}</div>
+                          <div className="text-[13px] font-medium text-[var(--app-text-primary)]">{name}</div>
                           <div className="text-[11px] text-neutral-500">
                             bg {theme.background} · fg {theme.foreground}
                           </div>
@@ -122,8 +157,8 @@ export function TerminalSettingsPanel({ open, onClose }: Props) {
                   onChange={(e) =>
                     updateSettings({ fontFamily: e.target.value as typeof settings.fontFamily })
                   }
-                  className="h-9 w-full rounded-md border border-neutral-700 bg-neutral-900
-                             px-3 text-[13px] text-neutral-100 outline-none
+                  className="h-9 w-full rounded-md border border-[var(--app-border-strong)] bg-neutral-900
+                             px-3 text-[13px] text-[var(--app-text-primary)] outline-none
                              focus:border-neutral-500"
                 >
                   {FONT_FAMILY_OPTIONS.map((opt) => (
@@ -206,6 +241,11 @@ export function TerminalSettingsPanel({ open, onClose }: Props) {
               </div>
 
             </div>
+            )}
+
+            {activeTab === 'llm' && (
+              <LlmProviderSettings open={true} onClose={() => {}} embedded />
+            )}
           </div>
         </DialogPrimitive.Content>
       </DialogPortal>

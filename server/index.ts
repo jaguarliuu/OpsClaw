@@ -411,13 +411,13 @@ async function startServer() {
 
   app.post('/api/llm/providers', (request, response) => {
     try {
-      const { name, providerType, baseUrl, apiKey, model, maxTokens, temperature } = request.body;
+      const { name, providerType, baseUrl, apiKey, models, maxTokens, temperature } = request.body;
       const provider = llmProviderStore.createProvider({
         name,
         providerType,
         baseUrl,
         apiKey,
-        model,
+        models,
         maxTokens,
         temperature,
       });
@@ -464,9 +464,9 @@ async function startServer() {
 
   app.post('/api/llm/chat', async (request, response) => {
     try {
-      const { providerId, messages } = request.body;
+      const { providerId, model, messages } = request.body;
       const provider = llmProviderStore.getProvider(providerId);
-      
+
       if (!provider) {
         response.status(404).json({ message: 'LLM 配置不存在。' });
         return;
@@ -481,7 +481,7 @@ async function startServer() {
       response.setHeader('Cache-Control', 'no-cache');
       response.setHeader('Connection', 'keep-alive');
 
-      for await (const chunk of streamChat(provider, messages)) {
+      for await (const chunk of streamChat(provider, model, messages)) {
         response.write(`data: ${JSON.stringify(chunk)}\n\n`);
       }
 

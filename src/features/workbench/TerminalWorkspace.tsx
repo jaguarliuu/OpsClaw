@@ -201,8 +201,8 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
   };
 
   return (
-    <section className="grid min-h-screen min-w-0 flex-1 grid-rows-[42px_38px_minmax(0,1fr)] bg-[#181a1e]">
-      <header className="flex items-stretch justify-between border-b border-neutral-800 bg-[#17181b] px-2">
+    <section className="grid min-h-screen min-w-0 flex-1 grid-rows-[42px_38px_minmax(0,1fr)] bg-[var(--app-bg-elevated)]">
+      <header className="flex items-stretch justify-between border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] px-2">
         <div className="flex min-w-0 items-stretch gap-1 overflow-auto">
           {sidebarCollapsed ? (
             <Button
@@ -218,8 +218,8 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
           {sessions.map((session, index) => (
             <button
               className={cn(
-                'inline-flex max-w-64 items-center gap-2 rounded-t-md border border-transparent border-b-0 bg-[#23262b] px-3 text-[13px] text-neutral-400',
-                session.id === activeSessionId && 'bg-[#2a2d32] text-neutral-100'
+                'inline-flex max-w-64 items-center gap-2 rounded-t-md border border-transparent border-b-0 bg-[var(--app-bg-elevated3)] px-3 text-[13px] text-neutral-400',
+                session.id === activeSessionId && 'bg-[var(--app-bg-elevated3)] text-[var(--app-text-primary)]'
               )}
               key={session.id}
               onClick={() => onSelectSession(session.id)}
@@ -307,19 +307,19 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
         </div>
       </header>
 
-      <div className="flex items-center justify-end border-b border-neutral-900 bg-[#17191d] px-4 text-sm text-neutral-500">
+      <div className="flex items-center justify-end border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] px-4 text-sm text-neutral-500">
         <div className="flex items-center gap-2">
           {activeSession ? (
             <>
-              <span className="rounded-full border border-neutral-800 bg-neutral-900 px-2.5 py-1 text-xs">
+              <span className="rounded-full border border-[var(--app-border-default)] bg-neutral-900 px-2.5 py-1 text-xs">
                 {activeSession.username}
               </span>
-              <span className="rounded-full border border-neutral-800 bg-neutral-900 px-2.5 py-1 text-xs">
+              <span className="rounded-full border border-[var(--app-border-default)] bg-neutral-900 px-2.5 py-1 text-xs">
                 {activeSession.host}
               </span>
               <span
                 className={cn(
-                  'rounded-full border border-neutral-800 bg-neutral-900 px-2.5 py-1 text-xs',
+                  'rounded-full border border-[var(--app-border-default)] bg-neutral-900 px-2.5 py-1 text-xs',
                   activeSession.status === 'connected' && 'text-emerald-400'
                 )}
               >
@@ -330,7 +330,7 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
         </div>
       </div>
 
-      <div className="relative min-h-0 bg-[#121315]" ref={splitContainerRef}>
+      <div className="relative min-h-0 bg-[var(--app-bg-base)]" ref={splitContainerRef}>
         {sessions.length === 0 ? (
           <div className="grid h-full place-items-center">
             <div className="flex items-center gap-3">
@@ -434,7 +434,7 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
               <div
                 style={getDividerStyle()}
                 className={cn(
-                  'z-10 bg-neutral-800 hover:bg-blue-500/50',
+                  'z-10 bg-[var(--app-bg-elevated3)] hover:bg-blue-500/50',
                   splitLayout === 'horizontal' ? 'cursor-col-resize' : 'cursor-row-resize'
                 )}
                 onMouseDown={handleDividerMouseDown}

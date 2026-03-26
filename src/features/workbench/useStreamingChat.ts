@@ -8,7 +8,7 @@ export function useStreamingChat() {
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const sendMessage = useCallback((providerId: string, userMessage: string) => {
+  const sendMessage = useCallback((providerId: string, model: string, userMessage: string) => {
     const newMessages: LlmMessage[] = [...messages, { role: 'user', content: userMessage }];
     setMessages(newMessages);
     setIsStreaming(true);
@@ -23,7 +23,7 @@ export function useStreamingChat() {
     fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ providerId, messages: newMessages }),
+      body: JSON.stringify({ providerId, model, messages: newMessages }),
       signal: controller.signal,
     })
       .then(async (response) => {
