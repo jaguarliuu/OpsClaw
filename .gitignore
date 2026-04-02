@@ -1,10 +1,6 @@
 node_modules
 dist
-dist-electron
 dist-server
-release
 data
 .DS_Store
 *.local
-
-.agents/
