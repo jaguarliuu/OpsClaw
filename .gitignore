@@ -4,3 +4,7 @@ dist-server
 data
 .DS_Store
 *.local
+
+release/
+
+.agents/
