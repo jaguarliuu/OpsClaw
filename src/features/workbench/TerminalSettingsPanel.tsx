@@ -1,17 +1,20 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { DialogOverlay, DialogPortal } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useTerminalSettings } from '@/features/workbench/TerminalSettingsContext';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useTerminalSettings } from '@/features/workbench/useTerminalSettings';
+import { buildSettingsPath } from '@/features/workbench/settingsNavigation';
 import {
   DEFAULT_TERMINAL_SETTINGS,
   FONT_FAMILY_OPTIONS,
   TERMINAL_THEMES,
 } from '@/features/workbench/terminalSettings';
 import type { TerminalThemeName } from '@/features/workbench/terminalSettings';
-import { LlmProviderSettings } from '@/features/workbench/LlmProviderSettings';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 const THEME_NAMES: TerminalThemeName[] = [
@@ -31,6 +34,7 @@ type Props = {
 };
 
 export function TerminalSettingsPanel({ open, onClose, initialTab = 'appearance' }: Props) {
+  const navigate = useNavigate();
   const { settings, updateSettings } = useTerminalSettings();
   const [scrollbackRaw, setScrollbackRaw] = useState(String(settings.scrollback));
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
@@ -52,6 +56,7 @@ export function TerminalSettingsPanel({ open, onClose, initialTab = 'appearance'
                 type="button"
                 onClick={onClose}
                 className="rounded p-1 text-neutral-500 transition-colors hover:bg-[var(--app-bg-elevated3)] hover:text-neutral-300"
+                title="关闭"
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
@@ -151,22 +156,21 @@ export function TerminalSettingsPanel({ open, onClose, initialTab = 'appearance'
               {/* Font Family */}
               <div className="grid gap-2">
                 <Label htmlFor="font-family" className="text-[12px] uppercase tracking-wider text-neutral-500">字体</Label>
-                <select
-                  id="font-family"
+                <Select
                   value={settings.fontFamily}
-                  onChange={(e) =>
-                    updateSettings({ fontFamily: e.target.value as typeof settings.fontFamily })
-                  }
-                  className="h-9 w-full rounded-md border border-[var(--app-border-strong)] bg-neutral-900
-                             px-3 text-[13px] text-[var(--app-text-primary)] outline-none
-                             focus:border-neutral-500"
+                  onValueChange={(value) => updateSettings({ fontFamily: value as typeof settings.fontFamily })}
                 >
-                  {FONT_FAMILY_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id="font-family" className="h-9 w-full rounded-md border border-[var(--app-border-strong)] bg-neutral-900 px-3 text-[13px] text-[var(--app-text-primary)]" title="选择字体">
+                    <SelectValue placeholder="选择字体" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FONT_FAMILY_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Font Size */}
@@ -184,6 +188,7 @@ export function TerminalSettingsPanel({ open, onClose, initialTab = 'appearance'
                   value={settings.fontSize}
                   onChange={(e) => updateSettings({ fontSize: Number(e.target.value) })}
                   className="w-full accent-blue-500"
+                  title="字号"
                 />
                 <div className="flex justify-between text-[11px] text-neutral-600">
                   <span>10px</span><span>20px</span>
@@ -209,6 +214,7 @@ export function TerminalSettingsPanel({ open, onClose, initialTab = 'appearance'
                     })
                   }
                   className="w-full accent-blue-500"
+                  title="行高"
                 />
                 <div className="flex justify-between text-[11px] text-neutral-600">
                   <span>1.0</span><span>1.8</span>
@@ -244,7 +250,28 @@ export function TerminalSettingsPanel({ open, onClose, initialTab = 'appearance'
             )}
 
             {activeTab === 'llm' && (
-              <LlmProviderSettings open={true} onClose={() => {}} embedded />
+              <div className="grid gap-4">
+                <div className="rounded-xl border border-[var(--app-border-default)] bg-[var(--app-bg-elevated3)] p-4">
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-semibold text-[var(--app-text-primary)]">
+                      统一到设置页管理
+                    </h3>
+                    <p className="text-[13px] leading-6 text-[var(--app-text-secondary)]">
+                      LLM 提供商、默认模型和后续 AI 底座配置都集中在设置页维护，workbench
+                      里不再保留第二套配置界面。
+                    </p>
+                  </div>
+                  <Button
+                    className="mt-4"
+                    onClick={() => {
+                      onClose();
+                      void navigate(buildSettingsPath('llm'));
+                    }}
+                  >
+                    前往统一配置页
+                  </Button>
+                </div>
+              </div>
             )}
           </div>
         </DialogPrimitive.Content>

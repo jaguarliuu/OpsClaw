@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist'],
+    ignores: ['dist', 'dist-server', '.agents', '@'],
   },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
@@ -41,6 +41,12 @@ export default tseslint.config(
     },
     rules: {
       '@typescript-eslint/no-floating-promises': 'off',
+    },
+  },
+  {
+    files: ['**/*.test.ts'],
+    rules: {
+      '@typescript-eslint/require-await': 'off',
     },
   }
 );

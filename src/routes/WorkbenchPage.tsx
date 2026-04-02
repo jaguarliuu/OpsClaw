@@ -1,668 +1,216 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
-import { CommandHistoryPanel } from '@/features/workbench/CommandHistoryPanel';
-import { QuickConnectModal } from '@/features/workbench/QuickConnectModal';
-import { LlmProviderSettings } from '@/features/workbench/LlmProviderSettings';
-import { AiAssistantPanel } from '@/features/workbench/AiAssistantPanel';
-import { CsvImportModal } from '@/features/workbench/CsvImportModal';
-import { TerminalSettingsPanel } from '@/features/workbench/TerminalSettingsPanel';
+import { buildSettingsPath } from '@/features/workbench/settingsNavigation';
+import {
+  buildGroupTree,
+  defaultGroupName,
+} from '@/features/workbench/workbenchPageModel';
+import { useDeferredMount } from '@/features/workbench/useDeferredMount';
+import { scheduleIdleTask } from '@/features/workbench/idleTaskScheduler';
 import { useKeyboardShortcuts } from '@/features/workbench/useKeyboardShortcuts';
+import {
+  preloadAiAssistantPanel,
+  preloadConnectionPanel,
+} from '@/features/workbench/workbenchPanelPreloaders';
+import { useWorkbenchGroupActions } from '@/features/workbench/useWorkbenchGroupActions';
+import {
+  LazyAiAssistantPanel,
+  LazyCommandHistoryPanel,
+  LazyConfirmDialog,
+  LazyConnectionPanel,
+  LazyCsvImportModal,
+  LazyGroupNameDialog,
+  LazyMoveProfileDialog,
+  LazyQuickConnectModal,
+  LazyTerminalSettingsPanel,
+} from '@/features/workbench/workbenchLazyPanels';
+import { useWorkbenchProfileActions } from '@/features/workbench/useWorkbenchProfileActions';
+import { useWorkbenchShellState } from '@/features/workbench/useWorkbenchShellState';
+import { useWorkbenchSessions } from '@/features/workbench/useWorkbenchSessions';
+import { useWorkbenchWorkspaceData } from '@/features/workbench/useWorkbenchWorkspaceData';
 import { TerminalWorkspace, type TerminalWorkspaceHandle } from '@/features/workbench/TerminalWorkspace';
 
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { ConnectionPanel } from '@/features/workbench/ConnectionPanel';
-import { GroupNameDialog, MoveProfileDialog } from '@/features/workbench/GroupDialogs';
-import {
-  createGroup,
-  createNode,
-  deleteGroup,
-  deleteNode,
-  fetchGroups,
-  fetchNode,
-  fetchNodes,
-  fetchPingAll,
-  moveNodeToGroup,
-  renameGroup,
-  updateNode,
-  type GroupRecord,
-  type NodeDetailRecord,
-  type NodeSummaryRecord,
-  type NodeUpsertInput,
-} from '@/features/workbench/api';
 import { SessionTree } from '@/features/workbench/SessionTree';
+import { UtilityDrawer } from '@/features/workbench/UtilityDrawer';
+import { getWorkbenchContentGridClassName } from '@/features/workbench/utilityDrawerModel';
 import type {
-  ConnectionFormValues,
-  ConnectionStatus,
-  LiveSession,
-  SavedConnectionGroup,
   SavedConnectionProfile,
 } from '@/features/workbench/types';
 
-const defaultGroupName = '默认';
-
-const defaultFormValues: ConnectionFormValues = {
-  label: '',
-  host: '',
-  port: '22',
-  username: '',
-  authMode: 'password',
-  password: '',
-  privateKey: '',
-  passphrase: '',
-  jumpHostId: '',
-};
-
-function mapNodeToProfile(node: NodeSummaryRecord): SavedConnectionProfile {
-  return {
-    id: node.id,
-    name: node.name,
-    groupId: node.groupId,
-    group: node.groupName,
-    jumpHostId: node.jumpHostId,
-    host: node.host,
-    port: node.port,
-    username: node.username,
-    authMode: node.authMode,
-    note: node.note,
-  };
-}
-
-function mapNodeDetailToFormValues(node: NodeDetailRecord): ConnectionFormValues {
-  return {
-    label: node.name,
-    host: node.host,
-    port: String(node.port),
-    username: node.username,
-    authMode: node.authMode,
-    password: node.password ?? '',
-    privateKey: node.privateKey ?? '',
-    passphrase: node.passphrase ?? '',
-    jumpHostId: node.jumpHostId ?? '',
-  };
-}
-
-function buildGroupTree(
-  groupRecords: GroupRecord[],
-  profiles: SavedConnectionProfile[]
-): SavedConnectionGroup[] {
-  const groupsById = new Map<string, SavedConnectionGroup>();
-
-  groupRecords.forEach((group) => {
-    groupsById.set(group.id, {
-      id: group.id,
-      name: group.name,
-      isDefault: group.name === defaultGroupName,
-      profiles: [],
-    });
-  });
-
-  const fallbackGroups = new Map<string, SavedConnectionGroup>();
-
-  profiles.forEach((profile) => {
-    const matchedGroup =
-      (profile.groupId ? groupsById.get(profile.groupId) : null) ??
-      fallbackGroups.get(profile.group) ??
-      null;
-
-    if (matchedGroup) {
-      matchedGroup.profiles.push(profile);
-      return;
-    }
-
-    const fallbackGroup: SavedConnectionGroup = {
-      id: profile.groupId ?? `fallback:${profile.group}`,
-      name: profile.group,
-      isDefault: profile.group === defaultGroupName,
-      profiles: [profile],
-    };
-
-    fallbackGroups.set(profile.group, fallbackGroup);
-  });
-
-  return [
-    ...groupRecords
-      .map((group) => groupsById.get(group.id))
-      .filter((group): group is SavedConnectionGroup => group !== undefined),
-    ...Array.from(fallbackGroups.values()).filter(
-      (group) => !groupRecords.some((item) => item.name === group.name)
-    ),
-  ];
-}
-
-function upsertProfile(
-  profiles: SavedConnectionProfile[],
-  nextProfile: SavedConnectionProfile
-) {
-  const existingIndex = profiles.findIndex((profile) => profile.id === nextProfile.id)
-  if (existingIndex === -1) {
-    return [...profiles, nextProfile]
-  }
-
-  return profiles.map((profile) => (profile.id === nextProfile.id ? nextProfile : profile))
-}
-
-function validateForm(formValues: ConnectionFormValues) {
-  if (!formValues.host.trim()) {
-    return '请输入服务器地址。';
-  }
-
-  if (!formValues.username.trim()) {
-    return '请输入用户名。';
-  }
-
-  const port = Number(formValues.port);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    return '端口必须是 1 到 65535 之间的整数。';
-  }
-
-  if (formValues.authMode === 'password' && !formValues.password.trim()) {
-    return '密码验证必须填写密码。';
-  }
-
-  if (formValues.authMode === 'privateKey' && !formValues.privateKey.trim()) {
-    return '密钥验证必须填写私钥。';
-  }
-
-  return null;
-}
-
-function buildNodeInput(
-  formValues: ConnectionFormValues,
-  groupId: string | null
-): NodeUpsertInput {
-  return {
-    name: formValues.label.trim() || formValues.host.trim(),
-    groupId: groupId ?? undefined,
-    groupName: groupId ? undefined : defaultGroupName,
-    jumpHostId: formValues.jumpHostId || undefined,
-    host: formValues.host.trim(),
-    port: Number(formValues.port),
-    username: formValues.username.trim(),
-    authMode: formValues.authMode,
-    password: formValues.authMode === 'password' ? formValues.password : undefined,
-    privateKey: formValues.authMode === 'privateKey' ? formValues.privateKey : undefined,
-    passphrase: formValues.authMode === 'privateKey' ? formValues.passphrase : undefined,
-    note: formValues.authMode === 'password' ? '密码连接' : '密钥连接',
-  };
-}
-
-function buildSessionFromProfile(profile: SavedConnectionProfile): LiveSession {
-  return {
-    id: crypto.randomUUID(),
-    label: profile.name,
-    nodeId: profile.id,
-    host: profile.host,
-    port: profile.port,
-    username: profile.username,
-    authMode: profile.authMode,
-    status: 'connecting',
-  };
-}
-
-async function loadWorkspaceData() {
-  const [nodes, groups] = await Promise.all([fetchNodes(), fetchGroups()]);
-
-  return {
-    groups,
-    profiles: nodes.map(mapNodeToProfile),
-  };
-}
-
 export function WorkbenchPage() {
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [formValues, setFormValues] = useState<ConnectionFormValues>(defaultFormValues);
+  const navigate = useNavigate();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [sessions, setSessions] = useState<LiveSession[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
-  const [savedProfiles, setSavedProfiles] = useState<SavedConnectionProfile[]>([]);
-  const [savedGroupRecords, setSavedGroupRecords] = useState<GroupRecord[]>([]);
-  const [isConnectionPanelOpen, setIsConnectionPanelOpen] = useState(false);
-  const [isLoadingNodes, setIsLoadingNodes] = useState(true);
-  const [nodesError, setNodesError] = useState<string | null>(null);
-  const [modalError, setModalError] = useState<string | null>(null);
-  const [pendingDeleteProfile, setPendingDeleteProfile] = useState<SavedConnectionProfile | null>(null);
-  const [pendingDeleteGroup, setPendingDeleteGroup] = useState<SavedConnectionGroup | null>(null);
-  const [deleteDialogError, setDeleteDialogError] = useState<string | null>(null);
-  const [isSubmittingConnection, setIsSubmittingConnection] = useState(false);
-  const [isSubmittingGroupAction, setIsSubmittingGroupAction] = useState(false);
-  const [groupDialogMode, setGroupDialogMode] = useState<'create' | 'rename' | null>(null);
-  const [groupDialogTarget, setGroupDialogTarget] = useState<SavedConnectionGroup | null>(null);
-  const [groupDialogName, setGroupDialogName] = useState('');
-  const [groupDialogError, setGroupDialogError] = useState<string | null>(null);
-  const [moveDialogProfile, setMoveDialogProfile] = useState<SavedConnectionProfile | null>(null);
-  const [moveDialogTargetGroupId, setMoveDialogTargetGroupId] = useState<string | null>(null);
-  const [moveDialogError, setMoveDialogError] = useState<string | null>(null);
-  const [isQuickConnectOpen, setIsQuickConnectOpen] = useState(false);
-  const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
-  const [isLlmSettingsOpen, setIsLlmSettingsOpen] = useState(false);
-  const [isAiAssistantOpen, setIsAiAssistantOpen] = useState(false);
-  const [isCsvImportOpen, setIsCsvImportOpen] = useState(false);
-  const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
-  const [nodeOnlineStatus, setNodeOnlineStatus] = useState<Record<string, boolean>>({});
   const terminalWorkspaceRef = useRef<TerminalWorkspaceHandle | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadData = async () => {
-      setIsLoadingNodes(true);
-
-      try {
-        const { groups, profiles } = await loadWorkspaceData();
-        if (cancelled) {
-          return;
-        }
-
-        setSavedGroupRecords(groups);
-        setSavedProfiles(profiles);
-        setNodesError(null);
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-
-        setNodesError(error instanceof Error ? error.message : '节点加载失败。');
-      } finally {
-        if (!cancelled) {
-          setIsLoadingNodes(false);
-        }
-      }
-    };
-
-    void loadData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    const poll = () => {
-      void fetchPingAll()
-        .then((results) => {
-          setNodeOnlineStatus(
-            Object.fromEntries(Object.entries(results).map(([id, r]) => [id, r.online]))
-          );
-        })
-        .catch(() => {});
-    };
-    poll();
-    const id = setInterval(poll, 30_000);
-    return () => clearInterval(id);
-  }, []);
-
-
-  const refreshWorkspaceData = async () => {
-    const { groups, profiles } = await loadWorkspaceData();
-    setSavedGroupRecords(groups);
-    setSavedProfiles(profiles);
-    setNodesError(null);
-    return { groups, profiles };
-  };
-
-  const refreshWorkspaceDataInBackground = () => {
-    void refreshWorkspaceData().catch((error) => {
-      setNodesError(error instanceof Error ? error.message : '节点加载失败。');
-    });
-  };
-
-  const findOpenSession = (profile: SavedConnectionProfile) =>
-    sessions.find(
-      (session) =>
-        session.host === profile.host &&
-        session.port === profile.port &&
-        session.username === profile.username &&
-        session.status !== 'closed'
-    );
-
+  const {
+    closeAiAssistant,
+    closeCsvImport,
+    closeHistoryPanel,
+    closeQuickConnect,
+    closeSettingsPanel,
+    closeUtilityDrawer,
+    isAiAssistantOpen,
+    isCsvImportOpen,
+    isHistoryPanelOpen,
+    isQuickConnectOpen,
+    isSettingsPanelOpen,
+    isUtilityDrawerOpen,
+    openCsvImport,
+    openSettingsPanel,
+    toggleAiAssistant,
+    toggleHistoryPanel,
+    toggleQuickConnect,
+    toggleUtilityDrawer,
+  } = useWorkbenchShellState();
+  const shouldRenderQuickConnect = useDeferredMount(isQuickConnectOpen);
+  const shouldRenderHistoryPanel = useDeferredMount(isHistoryPanelOpen);
+  const shouldRenderAiAssistant = useDeferredMount(isAiAssistantOpen);
+  const shouldRenderCsvImport = useDeferredMount(isCsvImportOpen);
+  const shouldRenderSettingsPanel = useDeferredMount(isSettingsPanelOpen);
+  const {
+    isLoadingNodes,
+    nodeOnlineStatus,
+    nodesError,
+    refreshWorkspaceData,
+    refreshWorkspaceDataInBackground,
+    savedGroupRecords,
+    savedProfiles,
+    setNodesError,
+    setSavedProfiles,
+  } = useWorkbenchWorkspaceData();
   const selectedProfile =
     savedProfiles.find((profile) => profile.id === selectedProfileId) ?? null;
   const defaultGroupId =
     savedGroupRecords.find((group) => group.name === defaultGroupName)?.id ?? null;
   const groupedProfiles = buildGroupTree(savedGroupRecords, savedProfiles);
-
-  const handleFormChange = <K extends keyof ConnectionFormValues>(
-    key: K,
-    value: ConnectionFormValues[K]
-  ) => {
-    setModalError(null);
-    setFormValues((current) => ({
-      ...current,
-      [key]: value,
-    }));
-  };
-
-  const openNewConnection = () => {
-    setSelectedProfileId(null);
-    setModalError(null);
-    setFormValues(defaultFormValues);
-    setIsConnectionPanelOpen(true);
-    setIsSidebarCollapsed(false);
-  };
-
-  const openCreateGroupDialog = () => {
-    setGroupDialogMode('create');
-    setGroupDialogTarget(null);
-    setGroupDialogName('');
-    setGroupDialogError(null);
-  };
+  const {
+    activeSessionId,
+    handleActivateProfile: activateProfileSessionState,
+    handleCloseSession,
+    handleSessionStatusChange,
+    handleSwitchToNextTab,
+    handleSwitchToPrevTab,
+    handleSwitchToTabIndex,
+    sessions,
+    setActiveSessionId,
+    setSessions,
+  } = useWorkbenchSessions({
+    setIsSidebarCollapsed,
+    setSelectedProfileId,
+  });
+  const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
+  const {
+    closeConnectionPanel,
+    closeDeleteProfileDialog,
+    deleteDialogError: profileDeleteDialogError,
+    formValues,
+    handleConnect,
+    handleDeleteNode,
+    handleDeleteProfile,
+    handleEditProfile,
+    handleFormChange,
+    handleRequestDeleteSelectedProfile,
+    handleSaveOnly,
+    isConnectionPanelOpen,
+    isSubmittingConnection,
+    modalError,
+    openNewConnection,
+    pendingDeleteProfile,
+  } = useWorkbenchProfileActions({
+    activeSessionId,
+    defaultGroupId,
+    refreshWorkspaceDataInBackground,
+    selectedProfile,
+    selectedProfileId,
+    setActiveSessionId,
+    setIsSidebarCollapsed,
+    setNodesError,
+    setSavedProfiles,
+    setSelectedProfileId,
+    setSessions,
+  });
+  const {
+    closeDeleteGroupDialog,
+    closeGroupDialog,
+    closeMoveProfileDialog,
+    deleteDialogError: groupDeleteDialogError,
+    groupDialogError,
+    groupDialogMode,
+    groupDialogName,
+    handleConfirmDeleteGroup,
+    handleDeleteGroup,
+    handleConfirmGroupDialog,
+    handleConfirmMoveProfileToGroup,
+    handleGroupDialogNameChange,
+    handleMoveDialogGroupSelect,
+    handleMoveProfileToGroup,
+    handleRequestRenameGroup,
+    isSubmittingDeleteGroup,
+    isSubmittingGroupAction,
+    moveDialogError,
+    moveDialogProfile,
+    moveDialogTargetGroupId,
+    openCreateGroupDialog,
+    pendingDeleteGroup,
+  } = useWorkbenchGroupActions({
+    defaultGroupId,
+    refreshWorkspaceData,
+    refreshWorkspaceDataInBackground,
+    setSavedProfiles,
+    setSelectedProfileId,
+  });
+  const shouldRenderDeleteDialogs = useDeferredMount(
+    pendingDeleteProfile !== null || pendingDeleteGroup !== null
+  );
+  const shouldRenderConnectionPanel = useDeferredMount(isConnectionPanelOpen);
+  const shouldRenderGroupDialog = useDeferredMount(groupDialogMode !== null);
+  const shouldRenderMoveDialog = useDeferredMount(moveDialogProfile !== null);
 
   const handleSelectProfile = (profile: SavedConnectionProfile) => {
     setSelectedProfileId(profile.id);
   };
 
-  const handleEditProfile = (profile: SavedConnectionProfile) => {
-    setSelectedProfileId(profile.id);
-    setModalError(null);
-    setIsConnectionPanelOpen(true);
-    setIsSubmittingConnection(true);
-
-    void fetchNode(profile.id)
-      .then((node) => {
-        setSavedProfiles((current) => upsertProfile(current, mapNodeToProfile(node)));
-        setSelectedProfileId(node.id);
-        setFormValues(mapNodeDetailToFormValues(node));
-      })
-      .catch((error) => {
-        setModalError(error instanceof Error ? error.message : '节点读取失败。');
-      })
-      .finally(() => {
-        setIsSubmittingConnection(false);
-      });
-  };
-
   const handleActivateProfile = (profile: SavedConnectionProfile) => {
-    setSelectedProfileId(profile.id);
-
-    const existingSession = findOpenSession(profile);
-    if (existingSession) {
-      setActiveSessionId(existingSession.id);
-      setIsSidebarCollapsed(true);
-      return;
-    }
-
-    const nextSession = buildSessionFromProfile(profile);
-    setSessions((current) => [...current, nextSession]);
-    setActiveSessionId(nextSession.id);
-    setIsConnectionPanelOpen(false);
-    setIsSidebarCollapsed(true);
-    setModalError(null);
-  };
-
-  const persistProfile = async () => {
-    const validationError = validateForm(formValues);
-    if (validationError) {
-      setModalError(validationError);
-      return null;
-    }
-
-    setIsSubmittingConnection(true);
-
-    try {
-      const payload = buildNodeInput(
-        formValues,
-        selectedProfile?.groupId ?? defaultGroupId
-      );
-      const node = selectedProfileId
-        ? await updateNode(selectedProfileId, payload)
-        : await createNode(payload);
-      const savedProfile = mapNodeToProfile(node);
-
-      setSavedProfiles((current) => upsertProfile(current, savedProfile));
-      setSelectedProfileId(savedProfile.id);
-      setNodesError(null);
-      setModalError(null);
-      refreshWorkspaceDataInBackground();
-
-      return savedProfile;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '节点保存失败。';
-      setModalError(message);
-      return null;
-    } finally {
-      setIsSubmittingConnection(false);
-    }
-  };
-
-  const handleSaveOnly = async () => {
-    const savedProfile = await persistProfile();
-    if (!savedProfile) {
-      return;
-    }
-
-    setIsConnectionPanelOpen(false);
-  };
-
-  const handleConnect = async (saveProfileBeforeConnect: boolean) => {
-    if (!saveProfileBeforeConnect) {
-      return;
-    }
-
-    const savedProfile = await persistProfile();
-    if (!savedProfile) {
-      return;
-    }
-
-    const nextSession = buildSessionFromProfile(savedProfile);
-    setSessions((current) => [...current, nextSession]);
-    setActiveSessionId(nextSession.id);
-    setIsConnectionPanelOpen(false);
-    setIsSidebarCollapsed(true);
-    setModalError(null);
-  };
-
-  const handleDeleteNode = async (profileOverride?: SavedConnectionProfile) => {
-    const targetId = profileOverride?.id ?? selectedProfileId;
-    if (!targetId) {
-      return;
-    }
-
-    setIsSubmittingConnection(true);
-    setDeleteDialogError(null);
-
-    try {
-      await deleteNode(targetId);
-
-      setSavedProfiles((current) =>
-        current.filter((profile) => profile.id !== targetId)
-      );
-      setSessions((current) => {
-        const remaining = current.filter((session) => session.nodeId !== targetId);
-        if (
-          activeSessionId &&
-          current.some((session) => session.id === activeSessionId && session.nodeId === targetId)
-        ) {
-          setActiveSessionId(remaining[0]?.id ?? null);
-        }
-        return remaining;
-      });
-      if (selectedProfileId === targetId) {
-        setSelectedProfileId(null);
-      }
-      setPendingDeleteProfile(null);
-      setFormValues(defaultFormValues);
-      setIsConnectionPanelOpen(false);
-      setModalError(null);
-      refreshWorkspaceDataInBackground();
-    } catch (error) {
-      setDeleteDialogError(error instanceof Error ? error.message : '节点删除失败。');
-    } finally {
-      setIsSubmittingConnection(false);
-    }
-  };
-
-  const handleDeleteProfile = (profile: SavedConnectionProfile) => {
-    setSelectedProfileId(profile.id);
-    setDeleteDialogError(null);
-    setPendingDeleteProfile(profile);
-  };
-
-  const handleRequestDeleteSelectedProfile = () => {
-    if (!selectedProfile) {
-      return;
-    }
-
-    setDeleteDialogError(null);
-    setPendingDeleteProfile(selectedProfile);
-  };
-
-  const handleMoveProfileToGroup = (profile: SavedConnectionProfile) => {
-    setSelectedProfileId(profile.id);
-    setMoveDialogProfile(profile);
-    setMoveDialogTargetGroupId(profile.groupId ?? defaultGroupId);
-    setMoveDialogError(null);
-  };
-
-  const handleConfirmMoveProfileToGroup = async () => {
-    if (!moveDialogProfile || !moveDialogTargetGroupId) {
-      return;
-    }
-
-    setIsSubmittingGroupAction(true);
-    setMoveDialogError(null);
-
-    try {
-      const updatedNode = await moveNodeToGroup(moveDialogProfile.id, moveDialogTargetGroupId);
-      setSavedProfiles((current) => upsertProfile(current, mapNodeToProfile(updatedNode)));
-      setMoveDialogProfile(null);
-      setMoveDialogTargetGroupId(null);
-      refreshWorkspaceDataInBackground();
-    } catch (error) {
-      setMoveDialogError(error instanceof Error ? error.message : '节点移动失败。');
-    } finally {
-      setIsSubmittingGroupAction(false);
-    }
-  };
-
-  const handleRequestRenameGroup = (group: SavedConnectionGroup) => {
-    if (group.isDefault) {
-      return;
-    }
-
-    setGroupDialogMode('rename');
-    setGroupDialogTarget(group);
-    setGroupDialogName(group.name);
-    setGroupDialogError(null);
-  };
-
-  const handleConfirmGroupDialog = async () => {
-    const normalizedName = groupDialogName.trim();
-    if (!normalizedName) {
-      setGroupDialogError('请输入分组名称。');
-      return;
-    }
-
-    setIsSubmittingGroupAction(true);
-    setGroupDialogError(null);
-
-    try {
-      if (groupDialogMode === 'create') {
-        await createGroup(normalizedName);
-      }
-
-      if (groupDialogMode === 'rename' && groupDialogTarget) {
-        await renameGroup(groupDialogTarget.id, normalizedName);
-      }
-
-      await refreshWorkspaceData();
-      setGroupDialogMode(null);
-      setGroupDialogTarget(null);
-      setGroupDialogName('');
-    } catch (error) {
-      setGroupDialogError(error instanceof Error ? error.message : '分组保存失败。');
-    } finally {
-      setIsSubmittingGroupAction(false);
-    }
-  };
-
-  const handleDeleteGroup = (group: SavedConnectionGroup) => {
-    if (group.isDefault) {
-      return;
-    }
-
-    setDeleteDialogError(null);
-    setPendingDeleteGroup(group);
-  };
-
-  const handleConfirmDeleteGroup = async () => {
-    if (!pendingDeleteGroup) {
-      return;
-    }
-
-    setIsSubmittingGroupAction(true);
-    setDeleteDialogError(null);
-
-    try {
-      await deleteGroup(pendingDeleteGroup.id);
-      await refreshWorkspaceData();
-      setPendingDeleteGroup(null);
-    } catch (error) {
-      setDeleteDialogError(error instanceof Error ? error.message : '分组删除失败。');
-    } finally {
-      setIsSubmittingGroupAction(false);
-    }
-  };
-
-  const handleSessionStatusChange = (
-    sessionId: string,
-    status: ConnectionStatus,
-    errorMessage?: string
-  ) => {
-    setSessions((current) =>
-      current.map((session) => {
-        if (session.id !== sessionId) {
-          return session;
-        }
-
-        if (session.status === status && session.errorMessage === errorMessage) {
-          return session;
-        }
-
-        return {
-          ...session,
-          status,
-          errorMessage,
-        };
-      })
-    );
-  };
-
-  const handleCloseSession = (sessionId: string) => {
-    setSessions((current) => {
-      const remaining = current.filter((session) => session.id !== sessionId);
-      if (activeSessionId === sessionId) {
-        setActiveSessionId(remaining[0]?.id ?? null);
-      }
-      return remaining;
-    });
+    activateProfileSessionState(profile);
+    closeConnectionPanel();
   };
 
   useKeyboardShortcuts({
-    onToggleQuickConnect: () => setIsQuickConnectOpen((prev) => !prev),
-    onToggleCommandHistory: () => setIsHistoryPanelOpen((prev) => !prev),
-    onToggleLlmSettings: () => setIsLlmSettingsOpen((prev) => !prev),
-    onToggleAiAssistant: () => setIsAiAssistantOpen((prev) => !prev),
+    onToggleQuickConnect: toggleQuickConnect,
+    onToggleCommandHistory: toggleHistoryPanel,
+    onToggleLlmSettings: () => {
+      void navigate(buildSettingsPath('llm'));
+    },
+    onToggleAiAssistant: toggleAiAssistant,
+    onToggleUtilityDrawer: toggleUtilityDrawer,
     onCloseActiveTab: () => {
       if (activeSessionId) handleCloseSession(activeSessionId);
     },
     onOpenNewConnection: openNewConnection,
-    onSwitchToTabIndex: (index) => {
-      const target = sessions[index];
-      if (target) setActiveSessionId(target.id);
-    },
-    onSwitchToPrevTab: () => {
-      if (!activeSessionId || sessions.length === 0) return;
-      const idx = sessions.findIndex((s) => s.id === activeSessionId);
-      const prev = sessions[(idx - 1 + sessions.length) % sessions.length];
-      if (prev) setActiveSessionId(prev.id);
-    },
-    onSwitchToNextTab: () => {
-      if (!activeSessionId || sessions.length === 0) return;
-      const idx = sessions.findIndex((s) => s.id === activeSessionId);
-      const next = sessions[(idx + 1) % sessions.length];
-      if (next) setActiveSessionId(next.id);
-    },
+    onSwitchToTabIndex: handleSwitchToTabIndex,
+    onSwitchToPrevTab: handleSwitchToPrevTab,
+    onSwitchToNextTab: handleSwitchToNextTab,
   });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    return scheduleIdleTask(
+      {
+        requestIdleCallback: window.requestIdleCallback?.bind(window),
+        cancelIdleCallback: window.cancelIdleCallback?.bind(window),
+        setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+        clearTimeout: (handle) => window.clearTimeout(handle as number | undefined),
+      },
+      () => {
+      preloadConnectionPanel();
+      preloadAiAssistantPanel();
+      }
+    );
+  }, []);
 
   return (
     <div className="flex min-h-screen bg-[var(--app-bg-base)]">
@@ -680,177 +228,205 @@ export function WorkbenchPage() {
         onEditProfile={handleEditProfile}
         onMoveProfileToGroup={handleMoveProfileToGroup}
         onOpenNewConnection={openNewConnection}
-        onOpenCsvImport={() => setIsCsvImportOpen(true)}
+        onOpenCsvImport={openCsvImport}
         onRenameGroup={handleRequestRenameGroup}
         onSelectProfile={handleSelectProfile}
         onSelectSession={setActiveSessionId}
         onToggleCollapse={() => setIsSidebarCollapsed((current) => !current)}
-        onOpenSettings={() => setIsSettingsPanelOpen(true)}
+        onOpenSettings={openSettingsPanel}
         selectedProfileId={selectedProfileId}
         sessions={sessions}
       />
 
-      <TerminalWorkspace
-        ref={terminalWorkspaceRef}
-        activeSessionId={activeSessionId}
-        onCloseSession={handleCloseSession}
-        onOpenNewConnection={openNewConnection}
-        onSelectSession={setActiveSessionId}
-        onSessionStatusChange={handleSessionStatusChange}
-        onToggleSidebar={() => setIsSidebarCollapsed((current) => !current)}
-        onOpenAiAssistant={() => setIsAiAssistantOpen(true)}
-        sidebarCollapsed={isSidebarCollapsed}
-        sessions={sessions}
-      />
+      <div className={getWorkbenchContentGridClassName(isUtilityDrawerOpen)}>
+        <TerminalWorkspace
+          ref={terminalWorkspaceRef}
+          activeSessionId={activeSessionId}
+          isUtilityDrawerOpen={isUtilityDrawerOpen}
+          isMacShortcutPlatform={typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)}
+          onCloseSession={handleCloseSession}
+          onOpenNewConnection={openNewConnection}
+          onToggleUtilityDrawer={toggleUtilityDrawer}
+          onSelectSession={setActiveSessionId}
+          onSessionStatusChange={handleSessionStatusChange}
+          onToggleSidebar={() => setIsSidebarCollapsed((current) => !current)}
+          onOpenAiAssistant={toggleAiAssistant}
+          sidebarCollapsed={isSidebarCollapsed}
+          sessions={sessions}
+        />
 
-      <ConnectionPanel
-        canDelete={selectedProfileId !== null}
-        currentNodeId={selectedProfileId}
-        errorMessage={modalError}
-        formValues={formValues}
-        isSubmitting={isSubmittingConnection}
-        onChange={handleFormChange}
-        onClose={() => setIsConnectionPanelOpen(false)}
-        onConnect={handleConnect}
-        onDelete={handleRequestDeleteSelectedProfile}
-        onSaveOnly={handleSaveOnly}
-        open={isConnectionPanelOpen}
-        savedProfiles={savedProfiles}
-        title={selectedProfileId ? '连接配置' : '新建连接'}
-      />
+        <UtilityDrawer
+          activeNodeId={activeSession?.nodeId ?? null}
+          activeSessionId={activeSessionId}
+          activeSessionLabel={activeSession?.label ?? null}
+          onClose={closeUtilityDrawer}
+          open={isUtilityDrawerOpen}
+          onExecuteCommand={(command) => {
+            terminalWorkspaceRef.current?.sendCommandToActive(command);
+          }}
+        />
+      </div>
 
-      <ConfirmDialog
-        confirmLabel={isSubmittingConnection ? '删除中...' : '删除节点'}
-        description={
-          pendingDeleteProfile
-            ? `删除节点「${pendingDeleteProfile.name}」后将无法恢复，相关会话也会被关闭。`
-            : ''
-        }
-        destructive
-        errorMessage={deleteDialogError}
-        onClose={() => {
-          setDeleteDialogError(null);
-          setPendingDeleteProfile(null);
-        }}
-        onConfirm={() => {
-          if (!pendingDeleteProfile) {
-            return;
-          }
+      {shouldRenderConnectionPanel ? (
+        <Suspense fallback={null}>
+          <LazyConnectionPanel
+            canDelete={selectedProfileId !== null}
+            currentNodeId={selectedProfileId}
+            errorMessage={modalError}
+            formValues={formValues}
+            isSubmitting={isSubmittingConnection}
+            onChange={handleFormChange}
+            onClose={closeConnectionPanel}
+            onConnect={handleConnect}
+            onDelete={handleRequestDeleteSelectedProfile}
+            onSaveOnly={handleSaveOnly}
+            open={isConnectionPanelOpen}
+            savedProfiles={savedProfiles}
+            title={selectedProfileId ? '连接配置' : '新建连接'}
+          />
+        </Suspense>
+      ) : null}
 
-          void handleDeleteNode(pendingDeleteProfile);
-        }}
-        open={pendingDeleteProfile !== null}
-        title="确认删除"
-      />
+      {shouldRenderDeleteDialogs ? (
+        <Suspense fallback={null}>
+          <LazyConfirmDialog
+            confirmLabel={isSubmittingConnection ? '删除中...' : '删除节点'}
+            description={
+              pendingDeleteProfile
+                ? `删除节点「${pendingDeleteProfile.name}」后将无法恢复，相关会话也会被关闭。`
+                : ''
+            }
+            destructive
+            errorMessage={profileDeleteDialogError}
+            onClose={closeDeleteProfileDialog}
+            onConfirm={() => {
+              if (!pendingDeleteProfile) {
+                return;
+              }
 
-      <ConfirmDialog
-        confirmLabel={isSubmittingGroupAction ? '删除中...' : '删除分组'}
-        description={
-          pendingDeleteGroup
-            ? `删除分组「${pendingDeleteGroup.name}」后，其中的主机会自动移动到默认分组。`
-            : ''
-        }
-        destructive
-        errorMessage={deleteDialogError}
-        onClose={() => {
-          setDeleteDialogError(null);
-          setPendingDeleteGroup(null);
-        }}
-        onConfirm={() => {
-          void handleConfirmDeleteGroup();
-        }}
-        open={pendingDeleteGroup !== null}
-        title="确认删除分组"
-      />
+              void handleDeleteNode(pendingDeleteProfile);
+            }}
+            open={pendingDeleteProfile !== null}
+            title="确认删除"
+          />
 
-      <GroupNameDialog
-        confirmLabel={groupDialogMode === 'rename' ? '保存分组' : '新建分组'}
-        description={
-          groupDialogMode === 'rename'
-            ? '修改分组名称后，左侧分组树会立即更新。'
-            : '创建分组后，可以把主机移动到该分组下。'
-        }
-        errorMessage={groupDialogError}
-        isSubmitting={isSubmittingGroupAction}
-        onClose={() => {
-          setGroupDialogMode(null);
-          setGroupDialogTarget(null);
-          setGroupDialogName('');
-          setGroupDialogError(null);
-        }}
-        onConfirm={() => {
-          void handleConfirmGroupDialog();
-        }}
-        onValueChange={(value) => {
-          setGroupDialogName(value);
-          setGroupDialogError(null);
-        }}
-        open={groupDialogMode !== null}
-        title={groupDialogMode === 'rename' ? '重命名分组' : '新建分组'}
-        value={groupDialogName}
-      />
+          <LazyConfirmDialog
+            confirmLabel={isSubmittingDeleteGroup ? '删除中...' : '删除分组'}
+            description={
+              pendingDeleteGroup
+                ? `删除分组「${pendingDeleteGroup.name}」后，其中的主机会自动移动到默认分组。`
+                : ''
+            }
+            destructive
+            errorMessage={groupDeleteDialogError}
+            onClose={closeDeleteGroupDialog}
+            onConfirm={() => {
+              void handleConfirmDeleteGroup();
+            }}
+            open={pendingDeleteGroup !== null}
+            title="确认删除分组"
+          />
+        </Suspense>
+      ) : null}
 
-      <MoveProfileDialog
-        errorMessage={moveDialogError}
-        groups={groupedProfiles}
-        isSubmitting={isSubmittingGroupAction}
-        onClose={() => {
-          setMoveDialogProfile(null);
-          setMoveDialogTargetGroupId(null);
-          setMoveDialogError(null);
-        }}
-        onConfirm={() => {
-          void handleConfirmMoveProfileToGroup();
-        }}
-        onSelectGroup={(groupId) => {
-          setMoveDialogTargetGroupId(groupId);
-          setMoveDialogError(null);
-        }}
-        open={moveDialogProfile !== null}
-        profile={moveDialogProfile}
-        selectedGroupId={moveDialogTargetGroupId}
-      />
+      {shouldRenderGroupDialog ? (
+        <Suspense fallback={null}>
+          <LazyGroupNameDialog
+            confirmLabel={groupDialogMode === 'rename' ? '保存分组' : '新建分组'}
+            description={
+              groupDialogMode === 'rename'
+                ? '修改分组名称后，左侧分组树会立即更新。'
+                : '创建分组后，可以把主机移动到该分组下。'
+            }
+            errorMessage={groupDialogError}
+            isSubmitting={isSubmittingGroupAction}
+            onClose={closeGroupDialog}
+            onConfirm={() => {
+              void handleConfirmGroupDialog();
+            }}
+            onValueChange={handleGroupDialogNameChange}
+            open={groupDialogMode !== null}
+            title={groupDialogMode === 'rename' ? '重命名分组' : '新建分组'}
+            value={groupDialogName}
+          />
+        </Suspense>
+      ) : null}
 
-      <QuickConnectModal
-        onClose={() => setIsQuickConnectOpen(false)}
-        onConnect={(profile) => {
-          setIsQuickConnectOpen(false);
-          handleActivateProfile(profile);
-        }}
-        open={isQuickConnectOpen}
-        profiles={savedProfiles}
-      />
+      {shouldRenderMoveDialog ? (
+        <Suspense fallback={null}>
+          <LazyMoveProfileDialog
+            errorMessage={moveDialogError}
+            groups={groupedProfiles}
+            isSubmitting={isSubmittingGroupAction}
+            onClose={closeMoveProfileDialog}
+            onConfirm={() => {
+              void handleConfirmMoveProfileToGroup();
+            }}
+            onSelectGroup={handleMoveDialogGroupSelect}
+            open={moveDialogProfile !== null}
+            profile={moveDialogProfile}
+            selectedGroupId={moveDialogTargetGroupId}
+          />
+        </Suspense>
+      ) : null}
 
-      <CommandHistoryPanel
-        open={isHistoryPanelOpen}
-        activeNodeId={sessions.find((s) => s.id === activeSessionId)?.nodeId}
-        onClose={() => setIsHistoryPanelOpen(false)}
-        onExecute={(command) => {
-          terminalWorkspaceRef.current?.sendCommandToActive(command);
-          setIsHistoryPanelOpen(false);
-        }}
-      />
+      {shouldRenderQuickConnect ? (
+        <Suspense fallback={null}>
+          <LazyQuickConnectModal
+            onClose={closeQuickConnect}
+            onConnect={(profile) => {
+              closeQuickConnect();
+              handleActivateProfile(profile);
+            }}
+            open={isQuickConnectOpen}
+            profiles={savedProfiles}
+          />
+        </Suspense>
+      ) : null}
 
-      <LlmProviderSettings
-        open={isLlmSettingsOpen}
-        onClose={() => setIsLlmSettingsOpen(false)}
-      />
+      {shouldRenderHistoryPanel ? (
+        <Suspense fallback={null}>
+          <LazyCommandHistoryPanel
+            open={isHistoryPanelOpen}
+            activeNodeId={sessions.find((s) => s.id === activeSessionId)?.nodeId}
+            onClose={closeHistoryPanel}
+            onExecute={(command) => {
+              terminalWorkspaceRef.current?.sendCommandToActive(command);
+              closeHistoryPanel();
+            }}
+          />
+        </Suspense>
+      ) : null}
 
-      <AiAssistantPanel
-        open={isAiAssistantOpen}
-        onClose={() => setIsAiAssistantOpen(false)}
-      />
+      {shouldRenderAiAssistant ? (
+        <Suspense fallback={null}>
+          <LazyAiAssistantPanel
+            open={isAiAssistantOpen}
+            onClose={closeAiAssistant}
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+          />
+        </Suspense>
+      ) : null}
 
-      <CsvImportModal
-        open={isCsvImportOpen}
-        onClose={() => setIsCsvImportOpen(false)}
-        onSuccess={refreshWorkspaceDataInBackground}
-      />
+      {shouldRenderCsvImport ? (
+        <Suspense fallback={null}>
+          <LazyCsvImportModal
+            open={isCsvImportOpen}
+            onClose={closeCsvImport}
+            onSuccess={refreshWorkspaceDataInBackground}
+          />
+        </Suspense>
+      ) : null}
 
-      <TerminalSettingsPanel
-        open={isSettingsPanelOpen}
-        onClose={() => setIsSettingsPanelOpen(false)}
-      />
+      {shouldRenderSettingsPanel ? (
+        <Suspense fallback={null}>
+          <LazyTerminalSettingsPanel
+            open={isSettingsPanelOpen}
+            onClose={closeSettingsPanel}
+          />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

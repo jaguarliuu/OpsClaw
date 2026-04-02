@@ -1,91 +1,108 @@
 import { useCallback, useRef, useState } from 'react';
-import type { LlmMessage, LlmStreamChunk } from './types';
-import { buildServerHttpBaseUrl } from './serverBase';
+import { streamLlmChat } from './llmApi';
+import {
+  applyStreamingChatContent,
+  clearStreamingChatState,
+  createStreamingChatStartState,
+  createStreamingChatState,
+  failStreamingChat,
+  finishStreamingChat,
+  stopStreamingChat,
+  type StreamingChatState,
+} from './useStreamingChatModel';
 
 export function useStreamingChat() {
-  const [messages, setMessages] = useState<LlmMessage[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [state, setState] = useState<StreamingChatState>(() => createStreamingChatState());
   const abortControllerRef = useRef<AbortController | null>(null);
+  const stateRef = useRef(state);
+  const streamRequestIdRef = useRef(0);
 
   const sendMessage = useCallback((providerId: string, model: string, userMessage: string) => {
-    const newMessages: LlmMessage[] = [...messages, { role: 'user', content: userMessage }];
-    setMessages(newMessages);
-    setIsStreaming(true);
-    setError(null);
+    const normalizedMessage = userMessage.trim();
+    if (!normalizedMessage) {
+      return;
+    }
 
-    let assistantContent = '';
+    const nextState = createStreamingChatStartState(stateRef.current, normalizedMessage);
+    stateRef.current = nextState;
+    setState(nextState);
+
+    const requestId = streamRequestIdRef.current + 1;
+    streamRequestIdRef.current = requestId;
     const controller = new AbortController();
+    abortControllerRef.current?.abort();
     abortControllerRef.current = controller;
 
-    const url = `${buildServerHttpBaseUrl()}/api/llm/chat`;
-
-    fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ providerId, model, messages: newMessages }),
+    streamLlmChat({
+      providerId,
+      model,
+      messages: nextState.messages,
       signal: controller.signal,
+      onContent: (_chunk, fullText) => {
+        if (streamRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        const contentState = applyStreamingChatContent(stateRef.current, fullText);
+        stateRef.current = contentState;
+        setState(contentState);
+      },
     })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+      .then(() => {
+        if (streamRequestIdRef.current !== requestId) {
+          return;
         }
 
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder();
-
-        if (!reader) {
-          throw new Error('无法读取响应流');
+        const completedState = finishStreamingChat(stateRef.current);
+        stateRef.current = completedState;
+        setState(completedState);
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
         }
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const text = decoder.decode(value, { stream: true });
-          const lines = text.split('\n');
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
-              try {
-                const chunk = JSON.parse(data) as LlmStreamChunk;
-
-                if (chunk.type === 'content' && chunk.content) {
-                  assistantContent += chunk.content;
-                  setMessages([...newMessages, { role: 'assistant', content: assistantContent }]);
-                } else if (chunk.type === 'done') {
-                  setIsStreaming(false);
-                } else if (chunk.type === 'error') {
-                  setError(chunk.error ?? '未知错误');
-                  setIsStreaming(false);
-                }
-              } catch {
-                // 忽略解析错误
-              }
-            }
-          }
-        }
-
-        setIsStreaming(false);
       })
       .catch((err) => {
-        if (err.name !== 'AbortError') {
-          setError(err instanceof Error ? err.message : '请求失败');
-          setIsStreaming(false);
+        if (streamRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+          const failedState = failStreamingChat(
+            stateRef.current,
+            err instanceof Error ? err.message : '请求失败'
+          );
+          stateRef.current = failedState;
+          setState(failedState);
+        }
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
         }
       });
-  }, [messages]);
+  }, []);
 
   const stopStreaming = useCallback(() => {
     abortControllerRef.current?.abort();
-    setIsStreaming(false);
+    abortControllerRef.current = null;
+    streamRequestIdRef.current += 1;
+    const stoppedState = stopStreamingChat(stateRef.current);
+    stateRef.current = stoppedState;
+    setState(stoppedState);
   }, []);
 
   const clearMessages = useCallback(() => {
-    setMessages([]);
-    setError(null);
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    streamRequestIdRef.current += 1;
+    const clearedState = clearStreamingChatState();
+    stateRef.current = clearedState;
+    setState(clearedState);
   }, []);
 
-  return { messages, isStreaming, error, sendMessage, stopStreaming, clearMessages };
+  return {
+    messages: state.messages,
+    isStreaming: state.isStreaming,
+    error: state.error,
+    sendMessage,
+    stopStreaming,
+    clearMessages,
+  };
 }

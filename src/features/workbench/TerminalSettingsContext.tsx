@@ -1,21 +1,13 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import {
   APP_THEMES,
-  DEFAULT_TERMINAL_SETTINGS,
   loadTerminalSettings,
   saveTerminalSettings,
 } from './terminalSettings';
-import type { AppTheme, TerminalSettings } from './terminalSettings';
-
-type TerminalSettingsContextValue = {
-  settings: TerminalSettings;
-  appTheme: AppTheme;
-  updateSettings: (patch: Partial<TerminalSettings>) => void;
-};
-
-const TerminalSettingsContext = createContext<TerminalSettingsContextValue | null>(null);
+import type { TerminalSettings } from './terminalSettings';
+import { TerminalSettingsContext } from './terminalSettingsStore';
 
 export function TerminalSettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<TerminalSettings>(() => loadTerminalSettings());
@@ -35,13 +27,3 @@ export function TerminalSettingsProvider({ children }: { children: ReactNode }) 
     </TerminalSettingsContext.Provider>
   );
 }
-
-export function useTerminalSettings(): TerminalSettingsContextValue {
-  const ctx = useContext(TerminalSettingsContext);
-  if (!ctx) {
-    throw new Error('useTerminalSettings must be used within TerminalSettingsProvider');
-  }
-  return ctx;
-}
-
-export { DEFAULT_TERMINAL_SETTINGS };

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useTerminalSettings } from '@/features/workbench/TerminalSettingsContext';
+import { useTerminalSettings } from '@/features/workbench/useTerminalSettings';
 import {
   DEFAULT_TERMINAL_SETTINGS,
   FONT_FAMILY_OPTIONS,

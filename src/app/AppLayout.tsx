@@ -1,7 +1,8 @@
 import { Outlet } from 'react-router-dom';
 import { useEffect } from 'react';
 
-import { TerminalSettingsProvider, useTerminalSettings } from '@/features/workbench/TerminalSettingsContext';
+import { TerminalSettingsProvider } from '@/features/workbench/TerminalSettingsContext';
+import { useTerminalSettings } from '@/features/workbench/useTerminalSettings';
 
 function AppThemeApplier() {
   const { appTheme } = useTerminalSettings();

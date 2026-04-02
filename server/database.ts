@@ -4,9 +4,10 @@ import { createRequire } from 'node:module';
 
 import initSqlJs from 'sql.js';
 
+import { resolveDatabaseFilePath, resolveOpsClawDataDir } from './runtimePaths.js';
+
 const require = createRequire(import.meta.url);
 const wasmPath = require.resolve('sql.js/dist/sql-wasm.wasm');
-const databaseFilePath = path.resolve(process.cwd(), 'data', 'opsclaw.sqlite');
 
 const schema = `
   CREATE TABLE IF NOT EXISTS groups (
@@ -65,6 +66,44 @@ export type SqlDatabaseHandle = {
   getRowsModified: () => number;
 };
 
+const LLM_PROVIDER_TYPES = ['zhipu', 'minimax', 'qwen', 'deepseek', 'openai_compatible'] as const;
+
+const LLM_PROVIDERS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS llm_providers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    provider_type TEXT NOT NULL CHECK (provider_type IN (${LLM_PROVIDER_TYPES.map((value) => `'${value}'`).join(', ')})),
+    base_url TEXT,
+    api_key TEXT,
+    model TEXT NOT NULL DEFAULT '',
+    models TEXT NOT NULL DEFAULT '[]',
+    default_model TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    max_tokens INTEGER DEFAULT 4096,
+    temperature REAL DEFAULT 0.7,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+`;
+
+function toSqlRows(
+  result: Array<{ columns: string[]; values: SqliteValue[][] }>
+) {
+  const statement = result[0];
+  if (!statement) {
+    return [] as SqlRow[];
+  }
+
+  return statement.values.map((row) => {
+    const item: SqlRow = {};
+    statement.columns.forEach((column, index) => {
+      item[column] = row[index] ?? null;
+    });
+    return item;
+  });
+}
+
 function ensureNodeCredentialColumns(database: SqlDatabaseHandle) {
   const result = database.exec('PRAGMA table_info(nodes);');
   const rows = result[0]?.values ?? [];
@@ -112,45 +151,131 @@ function ensureCommandHistoryTable(database: SqlDatabaseHandle) {
 }
 
 function ensureLlmProvidersTable(database: SqlDatabaseHandle) {
-  database.run(`
-    CREATE TABLE IF NOT EXISTS llm_providers (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      provider_type TEXT NOT NULL CHECK (provider_type IN ('zhipu', 'minimax', 'qwen', 'deepseek')),
-      base_url TEXT,
-      api_key TEXT,
-      model TEXT NOT NULL,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      is_default INTEGER NOT NULL DEFAULT 0,
-      max_tokens INTEGER DEFAULT 4096,
-      temperature REAL DEFAULT 0.7,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-  `);
+  database.run(LLM_PROVIDERS_TABLE_SQL);
   database.run(`CREATE INDEX IF NOT EXISTS idx_llm_enabled ON llm_providers(enabled);`);
 
-  const result = database.exec('PRAGMA table_info(llm_providers);');
-  const rows = result[0]?.values ?? [];
-  const cols = new Set(rows.map((r) => r[1]).filter((v): v is string => typeof v === 'string'));
+  const tableRows = toSqlRows(
+    database.exec(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'llm_providers';`)
+  );
+  const tableSql = typeof tableRows[0]?.sql === 'string' ? tableRows[0].sql : '';
 
-  if (cols.has('model') && !cols.has('models')) {
-    const data = database.exec('SELECT id, model FROM llm_providers;');
-    database.run('ALTER TABLE llm_providers ADD COLUMN models TEXT;');
-    if (data[0]?.values) {
-      for (const row of data[0].values) {
-        database.run('UPDATE llm_providers SET models = :m WHERE id = :i;', {
-          ':m': JSON.stringify([row[1]]),
-          ':i': row[0],
-        });
+  const infoRows = toSqlRows(database.exec('PRAGMA table_info(llm_providers);'));
+  const cols = new Set(
+    infoRows
+      .map((row) => row.name)
+      .filter((value): value is string => typeof value === 'string')
+  );
+
+  const needsRebuild =
+    !cols.has('models') ||
+    !cols.has('default_model') ||
+    !tableSql.includes('openai_compatible');
+
+  if (!needsRebuild) {
+    return;
+  }
+
+  const legacyRows = toSqlRows(database.exec('SELECT * FROM llm_providers;'));
+
+  database.run('ALTER TABLE llm_providers RENAME TO llm_providers_legacy;');
+  database.run(LLM_PROVIDERS_TABLE_SQL);
+
+  for (const row of legacyRows) {
+    const rawModel = typeof row.model === 'string' ? row.model : '';
+    const rawModels = typeof row.models === 'string' ? row.models : null;
+    let models = rawModel ? [rawModel] : [];
+
+    if (rawModels) {
+      try {
+        const parsedModels = JSON.parse(rawModels) as unknown;
+        if (
+          Array.isArray(parsedModels) &&
+          parsedModels.every((item) => typeof item === 'string' && item.trim())
+        ) {
+          models = parsedModels;
+        }
+      } catch {
+        models = rawModel ? [rawModel] : [];
       }
     }
+
+    const rawDefaultModel =
+      typeof row.default_model === 'string' && row.default_model.trim()
+        ? row.default_model.trim()
+        : rawModel;
+    const defaultModel = rawDefaultModel || models[0] || '';
+    if (defaultModel && !models.includes(defaultModel)) {
+      models = [...models, defaultModel];
+    }
+
+    database.run(
+      `INSERT INTO llm_providers (
+        id, name, provider_type, base_url, api_key, model, models, default_model,
+        enabled, is_default, max_tokens, temperature, created_at, updated_at
+      ) VALUES (
+        :id, :name, :providerType, :baseUrl, :apiKey, :model, :models, :defaultModel,
+        :enabled, :isDefault, :maxTokens, :temperature, :createdAt, :updatedAt
+      );`,
+      {
+        ':id': row.id as string,
+        ':name': row.name as string,
+        ':providerType': row.provider_type as string,
+        ':baseUrl': (row.base_url as string | null) ?? null,
+        ':apiKey': (row.api_key as string | null) ?? null,
+        ':model': defaultModel,
+        ':models': JSON.stringify(models),
+        ':defaultModel': defaultModel || null,
+        ':enabled': typeof row.enabled === 'number' ? row.enabled : 1,
+        ':isDefault': typeof row.is_default === 'number' ? row.is_default : 0,
+        ':maxTokens': typeof row.max_tokens === 'number' ? row.max_tokens : 4096,
+        ':temperature': typeof row.temperature === 'number' ? row.temperature : 0.7,
+        ':createdAt':
+          (typeof row.created_at === 'string' ? row.created_at : new Date().toISOString()),
+        ':updatedAt':
+          (typeof row.updated_at === 'string' ? row.updated_at : new Date().toISOString()),
+      }
+    );
   }
+
+  database.run('DROP TABLE llm_providers_legacy;');
+  database.run(`CREATE INDEX IF NOT EXISTS idx_llm_enabled ON llm_providers(enabled);`);
+}
+
+function ensureScriptLibraryTable(database: SqlDatabaseHandle) {
+  database.run(`
+    CREATE TABLE IF NOT EXISTS script_library (
+      id TEXT PRIMARY KEY,
+      key TEXT NOT NULL,
+      scope TEXT NOT NULL CHECK (scope IN ('global', 'node')),
+      node_id TEXT,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      kind TEXT NOT NULL CHECK (kind IN ('plain', 'template')),
+      content TEXT NOT NULL,
+      variables_json TEXT NOT NULL,
+      tags_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(scope, node_id, key)
+    );
+  `);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_script_library_scope ON script_library(scope);`);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_script_library_node_id ON script_library(node_id);`);
 }
 
 let databasePromise: Promise<SqliteDatabase> | null = null;
 
+function getDatabaseFilePath() {
+  return resolveDatabaseFilePath(
+    resolveOpsClawDataDir({
+      cwd: process.cwd(),
+      env: process.env,
+    })
+  );
+}
+
 async function createDatabase(): Promise<SqliteDatabase> {
+  const databaseFilePath = getDatabaseFilePath();
   await fs.mkdir(path.dirname(databaseFilePath), { recursive: true });
 
   const SQL = await initSqlJs({
@@ -181,6 +306,7 @@ async function createDatabase(): Promise<SqliteDatabase> {
   ensureNodeCredentialColumns(database);
   ensureCommandHistoryTable(database);
   ensureLlmProvidersTable(database);
+  ensureScriptLibraryTable(database);
 
   let persistQueue = Promise.resolve();
 

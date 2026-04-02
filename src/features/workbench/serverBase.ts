@@ -1,39 +1,31 @@
-function isLocalHostname(hostname: string) {
-  return hostname === 'localhost' || hostname === '127.0.0.1';
+import {
+  readDesktopRuntimeFromLocationSearch,
+  resolveServerHttpBaseUrl,
+  resolveServerWebSocketBaseUrl,
+} from './serverBaseModel';
+
+function readDesktopRuntime() {
+  return window.__OPSCLAW_RUNTIME__ ?? readDesktopRuntimeFromLocationSearch(window.location.search);
 }
 
 export function buildServerHttpBaseUrl() {
-  const configuredBase =
-    typeof import.meta.env.VITE_SERVER_HTTP_URL === 'string'
-      ? import.meta.env.VITE_SERVER_HTTP_URL
-      : undefined;
-
-  if (configuredBase) {
-    return configuredBase.replace(/\/$/, '');
-  }
-
-  if (isLocalHostname(window.location.hostname) && window.location.port !== '4000') {
-    return `${window.location.protocol}//${window.location.hostname}:4000`;
-  }
-
-  return window.location.origin;
+  return resolveServerHttpBaseUrl({
+    runtime: readDesktopRuntime(),
+    envHttpBaseUrl:
+      typeof import.meta.env.VITE_SERVER_HTTP_URL === 'string'
+        ? import.meta.env.VITE_SERVER_HTTP_URL
+        : undefined,
+    location: window.location,
+  });
 }
 
 export function buildServerWebSocketBaseUrl() {
-  const configuredBase =
-    typeof import.meta.env.VITE_TERMINAL_WS_URL === 'string'
-      ? import.meta.env.VITE_TERMINAL_WS_URL
-      : undefined;
-
-  if (configuredBase) {
-    return configuredBase.replace(/\/$/, '');
-  }
-
-  if (isLocalHostname(window.location.hostname) && window.location.port !== '4000') {
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    return `${protocol}://${window.location.hostname}:4000`;
-  }
-
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${protocol}://${window.location.host}`;
+  return resolveServerWebSocketBaseUrl({
+    runtime: readDesktopRuntime(),
+    envWebSocketBaseUrl:
+      typeof import.meta.env.VITE_TERMINAL_WS_URL === 'string'
+        ? import.meta.env.VITE_TERMINAL_WS_URL
+        : undefined,
+    location: window.location,
+  });
 }

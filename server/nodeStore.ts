@@ -47,6 +47,15 @@ export type StoredNodeSummary = {
 };
 
 export type StoredNodeDetail = StoredNodeSummary & {
+  password: null;
+  privateKey: null;
+  passphrase: null;
+  hasPassword: boolean;
+  hasPrivateKey: boolean;
+  hasPassphrase: boolean;
+};
+
+export type StoredNodeWithSecrets = StoredNodeSummary & {
   password: string | null;
   privateKey: string | null;
   passphrase: string | null;
@@ -216,7 +225,7 @@ export async function createNodeStore() {
       { ':id': id }
     );
 
-  const mapNodeDetail = (row: SqlRow): StoredNodeDetail => ({
+  const mapNodeWithSecrets = (row: SqlRow): StoredNodeWithSecrets => ({
     ...mapNodeSummary(row),
     password: secretVault.decrypt(
       readNullableString(row.password_encrypted) ?? readNullableString(row.password)
@@ -229,7 +238,17 @@ export async function createNodeStore() {
     ),
   });
 
-  const getNodeDetailById = (id: string) =>
+  const sanitizeNodeDetail = (node: StoredNodeWithSecrets): StoredNodeDetail => ({
+    ...node,
+    password: null,
+    privateKey: null,
+    passphrase: null,
+    hasPassword: Boolean(node.password),
+    hasPrivateKey: Boolean(node.privateKey),
+    hasPassphrase: Boolean(node.passphrase),
+  });
+
+  const getNodeWithSecretsById = (id: string) =>
     queryOne(
       database,
       `
@@ -256,7 +275,7 @@ export async function createNodeStore() {
         LEFT JOIN groups ON groups.id = nodes.group_id
         WHERE nodes.id = :id
       `,
-      mapNodeDetail,
+      mapNodeWithSecrets,
       { ':id': id }
     );
 
@@ -394,6 +413,10 @@ export async function createNodeStore() {
         `,
         mapGroupSummary
       );
+    },
+
+    getGroup(id: string) {
+      return getGroupById(id);
     },
 
     createGroup(name: string) {
@@ -534,7 +557,12 @@ export async function createNodeStore() {
     },
 
     getNode(id: string) {
-      return getNodeDetailById(id);
+      const node = getNodeWithSecretsById(id);
+      return node ? sanitizeNodeDetail(node) : null;
+    },
+
+    getNodeWithSecrets(id: string) {
+      return getNodeWithSecretsById(id);
     },
 
     async createNode(input: NodeInput) {
@@ -615,8 +643,22 @@ export async function createNodeStore() {
         return null;
       }
 
+      const existingWithSecrets = getNodeWithSecretsById(id);
+      if (!existingWithSecrets) {
+        return null;
+      }
+
       const usesPassword = input.authMode === 'password';
       const group = resolveGroupForNode(input);
+      const nextPassword = usesPassword
+        ? input.password ?? existingWithSecrets.password
+        : null;
+      const nextPrivateKey = usesPassword
+        ? null
+        : input.privateKey ?? existingWithSecrets.privateKey;
+      const nextPassphrase = usesPassword
+        ? null
+        : input.passphrase ?? existingWithSecrets.passphrase;
 
       database.run(
         `
@@ -650,9 +692,9 @@ export async function createNodeStore() {
           ':port': input.port,
           ':username': input.username,
           ':auth_mode': input.authMode,
-          ':password_encrypted': usesPassword ? secretVault.encrypt(input.password) : null,
-          ':private_key_encrypted': usesPassword ? null : secretVault.encrypt(input.privateKey),
-          ':passphrase_encrypted': usesPassword ? null : secretVault.encrypt(input.passphrase),
+          ':password_encrypted': secretVault.encrypt(nextPassword),
+          ':private_key_encrypted': secretVault.encrypt(nextPrivateKey),
+          ':passphrase_encrypted': secretVault.encrypt(nextPassphrase),
           ':note': input.note ?? existing.note,
           ':updated_at': new Date().toISOString(),
         }

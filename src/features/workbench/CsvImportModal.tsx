@@ -106,7 +106,9 @@ export function CsvImportModal({ open, onClose, onSuccess }: Props) {
             </label>
 
             <Button
-              onClick={handleImport}
+              onClick={() => {
+                void handleImport();
+              }}
               disabled={!file || importing}
               className="w-full h-10 bg-blue-600 hover:bg-blue-500 transition-colors disabled:opacity-50"
             >

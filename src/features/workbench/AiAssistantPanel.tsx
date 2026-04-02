@@ -1,59 +1,398 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Send } from 'lucide-react';
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Send,
+  TerminalSquare,
+  WandSparkles,
+  X,
+} from 'lucide-react';
+import { MarkdownContent } from '@/components/ui/MarkdownContent';
+import { AGENT_MAX_STEP_OPTIONS } from './agentRunSettings';
+import { useAiAssistantPanelState } from './useAiAssistantPanelState';
 import { useStreamingChat } from './useStreamingChat';
-import { fetchLlmProviders } from './api';
+import { useAgentRun } from './useAgentRun';
+import { getAgentStepBudgetHint, getAiAssistantThemeClasses } from './aiAssistantPanelModel';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { LiveSession } from './types';
+import type { AgentTimelineItem, ToolExecutionEnvelope } from './types.agent';
+import { useTerminalSettings } from './useTerminalSettings';
+
+function formatToolArguments(args: Record<string, unknown>) {
+  return ['```json', JSON.stringify(args, null, 2), '```'].join('\n');
+}
+
+function formatToolResult(result: ToolExecutionEnvelope) {
+  if (!result.ok) {
+    return result.error?.message ?? '工具执行失败。';
+  }
+
+  if (result.toolName === 'session.run_command' && result.data && typeof result.data === 'object') {
+    const payload = result.data as {
+      command?: unknown;
+      exitCode?: unknown;
+      output?: unknown;
+      durationMs?: unknown;
+      truncated?: unknown;
+    };
+    const exitCode = typeof payload.exitCode === 'number' ? payload.exitCode : '';
+    const durationMs = typeof payload.durationMs === 'number' ? payload.durationMs : '';
+    const output =
+      typeof payload.output === 'string' && payload.output ? payload.output : '[无输出]';
+
+    return [
+      `- 退出码：\`${exitCode}\``,
+      `- 耗时：\`${durationMs}ms\``,
+      typeof payload.command === 'string' ? `- 命令：\`${payload.command}\`` : null,
+      payload.truncated ? '[输出已截断]' : null,
+      '',
+      '```bash',
+      output,
+      '```',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  return ['```json', JSON.stringify(result.data ?? result.error ?? {}, null, 2), '```'].join('\n');
+}
+
+function ToolCallCard({
+  item,
+  themeMode,
+}: {
+  item: Extract<AgentTimelineItem, { kind: 'tool_call' }>;
+  themeMode: 'dark' | 'light';
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const accentTextClass = themeMode === 'light' ? 'text-sky-700' : 'text-sky-200';
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-sky-500/20 bg-[linear-gradient(180deg,rgba(14,165,233,0.10),rgba(14,165,233,0.03))] shadow-[0_12px_32px_rgba(2,132,199,0.08)]">
+      <button
+        type="button"
+        onClick={() => setExpanded((current) => !current)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.02]"
+      >
+        <div className="min-w-0">
+          <div className="mb-1 flex items-center gap-2">
+            <span className={`rounded-full border border-sky-400/20 bg-sky-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${accentTextClass}`}>
+              Tool Call
+            </span>
+            <span className="text-[11px] text-[var(--app-text-secondary)]">步骤 {item.step}</span>
+          </div>
+          <div className="truncate text-sm font-medium text-[var(--app-text-primary)]">{item.toolName}</div>
+        </div>
+        <div className="flex items-center gap-2 text-[var(--app-text-secondary)]">
+          <span className="text-xs">{expanded ? '收起参数' : '查看参数'}</span>
+          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </div>
+      </button>
+      {expanded ? (
+        <div className="border-t border-white/8 px-4 py-4">
+          <MarkdownContent
+            content={formatToolArguments(item.arguments)}
+            className="text-xs leading-relaxed text-[var(--app-text-primary)]"
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SessionRunCommandResult({
+  result,
+  themeMode,
+}: {
+  result: ToolExecutionEnvelope;
+  themeMode: 'dark' | 'light';
+}) {
+  const successTextClass = themeMode === 'light' ? 'text-emerald-700' : 'text-emerald-200';
+  const warningTextClass = themeMode === 'light' ? 'text-amber-700' : 'text-amber-200';
+  const payload = result.data as {
+    command?: unknown;
+    exitCode?: unknown;
+    output?: unknown;
+    durationMs?: unknown;
+    truncated?: unknown;
+  };
+  const command = typeof payload.command === 'string' ? payload.command : '未知命令';
+  const exitCode = typeof payload.exitCode === 'number' ? payload.exitCode : null;
+  const durationMs = typeof payload.durationMs === 'number' ? payload.durationMs : null;
+  const output = typeof payload.output === 'string' && payload.output ? payload.output : '[无输出]';
+  const truncated = payload.truncated === true;
+
+  return (
+    <div className="mt-4 space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-white/8 bg-white/[0.04] px-3 py-2">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--app-text-tertiary)]">命令</div>
+          <div className="mt-1 break-all font-mono text-xs text-[var(--app-text-primary)]">{command}</div>
+        </div>
+        <div className="rounded-lg border border-white/8 bg-white/[0.04] px-3 py-2">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--app-text-tertiary)]">退出码</div>
+          <div className="mt-1 text-sm font-medium text-[var(--app-text-primary)]">
+            {exitCode === null ? '-' : exitCode}
+          </div>
+        </div>
+        <div className="rounded-lg border border-white/8 bg-white/[0.04] px-3 py-2">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--app-text-tertiary)]">耗时</div>
+          <div className="mt-1 text-sm font-medium text-[var(--app-text-primary)]">
+            {durationMs === null ? '-' : `${durationMs}ms`}
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-white/8 bg-[var(--app-bg-base)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <div className="flex items-center justify-between border-b border-white/8 bg-white/[0.03] px-3 py-2">
+          <div className="flex items-center gap-2 text-[var(--app-text-primary)]">
+            <TerminalSquare className={`h-4 w-4 ${successTextClass}`} />
+            <span className="text-xs font-medium tracking-[0.16em] text-[var(--app-text-secondary)] uppercase">
+              终端输出
+            </span>
+          </div>
+          {truncated ? (
+            <span className={`rounded-full border border-amber-400/20 bg-amber-400/10 px-2 py-0.5 text-[10px] ${warningTextClass}`}>
+              已截断
+            </span>
+          ) : null}
+        </div>
+        <MarkdownContent content={['```bash', output, '```'].join('\n')} className="px-3 pb-3" />
+      </div>
+    </div>
+  );
+}
+
+function ToolResultCard({
+  item,
+  themeMode,
+}: {
+  item: Extract<AgentTimelineItem, { kind: 'tool_result' }>;
+  themeMode: 'dark' | 'light';
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const isCommandResult = item.toolName === 'session.run_command' && item.result.ok;
+  const successTextClass = themeMode === 'light' ? 'text-emerald-700' : 'text-emerald-200';
+  const errorTextClass = themeMode === 'light' ? 'text-red-700' : 'text-red-200';
+
+  return (
+    <div
+      className={`overflow-hidden rounded-xl border shadow-[0_14px_34px_rgba(0,0,0,0.16)] ${
+        item.result.ok
+          ? 'border-emerald-500/20 bg-[linear-gradient(180deg,rgba(16,185,129,0.10),rgba(16,185,129,0.03))] text-[var(--app-text-primary)]'
+          : 'border-red-500/20 bg-[linear-gradient(180deg,rgba(239,68,68,0.10),rgba(239,68,68,0.03))] text-[var(--app-text-primary)]'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded((current) => !current)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.02]"
+      >
+        <div className="min-w-0">
+          <div className="mb-1 flex items-center gap-2">
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${
+                item.result.ok
+                  ? `border border-emerald-400/20 bg-emerald-400/10 ${successTextClass}`
+                  : `border border-red-400/20 bg-red-400/10 ${errorTextClass}`
+              }`}
+            >
+              Tool Result
+            </span>
+            <span className="text-[11px] text-[var(--app-text-secondary)]">步骤 {item.step}</span>
+          </div>
+          <div className="truncate text-sm font-medium text-[var(--app-text-primary)]">{item.toolName}</div>
+        </div>
+        <div className="flex items-center gap-2 text-[var(--app-text-secondary)]">
+          <span className="text-xs">{expanded ? '收起结果' : '查看结果'}</span>
+          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </div>
+      </button>
+      {expanded ? (
+        <div className="border-t border-white/8 px-4 py-4">
+          {isCommandResult ? (
+            <SessionRunCommandResult result={item.result} themeMode={themeMode} />
+          ) : (
+            <MarkdownContent content={formatToolResult(item.result)} className="text-xs leading-relaxed" />
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AgentTimelineCard({ item, themeMode }: { item: AgentTimelineItem; themeMode: 'dark' | 'light' }) {
+  if (item.kind === 'user') {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[85%] rounded-lg bg-blue-600 p-3 text-white">
+          <div className="mb-1.5 text-[10px] uppercase tracking-wide opacity-60">你</div>
+          <div className="text-sm leading-relaxed whitespace-pre-wrap">{item.text}</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (item.kind === 'assistant') {
+    return (
+      <div className="overflow-hidden rounded-xl border border-violet-500/15 bg-[linear-gradient(180deg,rgba(129,140,248,0.10),rgba(129,140,248,0.04))] shadow-[0_16px_38px_rgba(79,70,229,0.08)]">
+        <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
+          <div>
+            <div className="mb-1 flex items-center gap-2">
+              <span className={`rounded-full border border-violet-400/20 bg-violet-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${themeMode === 'light' ? 'text-violet-700' : 'text-violet-200'}`}>
+                AI Summary
+              </span>
+              <span className="text-[11px] text-[var(--app-text-secondary)]">步骤 {item.step}</span>
+            </div>
+            <div className="text-sm font-medium text-[var(--app-text-primary)]">分析与下一步</div>
+          </div>
+          <WandSparkles className={`h-4 w-4 ${themeMode === 'light' ? 'text-violet-700' : 'text-violet-200/80'}`} />
+        </div>
+        <div className="px-4 py-4 text-[var(--app-text-primary)]">
+          <MarkdownContent content={item.text} className="text-sm leading-relaxed" />
+        </div>
+      </div>
+    );
+  }
+
+  if (item.kind === 'tool_call') {
+    return <ToolCallCard item={item} themeMode={themeMode} />;
+  }
+
+  if (item.kind === 'tool_result') {
+    return <ToolResultCard item={item} themeMode={themeMode} />;
+  }
+
+  if (item.kind === 'warning') {
+    return (
+      <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-[var(--app-status-warning)]">
+        {item.text}
+      </div>
+    );
+  }
+
+  if (item.kind === 'final') {
+    return (
+      <div className="overflow-hidden rounded-xl border border-emerald-500/20 bg-[linear-gradient(180deg,rgba(16,185,129,0.12),rgba(16,185,129,0.04))] shadow-[0_16px_38px_rgba(5,150,105,0.08)]">
+        <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
+          <div>
+            <div className="mb-1 flex items-center gap-2">
+              <span className={`rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${themeMode === 'light' ? 'text-emerald-700' : 'text-emerald-200'}`}>
+                Final Answer
+              </span>
+              <span className="text-[11px] text-[var(--app-text-secondary)]">共 {item.steps} 步</span>
+            </div>
+            <div className="text-sm font-medium text-[var(--app-text-primary)]">任务结论</div>
+          </div>
+          <CheckCircle2 className={`h-4 w-4 ${themeMode === 'light' ? 'text-emerald-700' : 'text-emerald-200/80'}`} />
+        </div>
+        <div className="px-4 py-4 text-[var(--app-text-primary)]">
+          <MarkdownContent content={item.text} className="text-sm leading-relaxed" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+      <div className="rounded-xl border border-[var(--app-border-default)] bg-[var(--app-bg-elevated3)] p-3 text-sm text-[var(--app-text-secondary)]">
+      {item.text}
+    </div>
+  );
+}
 
 type Props = {
   open: boolean;
   onClose: () => void;
+  sessions: LiveSession[];
+  activeSessionId: string | null;
 };
 
-type ModelOption = {
-  value: string; // "providerId:modelName"
-  label: string;
-  providerId: string;
-  modelName: string;
-};
-
-export function AiAssistantPanel({ open, onClose }: Props) {
-  const [input, setInput] = useState('');
-  const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
-  const [selectedModel, setSelectedModel] = useState<string>('');
-  const { messages, isStreaming, error, sendMessage, clearMessages } = useStreamingChat();
+export function AiAssistantPanel({
+  open,
+  onClose,
+  sessions,
+  activeSessionId,
+}: Props) {
+  const { appTheme } = useTerminalSettings();
+  const {
+    messages: chatMessages,
+    isStreaming,
+    error: chatError,
+    sendMessage,
+    stopStreaming,
+    clearMessages: clearChatMessages,
+  } = useStreamingChat();
+  const {
+    items: agentItems,
+    isRunning,
+    error: agentError,
+    runAgent,
+    stopAgent,
+    clearItems: clearAgentItems,
+  } = useAgentRun();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (open) {
-      void fetchLlmProviders().then((list) => {
-        const options: ModelOption[] = [];
-        for (const provider of list) {
-          for (const model of provider.models) {
-            options.push({
-              value: `${provider.id}:${model}`,
-              label: `${provider.name} - ${model}`,
-              providerId: provider.id,
-              modelName: model,
-            });
-          }
-        }
-        setModelOptions(options);
-        const defaultProvider = list.find(p => p.isDefault);
-        if (defaultProvider && defaultProvider.models.length > 0) {
-          setSelectedModel(`${defaultProvider.id}:${defaultProvider.models[0]}`);
-        }
-      });
-    }
-  }, [open]);
+  const {
+    canSend,
+    input,
+    mode,
+    modelOptions,
+    selectedModel,
+    selectedAgentMaxSteps,
+    selectedSessionId,
+    setSelectedAgentMaxSteps,
+    setInput,
+    setMode,
+    setSelectedModel,
+    setSelectedSessionId,
+    startDragging,
+    width,
+  } = useAiAssistantPanelState({
+    open,
+    activeSessionId,
+    sessions,
+    isRunning,
+    isStreaming,
+  });
+  const visibleError = mode === 'agent' ? agentError : chatError;
+  const isBusy = mode === 'agent' ? isRunning : isStreaming;
+  const themeClasses = getAiAssistantThemeClasses(appTheme.mode);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [agentItems, chatMessages]);
 
   const handleSend = () => {
-    if (!input.trim() || !selectedModel || isStreaming) return;
+    if (!input.trim() || !selectedModel) return;
     const option = modelOptions.find(o => o.value === selectedModel);
     if (!option) return;
+
+    if (mode === 'agent') {
+      if (!selectedSessionId || isRunning) {
+        return;
+      }
+
+      const session = sessions.find(item => item.id === selectedSessionId);
+      if (!session) {
+        return;
+      }
+
+      void runAgent({
+        providerId: option.providerId,
+        model: option.modelName,
+        maxSteps: selectedAgentMaxSteps,
+        task: input.trim(),
+        sessionId: session.id,
+      });
+      setInput('');
+      return;
+    }
+
+    if (isStreaming) {
+      return;
+    }
+
     sendMessage(option.providerId, option.modelName, input.trim());
     setInput('');
   };
@@ -61,19 +400,64 @@ export function AiAssistantPanel({ open, onClose }: Props) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[420px] bg-[var(--app-bg-elevated2)] border-l border-[var(--app-border-default)] flex flex-col z-50 shadow-2xl">
+    <div 
+      className="fixed inset-y-0 right-0 bg-[var(--app-bg-elevated2)] border-l border-[var(--app-border-default)] flex flex-col z-50 shadow-2xl"
+      style={{ width: `${width}px` }}
+    >
+      <div 
+        className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/50 z-50 transition-colors -ml-[2px]"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          startDragging();
+        }}
+      />
       <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)]">
-        <h2 className="text-base font-semibold text-neutral-100">AI 助手</h2>
+        <div className="space-y-2">
+          <h2 className={`text-base font-semibold ${themeClasses.primaryTextClass}`}>AI 助手</h2>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMode('agent')}
+              className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                mode === 'agent'
+                  ? 'bg-blue-600 text-white'
+                  : `bg-[var(--app-bg-elevated3)] ${themeClasses.secondaryTextClass} hover:text-[var(--app-text-primary)]`
+              }`}
+            >
+              Agent
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('chat')}
+              className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                mode === 'chat'
+                  ? 'bg-blue-600 text-white'
+                  : `bg-[var(--app-bg-elevated3)] ${themeClasses.secondaryTextClass} hover:text-[var(--app-text-primary)]`
+              }`}
+            >
+              Chat
+            </button>
+          </div>
+        </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={clearMessages}
-            className="text-xs px-2 py-1 text-neutral-400 hover:text-neutral-100 hover:bg-[var(--app-bg-elevated3)] rounded transition-colors"
+            onClick={mode === 'agent' ? clearAgentItems : clearChatMessages}
+            className={`text-xs px-2 py-1 ${themeClasses.secondaryTextClass} hover:text-[var(--app-text-primary)] hover:bg-[var(--app-bg-elevated3)] rounded transition-colors`}
           >
             清空
           </button>
+          {isBusy ? (
+            <button
+              onClick={mode === 'agent' ? stopAgent : stopStreaming}
+              className="text-xs px-2 py-1 text-[var(--app-status-warning)] hover:opacity-80 hover:bg-amber-500/10 rounded transition-colors"
+            >
+              停止
+            </button>
+          ) : null}
           <button
             onClick={onClose}
-            className="p-1.5 text-neutral-400 hover:text-neutral-100 hover:bg-[var(--app-bg-elevated3)] rounded transition-colors"
+            className={`p-1.5 ${themeClasses.secondaryTextClass} hover:text-[var(--app-text-primary)] hover:bg-[var(--app-bg-elevated3)] rounded transition-colors`}
+            title="关闭"
           >
             <X className="w-4 h-4" />
           </button>
@@ -81,42 +465,59 @@ export function AiAssistantPanel({ open, onClose }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && (
+        {((mode === 'agent' && agentItems.length === 0) || (mode === 'chat' && chatMessages.length === 0)) && (
           <div className="flex items-center justify-center h-full text-center">
             <div className="space-y-2">
-              <div className="text-neutral-600 text-sm">开始与 AI 对话</div>
-              <div className="text-neutral-700 text-xs">选择提供商和模型后即可开始</div>
+              <div className={`text-sm ${themeClasses.secondaryTextClass}`}>
+                {mode === 'agent' ? '开始执行运维任务' : '开始与 AI 对话'}
+              </div>
+              <div className={`text-xs ${themeClasses.tertiaryTextClass}`}>
+                {mode === 'agent'
+                  ? 'Agent 会规划步骤、执行命令并根据结果继续推进'
+                  : '选择提供商和模型后即可开始'}
+              </div>
             </div>
           </div>
         )}
-        {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className={`max-w-[85%] rounded-lg p-3 ${
-                msg.role === 'user'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-[var(--app-bg-elevated3)] text-neutral-200 border border-[var(--app-border-default)]'
-              }`}
-            >
-              <div className="text-[10px] uppercase tracking-wide mb-1.5 opacity-60">
-                {msg.role === 'user' ? '你' : 'AI'}
+        {mode === 'agent'
+          ? agentItems.map((item) => <AgentTimelineCard key={item.id} item={item} themeMode={appTheme.mode} />)
+          : chatMessages.map((msg, i) => (
+              <div
+                key={i}
+                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`max-w-[85%] rounded-lg p-3 ${
+                    msg.role === 'user'
+                      ? 'bg-blue-600 text-white'
+                      : `bg-[var(--app-bg-elevated3)] ${themeClasses.primaryTextClass} border border-[var(--app-border-default)]`
+                  }`}
+                >
+                  <div className="text-[10px] uppercase tracking-wide mb-1.5 opacity-60">
+                    {msg.role === 'user' ? '你' : 'AI'}
+                  </div>
+                  {msg.role === 'user' ? (
+                    <div className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</div>
+                  ) : (
+                    <MarkdownContent content={msg.content} className="text-sm leading-relaxed" />
+                  )}
+                </div>
               </div>
-              <div className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</div>
-            </div>
-          </div>
-        ))}
-        {error && (
-          <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-300">
-            {error}
+            ))}
+        {visibleError && (
+          <div className={`p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm ${themeClasses.errorTextClass}`}>
+            {visibleError}
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
       <div className="p-4 border-t border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)]">
+        {mode === 'agent' ? (
+          <div className={`mb-3 rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs ${themeClasses.infoTextClass}`}>
+            Agent 会通过 ReAct 方式选择命令、下发到选中的 SSH session，并基于结果继续执行直到完成任务。
+          </div>
+        ) : null}
         <div className="border border-[var(--app-border-default)] rounded-lg bg-[var(--app-bg-base)] overflow-hidden">
           <textarea
             value={input}
@@ -127,36 +528,80 @@ export function AiAssistantPanel({ open, onClose }: Props) {
                 handleSend();
               }
             }}
-            placeholder="请输入你的问题，按 Enter 发送"
-            disabled={!selectedModel || isStreaming}
+            placeholder={
+              mode === 'agent'
+                ? '例如：检查当前机器磁盘和内存是否异常，并给出结论'
+                : '请输入你的问题，按 Enter 发送'
+            }
+            disabled={!selectedModel || isBusy}
             rows={4}
-            className="w-full px-4 pt-4 pb-2 bg-transparent border-0 text-sm text-neutral-100 placeholder:text-neutral-600 focus:outline-none resize-none"
+            className="w-full px-4 pt-4 pb-2 bg-transparent border-0 text-sm text-[var(--app-text-primary)] placeholder:text-[var(--app-text-tertiary)] focus:outline-none resize-none"
           />
-          <div className="flex items-center justify-between px-4 pb-3">
-            <Select value={selectedModel} onValueChange={setSelectedModel}>
-              <SelectTrigger className="w-[200px] h-8 bg-[var(--app-bg-elevated2)] border-[var(--app-border-default)]">
-                <SelectValue placeholder="选择模型" />
-              </SelectTrigger>
-              <SelectContent>
-                {modelOptions.map(opt => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex items-end justify-between gap-2 px-4 pb-3">
+            <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+              <Select value={selectedSessionId ?? ''} onValueChange={setSelectedSessionId}>
+                <SelectTrigger className="flex-1 min-w-[120px] max-w-[200px] h-7 px-2 py-1 text-xs bg-[var(--app-bg-elevated2)] border-[var(--app-border-default)]" title="选择会话">
+                  <SelectValue placeholder="选择会话" />
+                </SelectTrigger>
+                <SelectContent side="top">
+                  {sessions.map(session => (
+                    <SelectItem key={session.id} value={session.id} className="text-xs py-1">
+                      {session.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedModel} onValueChange={setSelectedModel}>
+                <SelectTrigger className="flex-1 min-w-[120px] max-w-[200px] h-7 px-2 py-1 text-xs bg-[var(--app-bg-elevated2)] border-[var(--app-border-default)]" title="选择模型">
+                  <SelectValue placeholder="选择模型" />
+                </SelectTrigger>
+                <SelectContent side="top">
+                  {modelOptions.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value} className="text-xs py-1">
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {mode === 'agent' ? (
+                <Select
+                  value={String(selectedAgentMaxSteps)}
+                  onValueChange={(value) => setSelectedAgentMaxSteps(Number.parseInt(value, 10))}
+                >
+                  <SelectTrigger
+                    className="w-[112px] h-7 px-2 py-1 text-xs bg-[var(--app-bg-elevated2)] border-[var(--app-border-default)]"
+                    title="总步数预算"
+                  >
+                    <SelectValue placeholder="总步数" />
+                  </SelectTrigger>
+                  <SelectContent side="top">
+                    {AGENT_MAX_STEP_OPTIONS.map((option) => (
+                      <SelectItem key={option} value={String(option)} className="text-xs py-1">
+                        {option} 步
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
+            </div>
             <button
               onClick={handleSend}
-              disabled={!selectedModel || isStreaming || !input.trim()}
-              className="h-9 w-9 rounded-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+              disabled={!canSend}
+              className="h-9 w-9 rounded-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors shrink-0"
+              title="发送"
             >
               <Send className="w-4 h-4 text-white" />
             </button>
           </div>
+          {mode === 'agent' ? (
+            <div className="px-4 pb-3 -mt-1 text-[11px] text-[var(--app-text-secondary)]">
+              {getAgentStepBudgetHint(selectedAgentMaxSteps)}
+            </div>
+          ) : null}
         </div>
-        {isStreaming && (
-          <div className="text-xs text-blue-400 mt-2">
-            AI 正在回复...
+        {isBusy && (
+          <div className={`mt-2 text-xs ${themeClasses.infoTextClass}`}>
+            {mode === 'agent' ? 'Agent 正在执行任务...' : 'AI 正在回复...'}
           </div>
         )}
       </div>

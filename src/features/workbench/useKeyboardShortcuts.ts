@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 
+import { resolveWorkbenchShortcutAction } from './workbenchShortcutModel';
+
 type ShortcutHandlers = {
   onCloseActiveTab: () => void;
   onOpenNewConnection: () => void;
@@ -10,6 +12,7 @@ type ShortcutHandlers = {
   onToggleCommandHistory: () => void;
   onToggleLlmSettings: () => void;
   onToggleAiAssistant: () => void;
+  onToggleUtilityDrawer: () => void;
 };
 
 export function useKeyboardShortcuts(handlers: ShortcutHandlers): void {
@@ -29,42 +32,43 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): void {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
       const mod = isMac ? e.metaKey : e.ctrlKey;
-      if (!mod) return;
+      const action = resolveWorkbenchShortcutAction({ key: e.key, mod });
 
-      switch (e.key) {
-        case 'k':
-          e.preventDefault();
+      if (action) {
+        e.preventDefault();
+      }
+
+      switch (action) {
+        case 'toggleQuickConnect':
           handlersRef.current.onToggleQuickConnect();
-          break;
-        case 'r':
-          e.preventDefault();
+          return;
+        case 'toggleCommandHistory':
           handlersRef.current.onToggleCommandHistory();
-          break;
-        case 'l':
-          e.preventDefault();
+          return;
+        case 'toggleLlmSettings':
           handlersRef.current.onToggleLlmSettings();
-          break;
-        case 'a':
-          e.preventDefault();
+          return;
+        case 'toggleAiAssistant':
           handlersRef.current.onToggleAiAssistant();
-          break;
-        case 'w':
-          e.preventDefault();
+          return;
+        case 'toggleUtilityDrawer':
+          handlersRef.current.onToggleUtilityDrawer();
+          return;
+        case 'closeActiveTab':
           handlersRef.current.onCloseActiveTab();
-          break;
-        case 't':
-          e.preventDefault();
+          return;
+        case 'openNewConnection':
           handlersRef.current.onOpenNewConnection();
-          break;
-        case '[':
-          e.preventDefault();
+          return;
+        case 'switchToPrevTab':
           handlersRef.current.onSwitchToPrevTab();
-          break;
-        case ']':
-          e.preventDefault();
+          return;
+        case 'switchToNextTab':
           handlersRef.current.onSwitchToNextTab();
-          break;
+          return;
         default: {
+          if (!mod) return;
+
           const digit = parseInt(e.key, 10);
           if (digit >= 1 && digit <= 9) {
             e.preventDefault();

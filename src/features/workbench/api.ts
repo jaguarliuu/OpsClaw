@@ -1,4 +1,11 @@
-import type { AuthMode, CommandRecord, LlmProvider } from '@/features/workbench/types';
+import type {
+  AuthMode,
+  CommandRecord,
+  LlmProvider,
+  LlmProviderType,
+  MemoryDocument,
+} from '@/features/workbench/types';
+import { buildFetchDebugMessage } from '@/features/workbench/httpDebugModel';
 import { buildServerHttpBaseUrl } from '@/features/workbench/serverBase';
 
 export type NodeSummaryRecord = {
@@ -20,6 +27,9 @@ export type NodeDetailRecord = NodeSummaryRecord & {
   password: string | null;
   privateKey: string | null;
   passphrase: string | null;
+  hasPassword: boolean;
+  hasPrivateKey: boolean;
+  hasPassphrase: boolean;
 };
 
 export type NodeUpsertInput = {
@@ -55,14 +65,41 @@ async function readJson<T>(response: Response) {
   return payload;
 }
 
+async function fetchFromOpsClaw(path: string, init?: RequestInit) {
+  const url = `${buildServerHttpBaseUrl()}${path}`;
+
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    const message = buildFetchDebugMessage({
+      method: init?.method ?? 'GET',
+      url,
+      error,
+      location: {
+        protocol: window.location.protocol,
+        origin: window.location.origin,
+      },
+      runtime: window.__OPSCLAW_RUNTIME__,
+    });
+    console.error('[OpsClawFetch]', {
+      error,
+      method: init?.method ?? 'GET',
+      pageOrigin: window.location.origin,
+      runtime: window.__OPSCLAW_RUNTIME__,
+      url,
+    });
+    throw new Error(message);
+  }
+}
+
 export async function fetchNodes() {
-  const response = await fetch(`${buildServerHttpBaseUrl()}/api/nodes`);
+  const response = await fetchFromOpsClaw('/api/nodes');
   const payload = await readJson<{ items: NodeSummaryRecord[] }>(response);
   return payload.items;
 }
 
 export async function fetchGroups() {
-  const response = await fetch(`${buildServerHttpBaseUrl()}/api/groups`);
+  const response = await fetchFromOpsClaw('/api/groups');
   const payload = await readJson<{ items: GroupRecord[] }>(response);
   return payload.items;
 }
@@ -161,7 +198,7 @@ export async function deleteNode(id: string) {
 }
 
 export async function fetchPingAll(): Promise<Record<string, { online: boolean; latencyMs?: number }>> {
-  const response = await fetch(`${buildServerHttpBaseUrl()}/api/nodes/ping-all`);
+  const response = await fetchFromOpsClaw('/api/nodes/ping-all');
   if (!response.ok) {
     throw new Error('ping-all 请求失败。');
   }
@@ -202,15 +239,18 @@ export async function fetchLlmProviders(): Promise<LlmProvider[]> {
   return payload.items;
 }
 
-export async function createLlmProvider(input: {
+export type LlmProviderUpsertInput = {
   name: string;
-  providerType: string;
+  providerType: LlmProviderType;
   baseUrl?: string;
   apiKey: string;
   models: string[];
+  defaultModel?: string;
   maxTokens?: number;
   temperature?: number;
-}): Promise<LlmProvider> {
+};
+
+export async function createLlmProvider(input: LlmProviderUpsertInput): Promise<LlmProvider> {
   const response = await fetch(`${buildServerHttpBaseUrl()}/api/llm/providers`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -220,15 +260,10 @@ export async function createLlmProvider(input: {
   return payload.item;
 }
 
-export async function updateLlmProvider(id: string, input: Partial<{
-  name: string;
-  providerType: string;
-  baseUrl: string;
-  apiKey: string;
-  models: string[];
-  maxTokens: number;
-  temperature: number;
-}>): Promise<LlmProvider> {
+export async function updateLlmProvider(
+  id: string,
+  input: Partial<LlmProviderUpsertInput>
+): Promise<LlmProvider> {
   const response = await fetch(`${buildServerHttpBaseUrl()}/api/llm/providers/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -256,6 +291,54 @@ export async function setDefaultLlmProvider(id: string): Promise<void> {
     const payload = (await response.json()) as { message?: string };
     throw new Error(payload.message ?? '设置默认 LLM 失败。');
   }
+}
+
+export async function fetchGlobalMemory(): Promise<MemoryDocument> {
+  const response = await fetch(`${buildServerHttpBaseUrl()}/api/memory/global`);
+  const payload = await readJson<{ item: MemoryDocument }>(response);
+  return payload.item;
+}
+
+export async function updateGlobalMemory(content: string): Promise<MemoryDocument> {
+  const response = await fetch(`${buildServerHttpBaseUrl()}/api/memory/global`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+  const payload = await readJson<{ item: MemoryDocument }>(response);
+  return payload.item;
+}
+
+export async function fetchGroupMemory(id: string): Promise<MemoryDocument> {
+  const response = await fetch(`${buildServerHttpBaseUrl()}/api/memory/groups/${id}`);
+  const payload = await readJson<{ item: MemoryDocument }>(response);
+  return payload.item;
+}
+
+export async function updateGroupMemory(id: string, content: string): Promise<MemoryDocument> {
+  const response = await fetch(`${buildServerHttpBaseUrl()}/api/memory/groups/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+  const payload = await readJson<{ item: MemoryDocument }>(response);
+  return payload.item;
+}
+
+export async function fetchNodeMemory(id: string): Promise<MemoryDocument> {
+  const response = await fetch(`${buildServerHttpBaseUrl()}/api/memory/nodes/${id}`);
+  const payload = await readJson<{ item: MemoryDocument }>(response);
+  return payload.item;
+}
+
+export async function updateNodeMemory(id: string, content: string): Promise<MemoryDocument> {
+  const response = await fetch(`${buildServerHttpBaseUrl()}/api/memory/nodes/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+  const payload = await readJson<{ item: MemoryDocument }>(response);
+  return payload.item;
 }
 
 export type ImportResult = {

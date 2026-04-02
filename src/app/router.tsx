@@ -1,12 +1,23 @@
-import { createBrowserRouter } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { createBrowserRouter, createHashRouter } from 'react-router-dom';
 
 import { AppLayout } from '@/app/AppLayout';
-import { AuditPage } from '@/routes/AuditPage';
-import { InspectionsPage } from '@/routes/InspectionsPage';
-import SettingsPage from '@/routes/SettingsPage';
+import { shouldUseHashRouter } from '@/app/routerMode';
 import { WorkbenchPage } from '@/routes/WorkbenchPage';
 
-export const router = createBrowserRouter([
+const LazyInspectionsPage = lazy(async () => {
+  const module = await import('@/routes/InspectionsPage');
+  return { default: module.InspectionsPage };
+});
+
+const LazyAuditPage = lazy(async () => {
+  const module = await import('@/routes/AuditPage');
+  return { default: module.AuditPage };
+});
+
+const LazySettingsPage = lazy(async () => import('@/routes/SettingsPage'));
+
+const routes = [
   {
     path: '/',
     element: <AppLayout />,
@@ -17,16 +28,37 @@ export const router = createBrowserRouter([
       },
       {
         path: 'inspections',
-        element: <InspectionsPage />,
+        element: (
+          <Suspense fallback={null}>
+            <LazyInspectionsPage />
+          </Suspense>
+        ),
       },
       {
         path: 'audit',
-        element: <AuditPage />,
+        element: (
+          <Suspense fallback={null}>
+            <LazyAuditPage />
+          </Suspense>
+        ),
       },
       {
         path: 'settings',
-        element: <SettingsPage />,
+        element: (
+          <Suspense fallback={null}>
+            <LazySettingsPage />
+          </Suspense>
+        ),
       },
     ],
   },
-]);
+];
+
+const createRouter = shouldUseHashRouter({
+  runtime: window.__OPSCLAW_RUNTIME__,
+  location: window.location,
+})
+  ? createHashRouter
+  : createBrowserRouter;
+
+export const router = createRouter(routes);

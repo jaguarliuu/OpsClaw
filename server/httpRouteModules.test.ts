@@ -1,0 +1,81 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+type RegisteredRoute = {
+  method: 'get' | 'post' | 'put' | 'delete';
+  path: string;
+};
+
+type FakeApp = {
+  get: (path: string, ...handlers: unknown[]) => void;
+  post: (path: string, ...handlers: unknown[]) => void;
+  put: (path: string, ...handlers: unknown[]) => void;
+  delete: (path: string, ...handlers: unknown[]) => void;
+};
+
+function createFakeApp(routes: RegisteredRoute[]): FakeApp {
+  return {
+    get(path) {
+      routes.push({ method: 'get', path });
+    },
+    post(path) {
+      routes.push({ method: 'post', path });
+    },
+    put(path) {
+      routes.push({ method: 'put', path });
+    },
+    delete(path) {
+      routes.push({ method: 'delete', path });
+    },
+  };
+}
+
+void test('route modules register their own route domains', async () => {
+  const [
+    { registerNodeRoutes },
+    { registerGroupRoutes },
+    { registerCommandRoutes },
+    { registerLlmRoutes },
+    { registerAgentRoutes },
+    { registerMemoryRoutes },
+    { registerScriptRoutes },
+  ] = await Promise.all([
+    import('./http/nodeRoutes.js'),
+    import('./http/groupRoutes.js'),
+    import('./http/commandRoutes.js'),
+    import('./http/llmRoutes.js'),
+    import('./http/agentRoutes.js'),
+    import('./http/memoryRoutes.js'),
+    import('./http/scriptRoutes.js'),
+  ]);
+
+  const routes: RegisteredRoute[] = [];
+  const app = createFakeApp(routes);
+  const deps = {
+    nodeStore: {} as never,
+    commandHistoryStore: {} as never,
+    llmProviderStore: {} as never,
+    scriptLibraryStore: {} as never,
+    fileMemoryStore: {} as never,
+    agentRuntime: {} as never,
+  };
+
+  registerNodeRoutes(app as never, deps);
+  registerGroupRoutes(app as never, deps);
+  registerCommandRoutes(app as never, deps);
+  registerLlmRoutes(app as never, deps);
+  registerAgentRoutes(app as never, deps);
+  registerMemoryRoutes(app as never, deps);
+  registerScriptRoutes(app as never, deps);
+
+  assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/nodes'));
+  assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/groups'));
+  assert.ok(routes.some((route) => route.method === 'post' && route.path === '/api/commands'));
+  assert.ok(routes.some((route) => route.method === 'post' && route.path === '/api/llm/chat'));
+  assert.ok(routes.some((route) => route.method === 'post' && route.path === '/api/agent/runs'));
+  assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/memory/global'));
+  assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/scripts'));
+  assert.ok(routes.some((route) => route.method === 'post' && route.path === '/api/scripts'));
+  assert.ok(routes.some((route) => route.method === 'put' && route.path === '/api/scripts/:id'));
+  assert.ok(routes.some((route) => route.method === 'delete' && route.path === '/api/scripts/:id'));
+});

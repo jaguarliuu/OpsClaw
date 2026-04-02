@@ -1,67 +1,66 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Sparkles } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
-import { SshTerminalPane, type SshTerminalPaneHandle } from '@/features/workbench/SshTerminalPane';
-import type { ConnectionStatus, LiveSession } from '@/features/workbench/types';
-import { cn } from '@/lib/utils';
-
-type SplitLayout = 'single' | 'horizontal' | 'vertical';
+import {
+  assignActiveSessionToPane,
+  buildSplitModeState,
+  cleanPaneSessionIds,
+  focusPaneState,
+  type FocusedPane,
+  type PaneSessionIds,
+  type SplitLayout,
+} from '@/features/workbench/workbenchTerminalWorkspaceModel';
+import { buildDesktopWindowChromeLayout } from '@/features/workbench/desktopWindowChromeModel';
+import { TerminalWorkspaceBody } from '@/features/workbench/TerminalWorkspaceBody';
+import { TerminalWorkspaceHeader } from '@/features/workbench/TerminalWorkspaceHeader';
+import type { SshTerminalPaneHandle } from '@/features/workbench/SshTerminalPane';
+import type {
+  ConnectionStatus,
+  LiveSession,
+  TerminalCommandExecutionResult,
+} from '@/features/workbench/types';
 
 export type TerminalWorkspaceHandle = {
   sendCommandToActive: (command: string) => void;
+  executeCommandOnSession: (
+    sessionId: string,
+    command: string
+  ) => Promise<TerminalCommandExecutionResult>;
 };
 
 type TerminalWorkspaceProps = {
   activeSessionId: string | null;
+  isUtilityDrawerOpen: boolean;
+  isMacShortcutPlatform: boolean;
   sessions: LiveSession[];
   sidebarCollapsed: boolean;
   onCloseSession: (sessionId: string) => void;
   onOpenNewConnection: () => void;
+  onToggleUtilityDrawer: () => void;
   onToggleSidebar: () => void;
   onSelectSession: (sessionId: string) => void;
   onSessionStatusChange: (sessionId: string, status: ConnectionStatus, errorMessage?: string) => void;
   onOpenAiAssistant: () => void;
 };
 
-function SingleIcon() {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-4 w-4">
-      <rect x="2" y="2" width="12" height="12" rx="1.5" />
-    </svg>
-  );
-}
-
-function SplitHorizontalIcon() {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-4 w-4">
-      <rect x="2" y="2" width="12" height="12" rx="1.5" />
-      <line x1="8" y1="2" x2="8" y2="14" />
-    </svg>
-  );
-}
-
-function SplitVerticalIcon() {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-4 w-4">
-      <rect x="2" y="2" width="12" height="12" rx="1.5" />
-      <line x1="2" y1="8" x2="14" y2="8" />
-    </svg>
-  );
-}
-
 export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWorkspaceProps>(
   function TerminalWorkspace({
   activeSessionId,
+  isUtilityDrawerOpen,
+  isMacShortcutPlatform,
   sessions,
   sidebarCollapsed,
   onCloseSession,
   onOpenNewConnection,
+  onToggleUtilityDrawer,
   onToggleSidebar,
   onSelectSession,
   onSessionStatusChange,
   onOpenAiAssistant,
 }: TerminalWorkspaceProps, ref: React.Ref<TerminalWorkspaceHandle>) {
+  const desktopWindowChrome = buildDesktopWindowChromeLayout({
+    runtime: window.__OPSCLAW_RUNTIME__,
+    location: window.location,
+  });
   const terminalRefs = useRef<Record<string, SshTerminalPaneHandle | null>>({});
 
   useImperativeHandle(ref, () => ({
@@ -69,14 +68,22 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
       if (!activeSessionId) return;
       terminalRefs.current[activeSessionId]?.sendCommand(command);
     },
+    executeCommandOnSession(sessionId: string, command: string) {
+      const terminal = terminalRefs.current[sessionId];
+      if (!terminal) {
+        return Promise.reject(new Error('目标会话不存在或尚未初始化。'));
+      }
+
+      return terminal.executeCommand(command);
+    },
   }), [activeSessionId]);
 
   const [splitLayout, setSplitLayout] = useState<SplitLayout>('single');
-  const [paneSessionIds, setPaneSessionIds] = useState<[string | null, string | null]>([null, null]);
-  const [focusedPane, setFocusedPane] = useState<0 | 1>(0);
+  const [paneSessionIds, setPaneSessionIds] = useState<PaneSessionIds>([null, null]);
+  const [focusedPane, setFocusedPane] = useState<FocusedPane>(0);
   const [splitRatio, setSplitRatio] = useState(0.5);
 
-  const focusedPaneRef = useRef<0 | 1>(0);
+  const focusedPaneRef = useRef<FocusedPane>(0);
   const splitLayoutRef = useRef<SplitLayout>('single');
   const isDraggingRef = useRef(false);
   const dragRafRef = useRef<number | null>(null);
@@ -93,32 +100,31 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
   // Assign activeSessionId to the focused pane when in split mode
   useEffect(() => {
     if (splitLayoutRef.current === 'single' || !activeSessionId) return;
-    setPaneSessionIds((prev) => {
-      const next: [string | null, string | null] = [...prev] as [string | null, string | null];
-      next[focusedPaneRef.current] = activeSessionId;
-      return next;
-    });
+    setPaneSessionIds((prev) =>
+      assignActiveSessionToPane(prev, focusedPaneRef.current, activeSessionId)
+    );
   }, [activeSessionId]);
 
   // Clean up paneSessionIds when sessions are closed
   useEffect(() => {
-    const ids = new Set(sessions.map((s) => s.id));
+    const sessionIds = sessions.map((session) => session.id);
     setPaneSessionIds((prev) => {
-      const next: [string | null, string | null] = [
-        prev[0] && ids.has(prev[0]) ? prev[0] : null,
-        prev[1] && ids.has(prev[1]) ? prev[1] : null,
-      ];
+      const next = cleanPaneSessionIds(prev, sessionIds);
       return next[0] === prev[0] && next[1] === prev[1] ? prev : next;
     });
   }, [sessions]);
 
   const enterSplitMode = (layout: 'horizontal' | 'vertical') => {
-    setSplitLayout(layout);
-    splitLayoutRef.current = layout;
-    const other = sessions.find((s) => s.id !== activeSessionId);
-    setPaneSessionIds([activeSessionId, other?.id ?? null]);
-    setFocusedPane(0);
-    focusedPaneRef.current = 0;
+    const nextState = buildSplitModeState(
+      activeSessionId,
+      sessions.map((session) => session.id),
+      layout
+    );
+    setSplitLayout(nextState.splitLayout);
+    splitLayoutRef.current = nextState.splitLayout;
+    setPaneSessionIds(nextState.paneSessionIds);
+    setFocusedPane(nextState.focusedPane);
+    focusedPaneRef.current = nextState.focusedPane;
   };
 
   const exitSplitMode = () => {
@@ -128,11 +134,13 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
     if (target) onSelectSession(target);
   };
 
-  const handlePaneFocus = (paneIndex: 0 | 1) => {
-    const sid = paneSessionIds[paneIndex];
-    setFocusedPane(paneIndex);
-    focusedPaneRef.current = paneIndex;
-    if (sid) onSelectSession(sid);
+  const handlePaneFocus = (paneIndex: FocusedPane) => {
+    const nextState = focusPaneState(paneSessionIds, paneIndex);
+    setFocusedPane(nextState.focusedPane);
+    focusedPaneRef.current = nextState.focusedPane;
+    if (nextState.selectedSessionId) {
+      onSelectSession(nextState.selectedSessionId);
+    }
   };
 
   const handleDividerMouseDown = (e: React.MouseEvent) => {
@@ -170,279 +178,57 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
     ? sessions.find((session) => session.id === activeSessionId) ?? null
     : null;
 
-  const getPaneStyle = (paneIndex: 0 | 1): React.CSSProperties => {
-    if (splitLayout === 'horizontal') {
-      return paneIndex === 0
-        ? { position: 'absolute', top: 0, bottom: 0, left: 0, right: `calc(${(1 - splitRatio) * 100}% + 2px)` }
-        : { position: 'absolute', top: 0, bottom: 0, right: 0, left: `calc(${splitRatio * 100}% + 2px)` };
-    }
-    return paneIndex === 0
-      ? { position: 'absolute', top: 0, left: 0, right: 0, bottom: `calc(${(1 - splitRatio) * 100}% + 2px)` }
-      : { position: 'absolute', bottom: 0, left: 0, right: 0, top: `calc(${splitRatio * 100}% + 2px)` };
-  };
-
-  const getDividerStyle = (): React.CSSProperties => {
-    if (splitLayout === 'horizontal') {
-      return {
-        position: 'absolute',
-        top: 0,
-        bottom: 0,
-        left: `calc(${splitRatio * 100}% - 2px)`,
-        width: '4px',
-      };
-    }
-    return {
-      position: 'absolute',
-      left: 0,
-      right: 0,
-      top: `calc(${splitRatio * 100}% - 2px)`,
-      height: '4px',
-    };
+  const handleFocusEmptyPane = (paneIndex: FocusedPane) => {
+    setFocusedPane(paneIndex);
+    focusedPaneRef.current = paneIndex;
   };
 
   return (
-    <section className="grid min-h-screen min-w-0 flex-1 grid-rows-[42px_38px_minmax(0,1fr)] bg-[var(--app-bg-elevated)]">
-      <header className="flex items-stretch justify-between border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] px-2">
-        <div className="flex min-w-0 items-stretch gap-1 overflow-auto">
-          {sidebarCollapsed ? (
-            <Button
-              aria-label="展开连接管理器"
-              className="mt-1 min-w-8 px-0 text-base text-neutral-400"
-              onClick={onToggleSidebar}
-              size="sm"
-              variant="ghost"
-            >
-              ≡
-            </Button>
-          ) : null}
-          {sessions.map((session, index) => (
-            <button
-              className={cn(
-                'inline-flex max-w-64 items-center gap-2 rounded-t-md border border-transparent border-b-0 bg-[var(--app-bg-elevated3)] px-3 text-[13px] text-neutral-400',
-                session.id === activeSessionId && 'bg-[var(--app-bg-elevated3)] text-[var(--app-text-primary)]'
-              )}
-              key={session.id}
-              onClick={() => onSelectSession(session.id)}
-              type="button"
-            >
-              <span className="text-[12px] text-neutral-500">{index + 1}</span>
-              <span className="truncate">{session.username}@{session.host}</span>
-              <span
-                className="text-neutral-500 transition-colors hover:text-neutral-200"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onCloseSession(session.id);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onCloseSession(session.id);
-                  }
-                }}
-                role="button"
-                tabIndex={0}
-              >
-                ×
-              </span>
-            </button>
-          ))}
-          <Button
-            aria-label="新建连接"
-            className="mt-1 min-w-8 px-0 text-base text-neutral-400"
-            onClick={onOpenNewConnection}
-            size="sm"
-            variant="ghost"
-          >
-            +
-          </Button>
-        </div>
+    <section
+      className="grid min-h-screen min-w-0 flex-1 bg-[var(--app-bg-elevated)]"
+      style={{
+        gridTemplateRows: desktopWindowChrome.topBarStyle
+          ? 'calc(42px + env(titlebar-area-height, 0px)) 38px minmax(0,1fr)'
+          : '42px 38px minmax(0,1fr)',
+      }}
+    >
+      <TerminalWorkspaceHeader
+        activeSession={activeSession}
+        activeSessionId={activeSessionId}
+        desktopTopBarStyle={desktopWindowChrome.topBarStyle}
+        desktopWindowControlsInsetStyle={desktopWindowChrome.windowControlsInsetStyle}
+        isUtilityDrawerOpen={isUtilityDrawerOpen}
+        isMacShortcutPlatform={isMacShortcutPlatform}
+        sessions={sessions}
+        sidebarCollapsed={sidebarCollapsed}
+        splitLayout={splitLayout}
+        onCloseSession={onCloseSession}
+        onEnterSplitMode={enterSplitMode}
+        onExitSplitMode={exitSplitMode}
+        onOpenAiAssistant={onOpenAiAssistant}
+        onOpenNewConnection={onOpenNewConnection}
+        onToggleUtilityDrawer={onToggleUtilityDrawer}
+        onSelectSession={onSelectSession}
+        onToggleSidebar={onToggleSidebar}
+      />
 
-        <div className="flex items-center gap-1">
-          <div className="flex items-center">
-            <button
-              type="button"
-              title="单屏"
-              onClick={exitSplitMode}
-              className={cn(
-                'flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-neutral-700',
-                splitLayout === 'single' ? 'text-blue-400' : 'text-neutral-500'
-              )}
-            >
-              <SingleIcon />
-            </button>
-            <button
-              type="button"
-              title="左右分屏"
-              onClick={() => enterSplitMode('horizontal')}
-              className={cn(
-                'flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-neutral-700',
-                splitLayout === 'horizontal' ? 'text-blue-400' : 'text-neutral-500'
-              )}
-            >
-              <SplitHorizontalIcon />
-            </button>
-            <button
-              type="button"
-              title="上下分屏"
-              onClick={() => enterSplitMode('vertical')}
-              className={cn(
-                'flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-neutral-700',
-                splitLayout === 'vertical' ? 'text-blue-400' : 'text-neutral-500'
-              )}
-            >
-              <SplitVerticalIcon />
-            </button>
-          </div>
-
-          <Button
-            className="text-neutral-400 hover:text-blue-400 transition-colors"
-            onClick={onOpenAiAssistant}
-            size="sm"
-            variant="ghost"
-            title="AI 助手"
-          >
-            <Sparkles className="h-4 w-4" />
-          </Button>
-        </div>
-      </header>
-
-      <div className="flex items-center justify-end border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] px-4 text-sm text-neutral-500">
-        <div className="flex items-center gap-2">
-          {activeSession ? (
-            <>
-              <span className="rounded-full border border-[var(--app-border-default)] bg-neutral-900 px-2.5 py-1 text-xs">
-                {activeSession.username}
-              </span>
-              <span className="rounded-full border border-[var(--app-border-default)] bg-neutral-900 px-2.5 py-1 text-xs">
-                {activeSession.host}
-              </span>
-              <span
-                className={cn(
-                  'rounded-full border border-[var(--app-border-default)] bg-neutral-900 px-2.5 py-1 text-xs',
-                  activeSession.status === 'connected' && 'text-emerald-400'
-                )}
-              >
-                {activeSession.status}
-              </span>
-            </>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="relative min-h-0 bg-[var(--app-bg-base)]" ref={splitContainerRef}>
-        {sessions.length === 0 ? (
-          <div className="grid h-full place-items-center">
-            <div className="flex items-center gap-3">
-              {sidebarCollapsed ? (
-                <Button onClick={onToggleSidebar} variant="secondary">
-                  展开连接列表
-                </Button>
-              ) : null}
-              <Button onClick={onOpenNewConnection}>新建连接</Button>
-            </div>
-          </div>
-        ) : (
-          <>
-            {sessions.map((session) => {
-              const paneIndex = paneSessionIds.indexOf(session.id) as 0 | 1 | -1;
-              const isInPane = splitLayout !== 'single' && paneIndex !== -1;
-              const isFocusedPane = isInPane && paneIndex === focusedPane;
-
-              if (splitLayout === 'single') {
-                return (
-                  <SshTerminalPane
-                    active={session.id === activeSessionId}
-                    key={session.id}
-                    onStatusChange={onSessionStatusChange}
-                    ref={(handle) => {
-                      terminalRefs.current[session.id] = handle;
-                    }}
-                    session={session}
-                  />
-                );
-              }
-
-              if (!isInPane) {
-                return (
-                  <SshTerminalPane
-                    active={false}
-                    key={session.id}
-                    onStatusChange={onSessionStatusChange}
-                    ref={(handle) => {
-                      terminalRefs.current[session.id] = handle;
-                    }}
-                    session={session}
-                  />
-                );
-              }
-
-              return (
-                <div
-                  key={session.id}
-                  style={getPaneStyle(paneIndex as 0 | 1)}
-                  className={cn(
-                    isFocusedPane
-                      ? 'ring-1 ring-inset ring-blue-500/25'
-                      : 'ring-1 ring-inset ring-neutral-800/60'
-                  )}
-                  onPointerDown={() => {
-                    if (!isFocusedPane) handlePaneFocus(paneIndex as 0 | 1);
-                  }}
-                >
-                  <SshTerminalPane
-                    active={isFocusedPane}
-                    show={true}
-                    onStatusChange={onSessionStatusChange}
-                    ref={(handle) => {
-                      terminalRefs.current[session.id] = handle;
-                    }}
-                    session={session}
-                  />
-                </div>
-              );
-            })}
-
-            {splitLayout !== 'single' &&
-              ([0, 1] as const).map((paneIndex) => {
-                if (paneSessionIds[paneIndex] !== null) return null;
-                return (
-                  <div
-                    key={`empty-${paneIndex}`}
-                    style={getPaneStyle(paneIndex)}
-                    className={cn(
-                      'flex items-center justify-center',
-                      paneIndex === focusedPane
-                        ? 'ring-1 ring-inset ring-blue-500/25'
-                        : 'ring-1 ring-inset ring-neutral-800/60'
-                    )}
-                    onPointerDown={() => {
-                      if (paneIndex !== focusedPane) {
-                        setFocusedPane(paneIndex);
-                        focusedPaneRef.current = paneIndex;
-                      }
-                    }}
-                  >
-                    <p className="select-none text-[12px] text-neutral-600">
-                      点击 Tab 标签将会话分配到此格
-                    </p>
-                  </div>
-                );
-              })}
-
-            {splitLayout !== 'single' && (
-              <div
-                style={getDividerStyle()}
-                className={cn(
-                  'z-10 bg-[var(--app-bg-elevated3)] hover:bg-blue-500/50',
-                  splitLayout === 'horizontal' ? 'cursor-col-resize' : 'cursor-row-resize'
-                )}
-                onMouseDown={handleDividerMouseDown}
-              />
-            )}
-          </>
-        )}
-      </div>
+      <TerminalWorkspaceBody
+        activeSessionId={activeSessionId}
+        focusedPane={focusedPane}
+        paneSessionIds={paneSessionIds}
+        sessions={sessions}
+        sidebarCollapsed={sidebarCollapsed}
+        splitContainerRef={splitContainerRef}
+        splitLayout={splitLayout}
+        splitRatio={splitRatio}
+        terminalRefs={terminalRefs}
+        onDividerMouseDown={handleDividerMouseDown}
+        onFocusEmptyPane={handleFocusEmptyPane}
+        onOpenNewConnection={onOpenNewConnection}
+        onPointerFocusPane={handlePaneFocus}
+        onSessionStatusChange={onSessionStatusChange}
+        onToggleSidebar={onToggleSidebar}
+      />
     </section>
   );
 });

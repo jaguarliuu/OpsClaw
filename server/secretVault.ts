@@ -2,8 +2,9 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { resolveOpsClawDataDir, resolveSecretKeyFilePath } from './runtimePaths.js';
+
 const encryptionVersionPrefix = 'opsclaw:v1:';
-const keyFilePath = path.resolve(process.cwd(), 'data', 'opsclaw.master.key');
 
 function parseKey(rawValue: string) {
   const value = rawValue.trim();
@@ -25,6 +26,13 @@ async function loadOrCreateKey() {
   if (envKey) {
     return parseKey(envKey);
   }
+
+  const keyFilePath = resolveSecretKeyFilePath(
+    resolveOpsClawDataDir({
+      cwd: process.cwd(),
+      env: process.env,
+    })
+  );
 
   await fs.mkdir(path.dirname(keyFilePath), { recursive: true });
 

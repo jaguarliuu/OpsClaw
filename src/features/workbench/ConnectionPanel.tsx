@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { ConnectionFormValues, SavedConnectionProfile } from '@/features/workbench/types';
 import { cn } from '@/lib/utils';
 
@@ -161,7 +162,7 @@ export function ConnectionPanel({
                 <Input
                   disabled={isSubmitting}
                   onChange={(event) => onChange('password', event.target.value)}
-                  placeholder="请输入密码"
+                  placeholder={formValues.hasSavedPassword ? '留空则保留现有密码' : '请输入密码'}
                   type="password"
                   value={formValues.password}
                 />
@@ -174,7 +175,11 @@ export function ConnectionPanel({
                     className="min-h-40"
                     disabled={isSubmitting}
                     onChange={(event) => onChange('privateKey', event.target.value)}
-                    placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                    placeholder={
+                      formValues.hasSavedPrivateKey
+                        ? '留空则保留现有私钥'
+                        : '-----BEGIN OPENSSH PRIVATE KEY-----'
+                    }
                     value={formValues.privateKey}
                   />
                 </div>
@@ -183,7 +188,7 @@ export function ConnectionPanel({
                   <Input
                     disabled={isSubmitting}
                     onChange={(event) => onChange('passphrase', event.target.value)}
-                    placeholder="可选"
+                    placeholder={formValues.hasSavedPassphrase ? '留空则保留现有口令' : '可选'}
                     type="password"
                     value={formValues.passphrase}
                   />
@@ -199,22 +204,25 @@ export function ConnectionPanel({
 
             <div className="grid gap-2">
               <Label className="text-xs text-neutral-400">跳板机（可选）</Label>
-              <select
-                id="jump-host"
+              <Select
                 disabled={isSubmitting}
-                value={formValues.jumpHostId}
-                onChange={(e) => onChange('jumpHostId', e.target.value)}
-                className="h-9 w-full rounded-md border border-[var(--app-border-strong)] bg-neutral-900 px-3 text-[13px] text-neutral-100 outline-none focus:border-neutral-500 disabled:opacity-50"
+                value={formValues.jumpHostId || "none"}
+                onValueChange={(value) => onChange('jumpHostId', value === "none" ? "" : value)}
               >
-                <option value="">无（直连）</option>
-                {savedProfiles
-                  .filter((p) => p.id !== currentNodeId)
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.host})
-                    </option>
-                  ))}
-              </select>
+                <SelectTrigger id="jump-host" className="h-9 w-full rounded-md border border-[var(--app-border-strong)] bg-neutral-900 px-3 text-[13px] text-neutral-100 disabled:opacity-50" title="选择跳板机">
+                  <SelectValue placeholder="无（直连）" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">无（直连）</SelectItem>
+                  {savedProfiles
+                    .filter((p) => p.id !== currentNodeId)
+                    .map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name} ({p.host})
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </div>

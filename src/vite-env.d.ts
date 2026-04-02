@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  readonly VITE_SERVER_HTTP_URL?: string;
   readonly VITE_TERMINAL_WS_URL?: string;
 }
 
