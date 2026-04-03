@@ -38,18 +38,27 @@ export type ApprovalGatePayload = {
 };
 
 export type HumanGatePayload = TerminalInputGatePayload | ApprovalGatePayload;
-
-export type HumanGateRecord = {
+type HumanGateRecordBase = {
   id: string;
   runId: string;
   sessionId: string;
-  kind: HumanGateKind;
   status: HumanGateStatus;
   reason: string;
   openedAt: number;
   deadlineAt: number;
-  payload: HumanGatePayload;
 };
+
+export type TerminalInputGateRecord = HumanGateRecordBase & {
+  kind: 'terminal_input';
+  payload: TerminalInputGatePayload;
+};
+
+export type ApprovalGateRecord = HumanGateRecordBase & {
+  kind: 'approval';
+  payload: ApprovalGatePayload;
+};
+
+export type HumanGateRecord = TerminalInputGateRecord | ApprovalGateRecord;
 
 export type ToolExecutionEnvelope = {
   toolName: string;
