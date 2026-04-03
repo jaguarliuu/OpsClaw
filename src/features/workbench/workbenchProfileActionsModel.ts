@@ -5,7 +5,6 @@ export function buildOpenNewConnectionState() {
   return {
     formValues: defaultFormValues,
     isConnectionPanelOpen: true,
-    isSidebarCollapsed: false,
     modalError: null,
     selectedProfileId: null,
   };

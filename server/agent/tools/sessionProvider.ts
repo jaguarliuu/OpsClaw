@@ -101,12 +101,6 @@ function createSessionRunCommandTool(): ToolHandler<typeof runCommandArgsSchema,
       concurrencyMode: 'session-exclusive',
       version: '1.0.0',
       tags: ['session', 'command'],
-      requiresApproval: (args) => {
-        const command = args.command.toLowerCase();
-        return ['rm ', 'reboot', 'shutdown', 'systemctl restart', 'service restart'].some(
-          keyword => command.includes(keyword)
-        );
-      },
     },
     async execute(args, ctx) {
       return ctx.capabilities.sessions.executeCommand(args.sessionId, args.command, {

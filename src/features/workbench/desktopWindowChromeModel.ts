@@ -10,6 +10,7 @@ type DesktopWindowChromeLayoutInput = {
 type DesktopWindowChromeStyle = {
   paddingTop?: string;
   paddingRight?: string;
+  WebkitAppRegion?: 'drag' | 'no-drag';
 };
 
 export function buildDesktopWindowChromeLayout(
@@ -17,6 +18,7 @@ export function buildDesktopWindowChromeLayout(
 ): {
   pageStyle: DesktopWindowChromeStyle | undefined;
   topBarStyle: DesktopWindowChromeStyle | undefined;
+  interactiveStyle: DesktopWindowChromeStyle | undefined;
   windowControlsInsetStyle: DesktopWindowChromeStyle | undefined;
 } {
   const isDesktop = input.runtime?.desktop === true || input.location.protocol === 'file:';
@@ -24,6 +26,7 @@ export function buildDesktopWindowChromeLayout(
     return {
       pageStyle: undefined,
       topBarStyle: undefined,
+      interactiveStyle: undefined,
       windowControlsInsetStyle: undefined,
     };
   }
@@ -32,9 +35,14 @@ export function buildDesktopWindowChromeLayout(
     pageStyle: undefined,
     topBarStyle: {
       paddingTop: 'env(titlebar-area-height, 0px)',
+      paddingRight: 'calc(env(titlebar-area-width, 138px) + 8px)',
+      WebkitAppRegion: 'drag',
+    },
+    interactiveStyle: {
+      WebkitAppRegion: 'no-drag',
     },
     windowControlsInsetStyle: {
-      paddingRight: '138px',
+      WebkitAppRegion: 'no-drag',
     },
   };
 }

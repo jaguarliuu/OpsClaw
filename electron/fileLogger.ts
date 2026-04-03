@@ -14,7 +14,21 @@ function formatDetails(details?: unknown) {
   try {
     return ` ${JSON.stringify(details)}`;
   } catch {
-    return ` ${String(details)}`;
+    if (details instanceof Error) {
+      return ` ${details.stack ?? details.message}`;
+    }
+
+    if (
+      typeof details === 'string' ||
+      typeof details === 'number' ||
+      typeof details === 'boolean' ||
+      typeof details === 'bigint' ||
+      typeof details === 'symbol'
+    ) {
+      return ` ${String(details)}`;
+    }
+
+    return ' [unserializable details]';
   }
 }
 

@@ -13,7 +13,14 @@ import { AGENT_MAX_STEP_OPTIONS } from './agentRunSettings';
 import { useAiAssistantPanelState } from './useAiAssistantPanelState';
 import { useStreamingChat } from './useStreamingChat';
 import { useAgentRun } from './useAgentRun';
-import { getAgentStepBudgetHint, getAiAssistantThemeClasses } from './aiAssistantPanelModel';
+import {
+  getAgentStepBudgetHint,
+  getAiAssistantThemeClasses,
+  getValidAiAssistantModelValue,
+  getValidAiAssistantSessionId,
+  shouldAutoScrollAiAssistantTimeline,
+} from './aiAssistantPanelModel';
+import { formatAgentPolicySummary } from './agentPolicyUiModel';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { LiveSession } from './types';
 import type { AgentTimelineItem, ToolExecutionEnvelope } from './types.agent';
@@ -175,6 +182,7 @@ function ToolResultCard({
   const isCommandResult = item.toolName === 'session.run_command' && item.result.ok;
   const successTextClass = themeMode === 'light' ? 'text-emerald-700' : 'text-emerald-200';
   const errorTextClass = themeMode === 'light' ? 'text-red-700' : 'text-red-200';
+  const policySummary = formatAgentPolicySummary(item.result.meta.policy);
 
   return (
     <div
@@ -211,6 +219,11 @@ function ToolResultCard({
       </button>
       {expanded ? (
         <div className="border-t border-white/8 px-4 py-4">
+          {policySummary ? (
+            <div className="mb-3 rounded-lg border border-white/8 bg-white/[0.04] px-3 py-2 text-xs text-[var(--app-text-secondary)]">
+              {policySummary}
+            </div>
+          ) : null}
           {isCommandResult ? (
             <SessionRunCommandResult result={item.result} themeMode={themeMode} />
           ) : (
@@ -265,9 +278,14 @@ function AgentTimelineCard({ item, themeMode }: { item: AgentTimelineItem; theme
   }
 
   if (item.kind === 'warning') {
+    const policySummary = formatAgentPolicySummary(item.policy);
+
     return (
       <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-[var(--app-status-warning)]">
-        {item.text}
+        <div>{item.text}</div>
+        {policySummary ? (
+          <div className="mt-2 text-xs text-[var(--app-text-secondary)]">{policySummary}</div>
+        ) : null}
       </div>
     );
   }
@@ -358,22 +376,72 @@ export function AiAssistantPanel({
   const visibleError = mode === 'agent' ? agentError : chatError;
   const isBusy = mode === 'agent' ? isRunning : isStreaming;
   const themeClasses = getAiAssistantThemeClasses(appTheme.mode);
+  const resolvedSelectedModel = getValidAiAssistantModelValue(modelOptions, selectedModel);
+  const resolvedSelectedSessionId = getValidAiAssistantSessionId(
+    sessions,
+    selectedSessionId,
+    activeSessionId
+  );
+  const visibleItemCount = mode === 'agent' ? agentItems.length : chatMessages.length;
+  const visibleContentSignature =
+    mode === 'agent'
+      ? agentItems
+          .map((item) => {
+            switch (item.kind) {
+              case 'assistant':
+              case 'user':
+              case 'warning':
+              case 'status':
+              case 'final':
+                return `${item.kind}:${item.text.length}`;
+              case 'tool_call':
+                return `${item.kind}:${item.toolName}:${JSON.stringify(item.arguments).length}`;
+              case 'tool_result':
+                return `${item.kind}:${item.toolName}:${JSON.stringify(item.result).length}`;
+              default:
+                return 'unknown';
+            }
+          })
+          .join('|')
+      : chatMessages.map((message) => `${message.role}:${message.content.length}`).join('|');
+  const previousOpenRef = useRef(open);
+  const previousModeRef = useRef(mode);
+  const previousVisibleItemCountRef = useRef(visibleItemCount);
+  const previousVisibleContentSignatureRef = useRef(visibleContentSignature);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [agentItems, chatMessages]);
+    const shouldScroll = shouldAutoScrollAiAssistantTimeline({
+      open,
+      previousOpen: previousOpenRef.current,
+      mode,
+      previousMode: previousModeRef.current,
+      visibleContentSignature,
+      previousVisibleContentSignature: previousVisibleContentSignatureRef.current,
+      visibleItemCount,
+      previousVisibleItemCount: previousVisibleItemCountRef.current,
+    });
+
+    if (shouldScroll) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+
+    previousOpenRef.current = open;
+    previousModeRef.current = mode;
+    previousVisibleItemCountRef.current = visibleItemCount;
+    previousVisibleContentSignatureRef.current = visibleContentSignature;
+  }, [open, mode, visibleContentSignature, visibleItemCount]);
 
   const handleSend = () => {
-    if (!input.trim() || !selectedModel) return;
-    const option = modelOptions.find(o => o.value === selectedModel);
+    if (!input.trim() || !resolvedSelectedModel) return;
+    const option = modelOptions.find(o => o.value === resolvedSelectedModel);
     if (!option) return;
 
     if (mode === 'agent') {
-      if (!selectedSessionId || isRunning) {
+      if (!resolvedSelectedSessionId || isRunning) {
         return;
       }
 
-      const session = sessions.find(item => item.id === selectedSessionId);
+      const session = sessions.find(item => item.id === resolvedSelectedSessionId);
       if (!session) {
         return;
       }
@@ -411,17 +479,20 @@ export function AiAssistantPanel({
           startDragging();
         }}
       />
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)]">
-        <div className="space-y-2">
-          <h2 className={`text-base font-semibold ${themeClasses.primaryTextClass}`}>AI 助手</h2>
-          <div className="flex items-center gap-2">
+      <div 
+        className="flex items-center justify-between px-4 py-3 border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)]"
+        style={{ paddingTop: 'calc(0.75rem + env(titlebar-area-height, 0px))' }}
+      >
+        <div className="flex items-center gap-3 w-full" style={{ paddingRight: 'env(titlebar-area-right, 120px)' }}>
+          <h2 className={`text-[13px] font-semibold ${themeClasses.primaryTextClass} uppercase tracking-wider`}>OpsClaw AI</h2>
+          <div className="flex items-center gap-1 bg-neutral-800/40 p-0.5 rounded-lg border border-neutral-700/50">
             <button
               type="button"
               onClick={() => setMode('agent')}
-              className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+              className={`rounded-md px-3 py-1 text-[11px] font-medium transition-all ${
                 mode === 'agent'
-                  ? 'bg-blue-600 text-white'
-                  : `bg-[var(--app-bg-elevated3)] ${themeClasses.secondaryTextClass} hover:text-[var(--app-text-primary)]`
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : `bg-transparent ${themeClasses.secondaryTextClass} hover:text-[var(--app-text-primary)] hover:bg-neutral-700/50`
               }`}
             >
               Agent
@@ -429,34 +500,36 @@ export function AiAssistantPanel({
             <button
               type="button"
               onClick={() => setMode('chat')}
-              className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+              className={`rounded-md px-3 py-1 text-[11px] font-medium transition-all ${
                 mode === 'chat'
-                  ? 'bg-blue-600 text-white'
-                  : `bg-[var(--app-bg-elevated3)] ${themeClasses.secondaryTextClass} hover:text-[var(--app-text-primary)]`
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : `bg-transparent ${themeClasses.secondaryTextClass} hover:text-[var(--app-text-primary)] hover:bg-neutral-700/50`
               }`}
             >
               Chat
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 shrink-0 z-10 relative">
           <button
             onClick={mode === 'agent' ? clearAgentItems : clearChatMessages}
-            className={`text-xs px-2 py-1 ${themeClasses.secondaryTextClass} hover:text-[var(--app-text-primary)] hover:bg-[var(--app-bg-elevated3)] rounded transition-colors`}
+            className={`flex items-center gap-1 text-[11px] px-2 py-1.5 ${themeClasses.secondaryTextClass} hover:text-[var(--app-text-primary)] hover:bg-[var(--app-bg-elevated3)] rounded-md transition-colors`}
+            title="新对话"
           >
-            清空
+            <span>新对话</span>
           </button>
           {isBusy ? (
             <button
               onClick={mode === 'agent' ? stopAgent : stopStreaming}
-              className="text-xs px-2 py-1 text-[var(--app-status-warning)] hover:opacity-80 hover:bg-amber-500/10 rounded transition-colors"
+              className="text-[11px] px-2 py-1.5 text-[var(--app-status-warning)] hover:opacity-80 hover:bg-amber-500/10 rounded-md transition-colors"
             >
               停止
             </button>
           ) : null}
+          <div className="w-px h-3 bg-neutral-700 mx-1"></div>
           <button
             onClick={onClose}
-            className={`p-1.5 ${themeClasses.secondaryTextClass} hover:text-[var(--app-text-primary)] hover:bg-[var(--app-bg-elevated3)] rounded transition-colors`}
+            className={`p-1.5 ${themeClasses.secondaryTextClass} hover:text-[var(--app-text-primary)] hover:bg-[var(--app-bg-elevated3)] rounded-md transition-colors`}
             title="关闭"
           >
             <X className="w-4 h-4" />
@@ -464,18 +537,47 @@ export function AiAssistantPanel({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 relative">
         {((mode === 'agent' && agentItems.length === 0) || (mode === 'chat' && chatMessages.length === 0)) && (
-          <div className="flex items-center justify-center h-full text-center">
-            <div className="space-y-2">
-              <div className={`text-sm ${themeClasses.secondaryTextClass}`}>
-                {mode === 'agent' ? '开始执行运维任务' : '开始与 AI 对话'}
+          <div className="flex flex-col items-center h-full max-w-md mx-auto pt-8 px-4">
+            <div className="w-14 h-14 bg-neutral-800/50 rounded-[1.25rem] flex items-center justify-center mb-6 shadow-inner border border-neutral-700/50">
+              <WandSparkles className="w-6 h-6 text-neutral-300" />
+            </div>
+            <h1 className="text-2xl font-bold text-white mb-2 tracking-tight">你好</h1>
+            <h2 className="text-[17px] font-semibold text-neutral-200 mb-3">我是 OpsClaw助手</h2>
+            <p className="text-[11px] text-neutral-400 text-center mb-8 max-w-[280px] leading-relaxed">
+              该组件将为您联动终端和可视化的工作流，提供从调试到自动化的一体化体验
+            </p>
+
+            <div className="w-full space-y-2.5">
+              <button onClick={() => setInput('使用 OpenClaw')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-[#1e1e1e] border border-neutral-800/50 hover:bg-[#252525] hover:border-neutral-700 transition-all text-left group shadow-sm">
+                <WandSparkles className="w-4 h-4 text-orange-400 group-hover:text-orange-300" />
+                <span className="text-[12px] text-neutral-300 group-hover:text-neutral-100">使用 OpenClaw</span>
+              </button>
+              <button onClick={() => setInput('将您常见ICT命令转为批处理文件')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-[#1e1e1e] border border-neutral-800/50 hover:bg-[#252525] hover:border-neutral-700 transition-all text-left group shadow-sm">
+                <TerminalSquare className="w-4 h-4 text-neutral-500 group-hover:text-neutral-400" />
+                <span className="text-[12px] text-neutral-300 group-hover:text-neutral-100">将您常见ICT命令转为批处理文件</span>
+              </button>
+              <button onClick={() => setInput('作为输入卡片传入给命令')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-[#1e1e1e] border border-neutral-800/50 hover:bg-[#252525] hover:border-neutral-700 transition-all text-left group shadow-sm">
+                <CheckCircle2 className="w-4 h-4 text-neutral-500 group-hover:text-neutral-400" />
+                <span className="text-[12px] text-neutral-300 group-hover:text-neutral-100">作为输入卡片传入给命令</span>
+              </button>
+              <button onClick={() => setInput('分析输入的数据流向')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-[#1e1e1e] border border-neutral-800/50 hover:bg-[#252525] hover:border-neutral-700 transition-all text-left group shadow-sm">
+                <ChevronRight className="w-4 h-4 text-neutral-500 group-hover:text-neutral-400" />
+                <span className="text-[12px] text-neutral-300 group-hover:text-neutral-100">分析输入的数据流向</span>
+              </button>
+            </div>
+
+            <div className="mt-auto pt-8 flex flex-col items-center gap-4 pb-4">
+              <div className="text-[11px] text-neutral-500">
+                选择会话后，助手可联动终端：发送命令、读取输出
               </div>
-              <div className={`text-xs ${themeClasses.tertiaryTextClass}`}>
-                {mode === 'agent'
-                  ? 'Agent 会规划步骤、执行命令并根据结果继续推进'
-                  : '选择提供商和模型后即可开始'}
-              </div>
+              <button onClick={() => {
+                const ta = document.querySelector('.ai-assistant-textarea') as HTMLTextAreaElement;
+                if (ta) ta.focus();
+              }} className="px-6 py-2 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-[13px] font-medium transition-all shadow-lg shadow-blue-500/20 active:scale-95">
+                立即体验
+              </button>
             </div>
           </div>
         )}
@@ -512,13 +614,31 @@ export function AiAssistantPanel({
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="p-4 border-t border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)]">
+      <div className="p-4 bg-[var(--app-bg-elevated2)] flex flex-col gap-3 shrink-0 z-10 relative shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.3)]">
         {mode === 'agent' ? (
-          <div className={`mb-3 rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs ${themeClasses.infoTextClass}`}>
+          <div className={`rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs ${themeClasses.infoTextClass}`}>
             Agent 会通过 ReAct 方式选择命令、下发到选中的 SSH session，并基于结果继续执行直到完成任务。
           </div>
         ) : null}
-        <div className="border border-[var(--app-border-default)] rounded-lg bg-[var(--app-bg-base)] overflow-hidden">
+
+        <div className="flex items-center gap-2 px-1">
+          <TerminalSquare className="w-4 h-4 text-neutral-500" />
+          <span className="text-[11px] text-neutral-500 font-medium">上下文</span>
+          <Select value={resolvedSelectedSessionId ?? ''} onValueChange={setSelectedSessionId}>
+            <SelectTrigger className="h-6 px-2 py-0 text-[11px] bg-neutral-800/50 border border-neutral-700/50 rounded-md text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors w-auto min-w-[120px] max-w-[200px]" title="选择会话">
+              <SelectValue placeholder="选择会话" />
+            </SelectTrigger>
+            <SelectContent side="top">
+              {sessions.map(session => (
+                <SelectItem key={session.id} value={session.id} className="text-xs py-1">
+                  {session.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="border border-neutral-700/60 rounded-xl bg-[var(--app-bg-base)] overflow-hidden focus-within:border-neutral-500 focus-within:ring-1 focus-within:ring-neutral-500/30 transition-all relative flex flex-col">
           <textarea
             value={input}
             onChange={e => setInput(e.target.value)}
@@ -534,26 +654,17 @@ export function AiAssistantPanel({
                 : '请输入你的问题，按 Enter 发送'
             }
             disabled={!selectedModel || isBusy}
-            rows={4}
-            className="w-full px-4 pt-4 pb-2 bg-transparent border-0 text-sm text-[var(--app-text-primary)] placeholder:text-[var(--app-text-tertiary)] focus:outline-none resize-none"
+            rows={3}
+            className="ai-assistant-textarea w-full px-3 pt-3 pb-2 bg-transparent border-0 text-[13px] text-[var(--app-text-primary)] placeholder:text-neutral-600 focus:outline-none resize-none"
           />
-          <div className="flex items-end justify-between gap-2 px-4 pb-3">
-            <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
-              <Select value={selectedSessionId ?? ''} onValueChange={setSelectedSessionId}>
-                <SelectTrigger className="flex-1 min-w-[120px] max-w-[200px] h-7 px-2 py-1 text-xs bg-[var(--app-bg-elevated2)] border-[var(--app-border-default)]" title="选择会话">
-                  <SelectValue placeholder="选择会话" />
-                </SelectTrigger>
-                <SelectContent side="top">
-                  {sessions.map(session => (
-                    <SelectItem key={session.id} value={session.id} className="text-xs py-1">
-                      {session.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={selectedModel} onValueChange={setSelectedModel}>
-                <SelectTrigger className="flex-1 min-w-[120px] max-w-[200px] h-7 px-2 py-1 text-xs bg-[var(--app-bg-elevated2)] border-[var(--app-border-default)]" title="选择模型">
-                  <SelectValue placeholder="选择模型" />
+          <div className="flex items-center justify-between px-2 pb-2">
+            <div className="flex items-center gap-2">
+              <Select value={resolvedSelectedModel} onValueChange={setSelectedModel}>
+                <SelectTrigger className="h-7 px-2 py-0 text-[11px] bg-transparent border-0 text-blue-400 hover:text-blue-300 w-auto min-w-[80px]" title="选择模型">
+                  <div className="flex items-center gap-1.5">
+                    <WandSparkles className="w-3.5 h-3.5" />
+                    <SelectValue placeholder="选择模型" />
+                  </div>
                 </SelectTrigger>
                 <SelectContent side="top">
                   {modelOptions.map(opt => (
@@ -569,7 +680,7 @@ export function AiAssistantPanel({
                   onValueChange={(value) => setSelectedAgentMaxSteps(Number.parseInt(value, 10))}
                 >
                   <SelectTrigger
-                    className="w-[112px] h-7 px-2 py-1 text-xs bg-[var(--app-bg-elevated2)] border-[var(--app-border-default)]"
+                    className="h-7 px-2 py-0 text-[11px] bg-transparent border-0 text-neutral-400 hover:text-neutral-300 w-auto min-w-[60px]"
                     title="总步数预算"
                   >
                     <SelectValue placeholder="总步数" />
@@ -584,23 +695,30 @@ export function AiAssistantPanel({
                 </Select>
               ) : null}
             </div>
+            
             <button
               onClick={handleSend}
               disabled={!canSend}
-              className="h-9 w-9 rounded-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors shrink-0"
+              className="h-7 w-7 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:bg-neutral-800 disabled:text-neutral-500 flex items-center justify-center transition-all shrink-0 text-white shadow-sm"
               title="发送"
             >
-              <Send className="w-4 h-4 text-white" />
+              <Send className="w-3.5 h-3.5" />
             </button>
           </div>
-          {mode === 'agent' ? (
-            <div className="px-4 pb-3 -mt-1 text-[11px] text-[var(--app-text-secondary)]">
-              {getAgentStepBudgetHint(selectedAgentMaxSteps)}
-            </div>
-          ) : null}
         </div>
+
+        <div className="text-center text-[10px] text-neutral-600 font-medium">
+          内容由 AI 生成，仅供参考
+        </div>
+
+        {mode === 'agent' ? (
+          <div className="absolute top-2 right-4 text-[10px] text-[var(--app-text-secondary)]">
+            {getAgentStepBudgetHint(selectedAgentMaxSteps)}
+          </div>
+        ) : null}
+        
         {isBusy && (
-          <div className={`mt-2 text-xs ${themeClasses.infoTextClass}`}>
+          <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20 backdrop-blur-sm">
             {mode === 'agent' ? 'Agent 正在执行任务...' : 'AI 正在回复...'}
           </div>
         )}

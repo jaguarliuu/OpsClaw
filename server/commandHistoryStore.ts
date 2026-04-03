@@ -70,8 +70,8 @@ export async function createCommandHistoryStore() {
     const existing = queryAll(
       database,
       nodeId
-        ? `SELECT id, rank FROM command_history WHERE command = :command AND node_id = :node_id LIMIT 1`
-        : `SELECT id, rank FROM command_history WHERE command = :command AND node_id IS NULL LIMIT 1`,
+        ? `SELECT * FROM command_history WHERE command = :command AND node_id = :node_id LIMIT 1`
+        : `SELECT * FROM command_history WHERE command = :command AND node_id IS NULL LIMIT 1`,
       nodeId ? { ':command': command, ':node_id': nodeId } : { ':command': command }
     );
 

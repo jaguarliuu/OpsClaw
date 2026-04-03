@@ -5,15 +5,21 @@ import {
   openOverlayState,
   toggleBooleanState,
 } from './workbenchShellModel';
-import { nextUtilityDrawerOpenState } from './utilityDrawerModel';
+import {
+  getDefaultUtilityDrawerOpenState as getDefaultUtilityDrawerState,
+  nextUtilityDrawerOpenState,
+} from './utilityDrawerModel';
 
 export function useWorkbenchShellState() {
   const [isQuickConnectOpen, setIsQuickConnectOpen] = useState(false);
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
   const [isAiAssistantOpen, setIsAiAssistantOpen] = useState(false);
+  const [isHelpDialogOpen, setIsHelpDialogOpen] = useState(false);
   const [isCsvImportOpen, setIsCsvImportOpen] = useState(false);
   const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
-  const [isUtilityDrawerOpen, setIsUtilityDrawerOpen] = useState(true);
+  const [isUtilityDrawerOpen, setIsUtilityDrawerOpen] = useState(
+    getDefaultUtilityDrawerState()
+  );
 
   const toggleQuickConnect = () => {
     setIsQuickConnectOpen((current) => toggleBooleanState(current));
@@ -25,6 +31,14 @@ export function useWorkbenchShellState() {
 
   const toggleAiAssistant = () => {
     setIsAiAssistantOpen((current) => toggleBooleanState(current));
+  };
+
+  const openHelpDialog = () => {
+    setIsHelpDialogOpen(openOverlayState());
+  };
+
+  const closeHelpDialog = () => {
+    setIsHelpDialogOpen(closeOverlayState());
   };
 
   const openCsvImport = () => {
@@ -70,17 +84,20 @@ export function useWorkbenchShellState() {
   return {
     closeAiAssistant,
     closeCsvImport,
+    closeHelpDialog,
     closeHistoryPanel,
     closeQuickConnect,
     closeSettingsPanel,
     closeUtilityDrawer,
     isAiAssistantOpen,
     isCsvImportOpen,
+    isHelpDialogOpen,
     isHistoryPanelOpen,
     isQuickConnectOpen,
     isSettingsPanelOpen,
     isUtilityDrawerOpen,
     openCsvImport,
+    openHelpDialog,
     openSettingsPanel,
     openUtilityDrawer,
     toggleAiAssistant,

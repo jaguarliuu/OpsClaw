@@ -1,5 +1,6 @@
 import {
   complete,
+  stream,
   streamSimple,
   type Context,
   type Message,
@@ -132,6 +133,19 @@ export async function completeAgentContext(
   signal?: AbortSignal
 ) {
   return complete(
+    buildProviderModel(provider, modelName),
+    context,
+    buildProviderOptions(provider, signal)
+  );
+}
+
+export function streamAgentContext(
+  provider: StoredLlmProviderWithApiKey,
+  modelName: string,
+  context: Context,
+  signal?: AbortSignal
+) {
+  return stream(
     buildProviderModel(provider, modelName),
     context,
     buildProviderOptions(provider, signal)

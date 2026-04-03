@@ -6,7 +6,9 @@ import {
   buildExecuteCommandPayload,
   consumePendingExecutionBuffer,
   createPendingExecutionCaptureState,
+  createTerminalProtocolOutputFilterState,
   createTerminalCommandMarkers,
+  filterTerminalProtocolOutput,
 } from './sshTerminalCommandExecutionModel.js';
 
 void test('createTerminalCommandMarkers builds paired start and end markers for a marker id', () => {
@@ -102,4 +104,45 @@ void test('consumePendingExecutionBuffer strips ansi codes before reading the en
   assert.equal(result.pendingExecution, null);
   assert.equal(result.result?.exitCode, 7);
   assert.equal(result.result?.output, 'hello');
+});
+
+void test('filterTerminalProtocolOutput removes visible marker protocol fragments while preserving normal shell output', () => {
+  const filtered = filterTerminalProtocolOutput(
+    createTerminalProtocolOutputFilterState(),
+    "ubuntu@host:~$ printf '\\n__OPSCLAW_CMD_START_abc123__\\n'\r\n" +
+      '\r\n__OPSCLAW_CMD_START_abc123__\r\n' +
+      'ubuntu@host:~$ which docker\r\n' +
+      'ubuntu@host:~$ __opsclaw_agent_status=$?\r\n' +
+      `ubuntu@host:~$ printf '\\n__OPSCLAW_CMD_END_abc123__:%s\\n' "$__opsclaw_agent_status"\r\n` +
+      '\r\n__OPSCLAW_CMD_END_abc123__:1\r\n'
+  );
+
+  assert.equal(filtered.nextState.pendingFragment, '');
+  assert.equal(
+    filtered.visibleChunk,
+    'ubuntu@host:~$ \r\n' +
+      '\r\n\r\n' +
+      'ubuntu@host:~$ which docker\r\n' +
+      'ubuntu@host:~$ \r\n' +
+      'ubuntu@host:~$ \r\n' +
+      '\r\n\r\n'
+  );
+});
+
+void test('filterTerminalProtocolOutput buffers split marker fragments until they can be safely removed', () => {
+  const firstPass = filterTerminalProtocolOutput(
+    createTerminalProtocolOutputFilterState(),
+    "prompt$ printf '\\n__OPSCLAW_CMD_STA"
+  );
+
+  assert.equal(firstPass.visibleChunk, 'prompt$ ');
+  assert.equal(firstPass.nextState.pendingFragment, "printf '\\n__OPSCLAW_CMD_STA");
+
+  const secondPass = filterTerminalProtocolOutput(
+    firstPass.nextState,
+    "RT_abc123__\\n'\r\n__OPSCLAW_CMD_START_abc123__\r\nprompt$ echo ok\r\n"
+  );
+
+  assert.equal(secondPass.nextState.pendingFragment, '');
+  assert.equal(secondPass.visibleChunk, '\r\n\r\nprompt$ echo ok\r\n');
 });

@@ -17,6 +17,18 @@ void test('buildWorkbenchToolActions marks utility drawer active and includes re
 
   assert.deepEqual(actions, [
     {
+      behavior: 'openHelpDialog',
+      display: 'label',
+      id: 'helpDialog',
+      icon: null,
+      isActive: false,
+      label: '?',
+      shortcutLabel: '',
+      tone: 'idle',
+      title: '帮助与快捷键',
+      variant: 'ghost',
+    },
+    {
       behavior: 'toggleUtilityDrawer',
       display: 'label',
       id: 'utilityDrawer',
@@ -49,11 +61,12 @@ void test('buildWorkbenchToolActions adapts shortcut labels for non-mac platform
     isUtilityDrawerOpen: false,
   });
 
-  assert.equal(actions[0]?.shortcutLabel, 'Ctrl+;');
-  assert.equal(actions[0]?.isActive, false);
-  assert.equal(actions[0]?.tone, 'idle');
-  assert.equal(actions[0]?.variant, 'ghost');
-  assert.equal(actions[1]?.shortcutLabel, 'Ctrl+A');
+  assert.equal(actions[0]?.title, '帮助与快捷键');
+  assert.equal(actions[1]?.shortcutLabel, 'Ctrl+;');
+  assert.equal(actions[1]?.isActive, false);
+  assert.equal(actions[1]?.tone, 'idle');
+  assert.equal(actions[1]?.variant, 'ghost');
+  assert.equal(actions[2]?.shortcutLabel, 'Ctrl+A');
 });
 
 void test('buildWorkbenchLayoutActions marks the active split layout and carries icon keys', () => {
@@ -120,14 +133,29 @@ void test('performWorkbenchLayoutAction dispatches exit and enter handlers by ac
 
 void test('performWorkbenchToolAction dispatches utility drawer and ai handlers by action behavior', () => {
   const calls: string[] = [];
-  const [utilityDrawerAction, aiAssistantAction] = buildWorkbenchToolActions({
+  const [helpDialogAction, utilityDrawerAction, aiAssistantAction] = buildWorkbenchToolActions({
     isMacShortcutPlatform: true,
     isUtilityDrawerOpen: true,
+  });
+
+  performWorkbenchToolAction(helpDialogAction, {
+    onOpenAiAssistant() {
+      calls.push('ai');
+    },
+    onOpenHelpDialog() {
+      calls.push('help');
+    },
+    onToggleUtilityDrawer() {
+      calls.push('drawer');
+    },
   });
 
   performWorkbenchToolAction(utilityDrawerAction, {
     onOpenAiAssistant() {
       calls.push('ai');
+    },
+    onOpenHelpDialog() {
+      calls.push('help');
     },
     onToggleUtilityDrawer() {
       calls.push('drawer');
@@ -138,12 +166,15 @@ void test('performWorkbenchToolAction dispatches utility drawer and ai handlers 
     onOpenAiAssistant() {
       calls.push('ai');
     },
+    onOpenHelpDialog() {
+      calls.push('help');
+    },
     onToggleUtilityDrawer() {
       calls.push('drawer');
     },
   });
 
-  assert.deepEqual(calls, ['drawer', 'ai']);
+  assert.deepEqual(calls, ['help', 'drawer', 'ai']);
 });
 
 void test('getWorkbenchActionClassName maps tone to stable utility classes', () => {

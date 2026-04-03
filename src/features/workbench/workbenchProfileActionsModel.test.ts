@@ -24,14 +24,16 @@ const sampleProfile: SavedConnectionProfile = {
   note: '密码连接',
 };
 
-void test('buildOpenNewConnectionState resets selection and opens the side panel', () => {
-  assert.deepEqual(buildOpenNewConnectionState(), {
+void test('buildOpenNewConnectionState resets selection and opens the connection modal without touching sidebar state', () => {
+  const result = buildOpenNewConnectionState();
+
+  assert.deepEqual(result, {
     formValues: defaultFormValues,
     isConnectionPanelOpen: true,
-    isSidebarCollapsed: false,
     modalError: null,
     selectedProfileId: null,
   });
+  assert.equal('isSidebarCollapsed' in result, false);
 });
 
 void test('buildEditProfileState marks the profile as loading in the side panel', () => {

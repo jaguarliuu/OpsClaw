@@ -2,9 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  getDefaultUtilityDrawerOpenState,
   getWorkbenchContentGridClassName,
   nextUtilityDrawerOpenState,
 } from './utilityDrawerModel.js';
+
+void test('getDefaultUtilityDrawerOpenState keeps the script library closed on first load', () => {
+  assert.equal(getDefaultUtilityDrawerOpenState(), false);
+});
 
 void test('nextUtilityDrawerOpenState closes and reopens the drawer explicitly', () => {
   assert.equal(nextUtilityDrawerOpenState(true, 'close'), false);

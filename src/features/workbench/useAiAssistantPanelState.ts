@@ -12,8 +12,9 @@ import {
   type AiAssistantModelOption,
   buildAiAssistantModelOptions,
   clampAiAssistantPanelWidth,
-  getDefaultAiAssistantSessionId,
   getPreferredAiAssistantModelValue,
+  getValidAiAssistantModelValue,
+  getValidAiAssistantSessionId,
   shouldEnableAiAssistantSend,
 } from './aiAssistantPanelModel';
 import type { LiveSession } from './types';
@@ -79,11 +80,20 @@ export function useAiAssistantPanelState({
         return;
       }
 
-      setModelOptions(buildAiAssistantModelOptions(providers));
-      setSelectedModel(getPreferredAiAssistantModelValue(providers));
+      const nextModelOptions = buildAiAssistantModelOptions(providers);
+      const preferredModel = getPreferredAiAssistantModelValue(providers);
+      setModelOptions(nextModelOptions);
+      setSelectedModel((current) =>
+        getValidAiAssistantModelValue(
+          nextModelOptions,
+          current || preferredModel
+        )
+      );
     });
 
-    setSelectedSessionId(getDefaultAiAssistantSessionId(sessions, activeSessionId));
+    setSelectedSessionId((current) =>
+      getValidAiAssistantSessionId(sessions, current, activeSessionId)
+    );
 
     return () => {
       cancelled = true;
@@ -91,6 +101,12 @@ export function useAiAssistantPanelState({
   }, [open, activeSessionId, sessions]);
 
   const isBusy = mode === 'agent' ? isRunning : isStreaming;
+  const resolvedSelectedModel = getValidAiAssistantModelValue(modelOptions, selectedModel);
+  const resolvedSelectedSessionId = getValidAiAssistantSessionId(
+    sessions,
+    selectedSessionId,
+    activeSessionId
+  );
 
   const setSelectedAgentMaxSteps = (value: number) => {
     const normalizedValue = normalizeAgentMaxSteps(value);
@@ -103,8 +119,8 @@ export function useAiAssistantPanelState({
       input,
       isBusy,
       mode,
-      selectedModel,
-      selectedSessionId,
+      selectedModel: resolvedSelectedModel,
+      selectedSessionId: resolvedSelectedSessionId,
     }),
     input,
     isDragging,

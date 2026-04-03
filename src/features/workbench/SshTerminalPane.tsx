@@ -3,9 +3,14 @@ import type { SearchAddon } from '@xterm/addon-search';
 import type { FitAddon } from '@xterm/addon-fit';
 import type { Terminal } from '@xterm/xterm';
 
+import { SshTerminalContextMenu } from '@/features/workbench/SshTerminalContextMenu';
 import { SshTerminalPasteOverlay } from '@/features/workbench/SshTerminalPasteOverlay';
 import { SshTerminalSearchOverlay } from '@/features/workbench/SshTerminalSearchOverlay';
 import { SshTerminalSuggestionOverlay } from '@/features/workbench/SshTerminalSuggestionOverlay';
+import {
+  resolveSshTerminalSuggestionOverlayPosition,
+  type SshTerminalSuggestionOverlayPlacement,
+} from '@/features/workbench/sshTerminalSuggestionOverlayModel';
 import { TERMINAL_THEMES } from '@/features/workbench/terminalSettings';
 import {
   appendTerminalTranscript,
@@ -13,6 +18,7 @@ import {
 } from '@/features/workbench/sshTerminalCommandExecutionModel';
 import { useSshTerminalConnection } from '@/features/workbench/useSshTerminalConnection';
 import { useSshTerminalController } from '@/features/workbench/useSshTerminalController';
+import { useSshTerminalContextMenu } from '@/features/workbench/useSshTerminalContextMenu';
 import { useSshTerminalSearch } from '@/features/workbench/useSshTerminalSearch';
 import { useSshTerminalRuntime } from '@/features/workbench/useSshTerminalRuntime';
 import { useSshTerminalViewport } from '@/features/workbench/useSshTerminalViewport';
@@ -39,6 +45,7 @@ export type SshTerminalPaneHandle = {
 };
 const RECONNECT_DELAYS_MS = [1000, 2000, 4000, 8000, 16000] as const;
 const MAX_RECONNECT_ATTEMPTS = 5;
+const DEFAULT_SUGGESTION_OVERLAY_HEIGHT_PX = 40;
 
 function logSshTerminalPane(event: string, details: Record<string, unknown> = {}) {
   console.info(`[SshTerminalPane] ${event}`, details);
@@ -64,7 +71,15 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
     const everConnectedRef = useRef(false);
     const inputBufferRef = useRef('');
     const transcriptRef = useRef('');
+    const suggestionOverlayRef = useRef<HTMLDivElement | null>(null);
     const [isRuntimeReady, setIsRuntimeReady] = useState(false);
+    const [suggestionOverlayPosition, setSuggestionOverlayPosition] = useState<{
+      placement: SshTerminalSuggestionOverlayPlacement;
+      top: number;
+    }>({
+      placement: 'below',
+      top: 12,
+    });
 
     const {
       closeSearch,
@@ -122,9 +137,21 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
     });
 
     const {
+      closeContextMenu,
+      contextMenuRef,
+      contextMenuState,
+      openContextMenu,
+    } = useSshTerminalContextMenu();
+
+    const {
+      copyFeedbackText,
+      copyFeedbackVisible,
       confirmPendingPaste,
+      copySelection,
       dismissPendingPaste,
       pendingPaste,
+      pasteFromClipboard,
+      selectAll,
       suggestion,
       suggestionVisible,
     } = useSshTerminalRuntime({
@@ -203,8 +230,57 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
       sendResize();
     }, [settings, sendResize]);
 
+    useEffect(() => {
+      if (!suggestionVisible || !suggestion) {
+        return;
+      }
+
+      const updateSuggestionOverlayPosition = () => {
+        const terminal = terminalRef.current;
+        const container = containerRef.current;
+        if (!terminal || !container) {
+          return;
+        }
+
+        const nextPosition = resolveSshTerminalSuggestionOverlayPosition({
+          cursorRow: terminal.buffer.active.cursorY,
+          overlayHeight:
+            suggestionOverlayRef.current?.offsetHeight ?? DEFAULT_SUGGESTION_OVERLAY_HEIGHT_PX,
+          totalRows: terminal.rows,
+          viewportHeight: container.clientHeight,
+        });
+
+        setSuggestionOverlayPosition((current) => {
+          if (
+            current.placement === nextPosition.placement &&
+            current.top === nextPosition.top
+          ) {
+            return current;
+          }
+
+          return nextPosition;
+        });
+      };
+
+      updateSuggestionOverlayPosition();
+      window.addEventListener('resize', updateSuggestionOverlayPosition);
+
+      return () => {
+        window.removeEventListener('resize', updateSuggestionOverlayPosition);
+      };
+    }, [suggestion, suggestionVisible]);
+
     return (
-      <div className={(show ?? active) ? 'relative block h-full w-full' : 'hidden h-full w-full'}>
+      <div
+        className={(show ?? active) ? 'relative block h-full w-full' : 'hidden h-full w-full'}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          openContextMenu(
+            { x: event.clientX, y: event.clientY },
+            { canCopySelection: terminalRef.current?.hasSelection() === true }
+          );
+        }}
+      >
         <div className="xterm-pane h-full w-full" ref={containerRef} />
 
         {isSearchOpen && (
@@ -227,8 +303,30 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
         )}
 
         {suggestionVisible && suggestion && (
-          <SshTerminalSuggestionOverlay suggestion={suggestion} />
+          <SshTerminalSuggestionOverlay
+            ref={suggestionOverlayRef}
+            placement={suggestionOverlayPosition.placement}
+            suggestion={suggestion}
+            top={suggestionOverlayPosition.top}
+          />
         )}
+
+        {copyFeedbackVisible ? (
+          <div className="pointer-events-none absolute bottom-4 right-4 z-20 rounded-md border border-emerald-500/20 bg-[var(--app-bg-elevated2)] px-3 py-2 text-xs font-medium text-emerald-400 shadow-[0_10px_30px_rgba(0,0,0,0.28)]">
+            {copyFeedbackText}
+          </div>
+        ) : null}
+
+        {contextMenuState ? (
+          <SshTerminalContextMenu
+            contextMenuRef={contextMenuRef}
+            contextMenuState={contextMenuState}
+            onCopySelection={copySelection}
+            onPasteFromClipboard={pasteFromClipboard}
+            onRequestClose={closeContextMenu}
+            onSelectAll={selectAll}
+          />
+        ) : null}
       </div>
     );
   }

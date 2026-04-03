@@ -97,8 +97,6 @@ export function SessionTree({
     >
       <SessionTreeHeader
         desktopTopBarStyle={desktopWindowChrome.topBarStyle}
-        onOpenNewConnection={onOpenNewConnection}
-        onToggleCollapse={onToggleCollapse}
       />
 
       <SessionTreeSearch
@@ -150,7 +148,11 @@ export function SessionTree({
         />
       ) : null}
 
-      <SessionTreeFooter onOpenSettings={onOpenSettings} />
+      <SessionTreeFooter
+        onOpenNewConnection={onOpenNewConnection}
+        onOpenSettings={onOpenSettings}
+        onToggleCollapse={onToggleCollapse}
+      />
     </aside>
   );
 }

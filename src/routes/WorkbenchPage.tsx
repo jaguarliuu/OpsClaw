@@ -12,6 +12,7 @@ import { useKeyboardShortcuts } from '@/features/workbench/useKeyboardShortcuts'
 import {
   preloadAiAssistantPanel,
   preloadConnectionPanel,
+  preloadHelpDialog,
 } from '@/features/workbench/workbenchPanelPreloaders';
 import { useWorkbenchGroupActions } from '@/features/workbench/useWorkbenchGroupActions';
 import {
@@ -21,6 +22,7 @@ import {
   LazyConnectionPanel,
   LazyCsvImportModal,
   LazyGroupNameDialog,
+  LazyHelpDialog,
   LazyMoveProfileDialog,
   LazyQuickConnectModal,
   LazyTerminalSettingsPanel,
@@ -46,17 +48,20 @@ export function WorkbenchPage() {
   const {
     closeAiAssistant,
     closeCsvImport,
+    closeHelpDialog,
     closeHistoryPanel,
     closeQuickConnect,
     closeSettingsPanel,
     closeUtilityDrawer,
     isAiAssistantOpen,
     isCsvImportOpen,
+    isHelpDialogOpen,
     isHistoryPanelOpen,
     isQuickConnectOpen,
     isSettingsPanelOpen,
     isUtilityDrawerOpen,
     openCsvImport,
+    openHelpDialog,
     openSettingsPanel,
     toggleAiAssistant,
     toggleHistoryPanel,
@@ -66,6 +71,7 @@ export function WorkbenchPage() {
   const shouldRenderQuickConnect = useDeferredMount(isQuickConnectOpen);
   const shouldRenderHistoryPanel = useDeferredMount(isHistoryPanelOpen);
   const shouldRenderAiAssistant = useDeferredMount(isAiAssistantOpen);
+  const shouldRenderHelpDialog = useDeferredMount(isHelpDialogOpen);
   const shouldRenderCsvImport = useDeferredMount(isCsvImportOpen);
   const shouldRenderSettingsPanel = useDeferredMount(isSettingsPanelOpen);
   const {
@@ -206,8 +212,9 @@ export function WorkbenchPage() {
         clearTimeout: (handle) => window.clearTimeout(handle as number | undefined),
       },
       () => {
-      preloadConnectionPanel();
-      preloadAiAssistantPanel();
+        preloadConnectionPanel();
+        preloadHelpDialog();
+        preloadAiAssistantPanel();
       }
     );
   }, []);
@@ -251,6 +258,7 @@ export function WorkbenchPage() {
           onSessionStatusChange={handleSessionStatusChange}
           onToggleSidebar={() => setIsSidebarCollapsed((current) => !current)}
           onOpenAiAssistant={toggleAiAssistant}
+          onOpenHelpDialog={openHelpDialog}
           sidebarCollapsed={isSidebarCollapsed}
           sessions={sessions}
         />
@@ -405,6 +413,18 @@ export function WorkbenchPage() {
             onClose={closeAiAssistant}
             sessions={sessions}
             activeSessionId={activeSessionId}
+          />
+        </Suspense>
+      ) : null}
+
+      {shouldRenderHelpDialog ? (
+        <Suspense fallback={null}>
+          <LazyHelpDialog
+            isMacShortcutPlatform={
+              typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)
+            }
+            onClose={closeHelpDialog}
+            open={isHelpDialogOpen}
           />
         </Suspense>
       ) : null}

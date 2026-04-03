@@ -1,5 +1,9 @@
 export type UtilityDrawerAction = 'open' | 'close' | 'toggle';
 
+export function getDefaultUtilityDrawerOpenState() {
+  return false;
+}
+
 export function nextUtilityDrawerOpenState(
   current: boolean,
   action: UtilityDrawerAction

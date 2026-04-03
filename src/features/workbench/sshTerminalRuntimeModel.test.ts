@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  resolveSshTerminalClipboardShortcut,
   resolveSshTerminalInput,
   shouldConfirmSshTerminalPaste,
   shouldToggleSshTerminalSearchShortcut,
@@ -40,6 +41,88 @@ void test('shouldToggleSshTerminalSearchShortcut matches Cmd/Ctrl+F keydown only
 void test('shouldConfirmSshTerminalPaste only intercepts multiline paste', () => {
   assert.equal(shouldConfirmSshTerminalPaste('single line'), false);
   assert.equal(shouldConfirmSshTerminalPaste('line-1\nline-2'), true);
+});
+
+void test('resolveSshTerminalClipboardShortcut copies the current selection on Cmd/Ctrl+C only', () => {
+  assert.equal(
+    resolveSshTerminalClipboardShortcut({
+      event: {
+        ctrlKey: true,
+        key: 'c',
+        metaKey: false,
+        type: 'keydown',
+      },
+      hasSelection: true,
+    }),
+    'copy-selection'
+  );
+
+  assert.equal(
+    resolveSshTerminalClipboardShortcut({
+      event: {
+        ctrlKey: false,
+        key: 'c',
+        metaKey: true,
+        type: 'keydown',
+      },
+      hasSelection: true,
+    }),
+    'copy-selection'
+  );
+
+  assert.equal(
+    resolveSshTerminalClipboardShortcut({
+      event: {
+        ctrlKey: true,
+        key: 'c',
+        metaKey: false,
+        type: 'keydown',
+      },
+      hasSelection: false,
+    }),
+    null
+  );
+});
+
+void test('resolveSshTerminalClipboardShortcut pastes clipboard text on Cmd/Ctrl+V keydown only', () => {
+  assert.equal(
+    resolveSshTerminalClipboardShortcut({
+      event: {
+        ctrlKey: true,
+        key: 'v',
+        metaKey: false,
+        type: 'keydown',
+      },
+      hasSelection: false,
+    }),
+    'paste-from-clipboard'
+  );
+
+  assert.equal(
+    resolveSshTerminalClipboardShortcut({
+      event: {
+        ctrlKey: true,
+        key: 'V',
+        metaKey: false,
+        type: 'keydown',
+      },
+      hasSelection: false,
+    }),
+    'paste-from-clipboard'
+  );
+
+  assert.equal(
+    resolveSshTerminalClipboardShortcut({
+      event: {
+        ctrlKey: true,
+        key: 'v',
+        metaKey: false,
+        type: 'keyup',
+      },
+      hasSelection: false,
+    }),
+    null
+  );
 });
 
 void test('resolveSshTerminalInput accepts a suggestion on Tab and forwards only the remaining text', () => {

@@ -5,6 +5,11 @@ export const LazyConnectionPanel = lazy(async () => {
   return { default: module.ConnectionPanel };
 });
 
+export const LazyHelpDialog = lazy(async () => {
+  const module = await import('./HelpDialog');
+  return { default: module.HelpDialog };
+});
+
 export const LazyAiAssistantPanel = lazy(async () => {
   const module = await import('./AiAssistantPanel');
   return { default: module.AiAssistantPanel };

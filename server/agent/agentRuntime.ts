@@ -8,7 +8,7 @@ import {
   type ToolResultMessage,
 } from '@mariozechner/pi-ai';
 
-import { completeAgentContext } from '../llmClient.js';
+import { completeAgentContext, streamAgentContext } from '../llmClient.js';
 import type { CreateAgentRunInput, AgentStreamEvent, ToolExecutionEnvelope } from './agentTypes.js';
 import type { FileMemoryStore } from './fileMemoryStore.js';
 import { logAgent } from './logger.js';
@@ -41,6 +41,7 @@ type AgentRuntimeDependencies = {
       status: 'connecting' | 'connected' | 'closed' | 'error';
     } | null;
   };
+  streamAgentContext?: typeof streamAgentContext;
   completeAgentContext?: typeof completeAgentContext;
 };
 
@@ -235,6 +236,36 @@ function buildToolResultMessage(
   };
 }
 
+async function consumeAssistantMessageStream(options: {
+  stream: ReturnType<typeof streamAgentContext>;
+  emit: (event: AgentStreamEvent) => void;
+  runId: string;
+  step: number;
+}) {
+  for await (const event of options.stream) {
+    if (event.type === 'text_delta' && event.delta) {
+      options.emit({
+        type: 'assistant_message_delta',
+        runId: options.runId,
+        delta: event.delta,
+        step: options.step,
+        timestamp: Date.now(),
+      });
+      continue;
+    }
+
+    if (event.type === 'done') {
+      return event.message;
+    }
+
+    if (event.type === 'error') {
+      return event.error;
+    }
+  }
+
+  throw new Error('模型流未返回完成事件。');
+}
+
 async function summarizeStableObservationsForMemory(options: {
   provider: Parameters<typeof completeAgentContext>[0];
   model: string;
@@ -315,8 +346,9 @@ export class OpsAgentRuntime {
     let stepBudgetRenewalIndex = 0;
     const maxCommandOutputChars =
       input.maxCommandOutputChars ?? DEFAULT_MAX_COMMAND_OUTPUT_CHARS;
-    const completeContext =
-      this.dependencies.completeAgentContext ?? completeAgentContext;
+    const completeContext = this.dependencies.completeAgentContext ?? completeAgentContext;
+    const stepStreamContext =
+      this.dependencies.streamAgentContext ?? (this.dependencies.completeAgentContext ? null : streamAgentContext);
     const session = this.dependencies.sessions.getSession(input.sessionId);
     const globalMemory = await this.dependencies.fileMemory.readGlobalMemory();
     const stableObservations: StableObservation[] = [];
@@ -402,12 +434,19 @@ export class OpsAgentRuntime {
       }
 
       logAgent('step_model_request_started', { runId, step });
-      const assistantMessage = await completeContext(
-        input.provider,
-        input.model,
-        context,
-        signal
-      );
+      const assistantMessage = stepStreamContext
+        ? await consumeAssistantMessageStream({
+            stream: stepStreamContext(input.provider, input.model, context, signal),
+            emit,
+            runId,
+            step,
+          })
+        : await completeContext(
+            input.provider,
+            input.model,
+            context,
+            signal
+          );
 
       context.messages.push(assistantMessage);
       logAgent('step_model_request_finished', {
@@ -530,6 +569,17 @@ export class OpsAgentRuntime {
         return;
       }
 
+      if (assistantMessage.stopReason === 'aborted') {
+        logAgent('run_cancelled_model_request', { runId, step });
+        emit({
+          type: 'run_cancelled',
+          runId,
+          step,
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
       if (assistantMessage.stopReason === 'length') {
         logAgent('run_failed_length', { runId, step });
         emit({
@@ -551,7 +601,7 @@ export class OpsAgentRuntime {
         emit({
           type: 'run_failed',
           runId,
-          error: `未处理的 stopReason：${assistantMessage.stopReason}`,
+          error: '模型返回了未处理的 stopReason。',
           step,
           timestamp: Date.now(),
         });

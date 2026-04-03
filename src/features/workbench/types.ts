@@ -159,8 +159,14 @@ export type OpsClawDesktopRuntime = {
   serverWebSocketBaseUrl: string;
 };
 
+export type OpsClawDesktopClipboard = {
+  readText: () => Promise<string>;
+  writeText: (text: string) => Promise<void>;
+};
+
 declare global {
   interface Window {
+    __OPSCLAW_CLIPBOARD__?: OpsClawDesktopClipboard;
     __OPSCLAW_RUNTIME__?: OpsClawDesktopRuntime;
   }
 }

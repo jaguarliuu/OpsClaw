@@ -49,6 +49,17 @@ export function getPreferredAiAssistantModelValue(providers: LlmProvider[]) {
   return preferredModel ? `${preferredProvider.id}:${preferredModel}` : '';
 }
 
+export function getValidAiAssistantModelValue(
+  modelOptions: AiAssistantModelOption[],
+  selectedModel: string
+) {
+  if (selectedModel && modelOptions.some((option) => option.value === selectedModel)) {
+    return selectedModel;
+  }
+
+  return modelOptions[0]?.value ?? '';
+}
+
 export function getDefaultAiAssistantSessionId(
   sessions: LiveSession[],
   activeSessionId: string | null
@@ -58,6 +69,18 @@ export function getDefaultAiAssistantSessionId(
   }
 
   return sessions[0]?.id ?? null;
+}
+
+export function getValidAiAssistantSessionId(
+  sessions: LiveSession[],
+  selectedSessionId: string | null,
+  activeSessionId: string | null
+) {
+  if (selectedSessionId && sessions.some((session) => session.id === selectedSessionId)) {
+    return selectedSessionId;
+  }
+
+  return getDefaultAiAssistantSessionId(sessions, activeSessionId);
 }
 
 export function clampAiAssistantPanelWidth(width: number) {
@@ -84,6 +107,35 @@ export function getAiAssistantThemeClasses(mode: AiAssistantThemeMode) {
     warningTextClass: mode === 'light' ? 'text-amber-900' : 'text-amber-200',
     errorTextClass: mode === 'light' ? 'text-red-700' : 'text-red-300',
   };
+}
+
+export function shouldAutoScrollAiAssistantTimeline(input: {
+  open: boolean;
+  previousOpen: boolean;
+  mode: AiAssistantMode;
+  previousMode: AiAssistantMode;
+  visibleContentSignature: string;
+  previousVisibleContentSignature: string;
+  visibleItemCount: number;
+  previousVisibleItemCount: number;
+}) {
+  if (!input.open) {
+    return false;
+  }
+
+  if (!input.previousOpen) {
+    return true;
+  }
+
+  if (input.mode !== input.previousMode) {
+    return true;
+  }
+
+  if (input.visibleContentSignature !== input.previousVisibleContentSignature) {
+    return true;
+  }
+
+  return input.visibleItemCount !== input.previousVisibleItemCount;
 }
 
 export function shouldEnableAiAssistantSend(input: {

@@ -1,4 +1,4 @@
-import { useEffect, type MutableRefObject } from 'react';
+import { useEffect, useRef, type MutableRefObject } from 'react';
 import type { Terminal } from '@xterm/xterm';
 
 import { buildTerminalWebSocketUrl } from '@/features/workbench/terminalSocket';
@@ -13,6 +13,10 @@ import {
   shouldReportTerminalSocketError,
   type TerminalServerMessage,
 } from '@/features/workbench/sshTerminalConnectionModel';
+import {
+  createTerminalProtocolOutputFilterState,
+  filterTerminalProtocolOutput,
+} from '@/features/workbench/sshTerminalCommandExecutionModel';
 import type { ConnectionStatus, LiveSession } from '@/features/workbench/types';
 
 function logSshTerminalConnection(event: string, details: Record<string, unknown> = {}) {
@@ -58,6 +62,7 @@ export function useSshTerminalConnection({
   terminalRef,
   websocketRef,
 }: UseSshTerminalConnectionOptions) {
+  const visibleOutputFilterRef = useRef(createTerminalProtocolOutputFilterState());
   const {
     host,
     id,
@@ -70,6 +75,7 @@ export function useSshTerminalConnection({
   } = session;
 
   useEffect(() => {
+    visibleOutputFilterRef.current = createTerminalProtocolOutputFilterState();
     const currentTerminal = terminalRef.current;
     const shouldOpenConnection = shouldOpenSshTerminalConnection({
       hasTerminal: currentTerminal !== null,
@@ -159,8 +165,16 @@ export function useSshTerminalConnection({
         }
 
         if (message.type === 'data') {
-          queueTerminalOutput(message.payload);
-          appendTranscript(message.payload);
+          const filteredOutput = filterTerminalProtocolOutput(
+            visibleOutputFilterRef.current,
+            message.payload
+          );
+          visibleOutputFilterRef.current = filteredOutput.nextState;
+
+          if (filteredOutput.visibleChunk) {
+            queueTerminalOutput(filteredOutput.visibleChunk);
+            appendTranscript(filteredOutput.visibleChunk);
+          }
           processPendingExecutionChunk(message.payload);
           return;
         }
@@ -256,6 +270,7 @@ export function useSshTerminalConnection({
       logSshTerminalConnection('effect:cleanup', {
         sessionId: id,
       });
+      visibleOutputFilterRef.current = createTerminalProtocolOutputFilterState();
       intentionalCloseRef.current = true;
       if (reconnectTimerRef.current !== null) {
         clearTimeout(reconnectTimerRef.current);

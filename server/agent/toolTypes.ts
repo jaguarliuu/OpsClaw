@@ -35,6 +35,14 @@ export type ToolExecutionContext = {
   emit: (event: AgentStreamEvent) => void;
 };
 
+export type ToolPolicyMatch = {
+  ruleId: string;
+  title: string;
+  severity: 'medium' | 'high' | 'critical';
+  reason: string;
+  matchedText?: string;
+};
+
 export type ToolDefinition<
   TParameters extends TSchema = TSchema,
   TArgs = Static<TParameters>,
@@ -81,6 +89,6 @@ export interface ToolRegistry {
 }
 
 export type ToolPolicyDecision =
-  | { kind: 'allow' }
-  | { kind: 'deny'; reason: string }
-  | { kind: 'require_approval'; reason: string };
+  | { kind: 'allow'; matches?: ToolPolicyMatch[] }
+  | { kind: 'deny'; reason: string; matches: ToolPolicyMatch[] }
+  | { kind: 'require_approval'; reason: string; matches: ToolPolicyMatch[] };

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { AssistantMessage, Context } from '@mariozechner/pi-ai';
+import type { AssistantMessage, AssistantMessageEventStream, Context } from '@mariozechner/pi-ai';
 
 import type { StoredLlmProvider } from '../llmProviderStore.js';
 import { createToolRegistry } from './toolRegistry.js';
@@ -220,6 +220,136 @@ test('任务完成后会将稳定观察整理后自动沉淀到节点记忆', as
   assert.equal(fileMemoryCalls[0]?.nodeId, 'node-1');
   assert.match(fileMemoryCalls[0]?.content ?? '', /### 内存观察/);
   assert.doesNotMatch(fileMemoryCalls[0]?.content ?? '', /#### 关键观察/);
+});
+
+test('streamAgentContext 可将 assistant 文本按 delta 流式发出，同时保留最终消息事件', async () => {
+  const registry = createToolRegistry();
+  const runtime = new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+      async readNodeMemory() {
+        return {
+          scope: 'node',
+          id: 'node-1',
+          title: '节点记忆',
+          path: '/tmp/node-1/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+      async appendAutoNodeMemoryEntry() {
+        throw new Error('should not persist memory for this test');
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+    },
+    streamAgentContext() {
+      return (async function* () {
+        const partial = createAssistantMessage({
+          api: 'openai-completions',
+          provider: 'openai',
+          model: 'qwen-plus',
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          content: [{ type: 'text', text: '正在检查磁盘' }],
+        });
+
+        yield {
+          type: 'start' as const,
+          partial,
+        };
+        yield {
+          type: 'text_start' as const,
+          contentIndex: 0,
+          partial,
+        };
+        yield {
+          type: 'text_delta' as const,
+          contentIndex: 0,
+          delta: '正在',
+          partial,
+        };
+        yield {
+          type: 'text_delta' as const,
+          contentIndex: 0,
+          delta: '检查磁盘',
+          partial,
+        };
+        yield {
+          type: 'text_end' as const,
+          contentIndex: 0,
+          content: '正在检查磁盘',
+          partial,
+        };
+        yield {
+          type: 'done' as const,
+          reason: 'stop' as const,
+          message: partial,
+        };
+      })() as unknown as AssistantMessageEventStream;
+    },
+  });
+
+  const events: string[] = [];
+  const deltas: string[] = [];
+
+  await runtime.run(
+    {
+      providerId: 'provider-1',
+      provider: createProvider(),
+      model: 'qwen-plus',
+      task: '查看磁盘',
+      sessionId: 'session-1',
+    },
+    event => {
+      events.push(event.type);
+      if (event.type === 'assistant_message_delta') {
+        deltas.push(event.delta);
+      }
+    },
+    new AbortController().signal
+  );
+
+  assert.deepEqual(events, [
+    'run_started',
+    'assistant_message_delta',
+    'assistant_message_delta',
+    'assistant_message',
+    'run_completed',
+  ]);
+  assert.deepEqual(deltas, ['正在', '检查磁盘']);
 });
 
 test('自动记忆摘要失败时会回退到原始沉淀格式', async () => {
@@ -766,4 +896,132 @@ test('当模型返回 error stopReason 时会把底层错误消息透传给 run_
     { type: 'run_started', error: undefined },
     { type: 'run_failed', error: 'Provider finish_reason: content_filter' },
   ]);
+});
+
+test('命中敏感命令策略时 approval_required 事件会携带结构化 policy 信息', async () => {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  const events: unknown[] = [];
+
+  const runtime = new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      async executeCommand() {
+        throw new Error('should not execute approval-gated command');
+      },
+    } as never,
+    completeAgentContext: async () =>
+      createAssistantMessage({
+        stopReason: 'toolUse',
+        content: [
+          {
+            type: 'toolCall',
+            id: 'call-1',
+            name: 'session.run_command',
+            arguments: {
+              sessionId: 'session-1',
+              command: 'systemctl restart nginx',
+            },
+          },
+        ],
+      }),
+  });
+
+  await runtime.run(
+    {
+      providerId: 'provider-1',
+      provider: createProvider(),
+      model: 'qwen-plus',
+      task: '重启 nginx 服务',
+      sessionId: 'session-1',
+      approvalMode: 'manual-sensitive',
+    },
+    event => {
+      events.push(event);
+    },
+    new AbortController().signal
+  );
+
+  const approvalEvent = events.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'approval_required'
+  ) as Record<string, unknown> | undefined;
+  const toolResultEvent = events.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'tool_execution_finished'
+  ) as
+    | {
+        result?: {
+          ok?: boolean;
+          meta?: {
+            policy?: {
+              action?: unknown;
+              matches?: Array<Record<string, unknown>>;
+            };
+          };
+        };
+      }
+    | undefined;
+
+  assert.ok(approvalEvent);
+  assert.ok(toolResultEvent);
+  assert.equal(approvalEvent.type, 'approval_required');
+  assert.equal(approvalEvent.step, 1);
+  assert.equal(approvalEvent.toolCallId, 'call-1');
+  assert.equal(approvalEvent.toolName, 'session.run_command');
+  assert.equal(approvalEvent.reason, '命令命中敏感操作策略，需要用户审批后执行。');
+
+  const policy = approvalEvent.policy as
+    | {
+        action?: unknown;
+        matches?: Array<Record<string, unknown>>;
+      }
+    | undefined;
+
+  assert.equal(policy?.action, 'require_approval');
+  assert.equal(policy?.matches?.[0]?.ruleId, 'service.restart');
+  assert.equal(policy?.matches?.[0]?.title, '服务重启');
+  assert.equal(toolResultEvent?.result?.ok, false);
+  assert.equal(toolResultEvent?.result?.meta?.policy?.action, 'require_approval');
+  assert.equal(toolResultEvent?.result?.meta?.policy?.matches?.[0]?.ruleId, 'service.restart');
 });

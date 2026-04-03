@@ -2,6 +2,17 @@ import type { StoredLlmProvider } from '../llmProviderStore.js';
 
 export type AgentApprovalMode = 'auto-readonly' | 'manual-sensitive';
 
+export type AgentPolicySummary = {
+  action: 'deny' | 'require_approval';
+  matches: Array<{
+    ruleId: string;
+    title: string;
+    severity: 'medium' | 'high' | 'critical';
+    reason: string;
+    matchedText?: string;
+  }>;
+};
+
 export type CreateAgentRunInput = {
   providerId: string;
   provider: StoredLlmProvider;
@@ -29,6 +40,7 @@ export type ToolExecutionEnvelope = {
     durationMs: number;
     truncated?: boolean;
     approvalRequired?: boolean;
+    policy?: AgentPolicySummary;
   };
 };
 
@@ -38,6 +50,13 @@ export type AgentStreamEvent =
       runId: string;
       sessionId: string;
       task: string;
+      timestamp: number;
+    }
+  | {
+      type: 'assistant_message_delta';
+      runId: string;
+      delta: string;
+      step: number;
       timestamp: number;
     }
   | {
@@ -80,6 +99,7 @@ export type AgentStreamEvent =
       toolCallId: string;
       toolName: string;
       reason: string;
+      policy?: AgentPolicySummary;
       timestamp: number;
     }
   | {

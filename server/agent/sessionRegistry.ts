@@ -342,7 +342,8 @@ export class SessionRegistry {
         continue;
       }
 
-      if (/[\u0000-\u001f]/.test(char)) {
+      const charCode = char.charCodeAt(0);
+      if (charCode <= 0x1f) {
         continue;
       }
 

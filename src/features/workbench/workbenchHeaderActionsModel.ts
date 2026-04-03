@@ -1,12 +1,12 @@
 import { formatWorkbenchShortcutLabel } from './workbenchShortcutModel';
 import type { SplitLayout } from './workbenchTerminalWorkspaceModel';
 
-export type WorkbenchToolActionId = 'utilityDrawer' | 'aiAssistant';
+export type WorkbenchToolActionId = 'helpDialog' | 'utilityDrawer' | 'aiAssistant';
 export type WorkbenchLayoutActionId = SplitLayout;
 export type WorkbenchActionTone = 'active' | 'idle' | 'accent';
 
 export type WorkbenchToolAction = {
-  behavior: 'toggleUtilityDrawer' | 'openAiAssistant';
+  behavior: 'openHelpDialog' | 'toggleUtilityDrawer' | 'openAiAssistant';
   display: 'label' | 'icon';
   icon: 'sparkles' | null;
   id: WorkbenchToolActionId;
@@ -42,6 +42,18 @@ export function buildWorkbenchToolActions(input: {
   );
 
   return [
+    {
+      behavior: 'openHelpDialog',
+      display: 'label',
+      icon: null,
+      id: 'helpDialog',
+      isActive: false,
+      label: '?',
+      shortcutLabel: '',
+      tone: 'idle',
+      title: '帮助与快捷键',
+      variant: 'ghost',
+    },
     {
       behavior: 'toggleUtilityDrawer',
       display: 'label',
@@ -119,9 +131,15 @@ export function performWorkbenchToolAction(
   action: WorkbenchToolAction,
   handlers: {
     onOpenAiAssistant: () => void;
+    onOpenHelpDialog: () => void;
     onToggleUtilityDrawer: () => void;
   }
 ) {
+  if (action.behavior === 'openHelpDialog') {
+    handlers.onOpenHelpDialog();
+    return;
+  }
+
   if (action.behavior === 'toggleUtilityDrawer') {
     handlers.onToggleUtilityDrawer();
     return;

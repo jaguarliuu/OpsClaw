@@ -9,6 +9,9 @@ import {
   getAgentStepBudgetHint,
   getAiAssistantThemeClasses,
   getPreferredAiAssistantModelValue,
+  shouldAutoScrollAiAssistantTimeline,
+  getValidAiAssistantModelValue,
+  getValidAiAssistantSessionId,
   shouldEnableAiAssistantSend,
 } from './aiAssistantPanelModel.js';
 
@@ -128,6 +131,32 @@ void test('getDefaultAiAssistantSessionId prefers the active session when availa
   assert.equal(getDefaultAiAssistantSessionId([], 'missing'), null);
 });
 
+void test('getValidAiAssistantModelValue preserves the current model when it still exists and falls back when it does not', () => {
+  const options = buildAiAssistantModelOptions(providers);
+
+  assert.equal(
+    getValidAiAssistantModelValue(options, 'provider-2:deepseek-chat'),
+    'provider-2:deepseek-chat'
+  );
+  assert.equal(
+    getValidAiAssistantModelValue(options, 'missing:model'),
+    'provider-1:qwen-plus'
+  );
+  assert.equal(getValidAiAssistantModelValue([], 'missing:model'), '');
+});
+
+void test('getValidAiAssistantSessionId preserves the current session when available and restores a default when it is missing', () => {
+  assert.equal(
+    getValidAiAssistantSessionId(sessions, 'session-2', 'session-1'),
+    'session-2'
+  );
+  assert.equal(
+    getValidAiAssistantSessionId(sessions, 'missing', 'session-2'),
+    'session-2'
+  );
+  assert.equal(getValidAiAssistantSessionId([], 'missing', 'session-2'), null);
+});
+
 void test('clampAiAssistantPanelWidth keeps drag widths inside the supported range', () => {
   assert.equal(clampAiAssistantPanelWidth(200), 300);
   assert.equal(clampAiAssistantPanelWidth(420), 420);
@@ -187,4 +216,76 @@ void test('getAiAssistantThemeClasses returns readable semantic text classes in 
   assert.match(themeClasses.secondaryTextClass, /text-\[var\(--app-text-secondary\)\]/);
   assert.doesNotMatch(themeClasses.primaryTextClass, /text-neutral-100|text-violet-50|text-sky-50/);
   assert.doesNotMatch(themeClasses.secondaryTextClass, /text-neutral-400|text-neutral-500/);
+});
+
+void test('shouldAutoScrollAiAssistantTimeline scrolls when the panel opens, mode changes, or new visible items arrive', () => {
+  assert.equal(
+    shouldAutoScrollAiAssistantTimeline({
+      open: true,
+      previousOpen: false,
+      mode: 'chat',
+      previousMode: 'chat',
+      visibleContentSignature: '4:4:4:4',
+      previousVisibleContentSignature: '4:4:4:4',
+      visibleItemCount: 4,
+      previousVisibleItemCount: 4,
+    }),
+    true
+  );
+
+  assert.equal(
+    shouldAutoScrollAiAssistantTimeline({
+      open: true,
+      previousOpen: true,
+      mode: 'agent',
+      previousMode: 'chat',
+      visibleContentSignature: '3:3:3',
+      previousVisibleContentSignature: '3:3:3',
+      visibleItemCount: 3,
+      previousVisibleItemCount: 3,
+    }),
+    true
+  );
+
+  assert.equal(
+    shouldAutoScrollAiAssistantTimeline({
+      open: true,
+      previousOpen: true,
+      mode: 'chat',
+      previousMode: 'chat',
+      visibleContentSignature: '5:5:5:5:5',
+      previousVisibleContentSignature: '4:4:4:4',
+      visibleItemCount: 5,
+      previousVisibleItemCount: 4,
+    }),
+    true
+  );
+
+  assert.equal(
+    shouldAutoScrollAiAssistantTimeline({
+      open: true,
+      previousOpen: true,
+      mode: 'agent',
+      previousMode: 'agent',
+      visibleContentSignature: '12',
+      previousVisibleContentSignature: '6',
+      visibleItemCount: 1,
+      previousVisibleItemCount: 1,
+    }),
+    true
+  );
+
+  assert.equal(
+    shouldAutoScrollAiAssistantTimeline({
+      open: false,
+      previousOpen: true,
+      mode: 'chat',
+      previousMode: 'chat',
+      visibleContentSignature: '5:5:5:5:5',
+      previousVisibleContentSignature: '4:4:4:4',
+      visibleItemCount: 5,
+      previousVisibleItemCount: 4,
+    }),
+    false
+  );
 });

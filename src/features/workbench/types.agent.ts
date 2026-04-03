@@ -1,5 +1,16 @@
 export type AgentApprovalMode = 'auto-readonly' | 'manual-sensitive';
 
+export type AgentPolicySummary = {
+  action: 'deny' | 'require_approval';
+  matches: Array<{
+    ruleId: string;
+    title: string;
+    severity: 'medium' | 'high' | 'critical';
+    reason: string;
+    matchedText?: string;
+  }>;
+};
+
 export type ToolExecutionEnvelope = {
   toolName: string;
   toolCallId: string;
@@ -16,6 +27,7 @@ export type ToolExecutionEnvelope = {
     durationMs: number;
     truncated?: boolean;
     approvalRequired?: boolean;
+    policy?: AgentPolicySummary;
   };
 };
 
@@ -25,6 +37,13 @@ export type AgentStreamEvent =
       runId: string;
       sessionId: string;
       task: string;
+      timestamp: number;
+    }
+  | {
+      type: 'assistant_message_delta';
+      runId: string;
+      delta: string;
+      step: number;
       timestamp: number;
     }
   | {
@@ -67,6 +86,7 @@ export type AgentStreamEvent =
       toolCallId: string;
       toolName: string;
       reason: string;
+      policy?: AgentPolicySummary;
       timestamp: number;
     }
   | {
@@ -114,6 +134,6 @@ export type AgentTimelineItem =
       toolName: string;
       result: ToolExecutionEnvelope;
     }
-  | { id: string; kind: 'warning'; text: string; step?: number }
+  | { id: string; kind: 'warning'; text: string; step?: number; policy?: AgentPolicySummary }
   | { id: string; kind: 'final'; text: string; steps: number }
   | { id: string; kind: 'status'; text: string };

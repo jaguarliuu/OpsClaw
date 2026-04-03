@@ -40,6 +40,7 @@ type TerminalWorkspaceProps = {
   onSelectSession: (sessionId: string) => void;
   onSessionStatusChange: (sessionId: string, status: ConnectionStatus, errorMessage?: string) => void;
   onOpenAiAssistant: () => void;
+  onOpenHelpDialog: () => void;
 };
 
 export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWorkspaceProps>(
@@ -56,6 +57,7 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
   onSelectSession,
   onSessionStatusChange,
   onOpenAiAssistant,
+  onOpenHelpDialog,
 }: TerminalWorkspaceProps, ref: React.Ref<TerminalWorkspaceHandle>) {
   const desktopWindowChrome = buildDesktopWindowChromeLayout({
     runtime: window.__OPSCLAW_RUNTIME__,
@@ -195,6 +197,7 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
       <TerminalWorkspaceHeader
         activeSession={activeSession}
         activeSessionId={activeSessionId}
+        desktopInteractiveStyle={desktopWindowChrome.interactiveStyle}
         desktopTopBarStyle={desktopWindowChrome.topBarStyle}
         desktopWindowControlsInsetStyle={desktopWindowChrome.windowControlsInsetStyle}
         isUtilityDrawerOpen={isUtilityDrawerOpen}
@@ -206,6 +209,7 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
         onEnterSplitMode={enterSplitMode}
         onExitSplitMode={exitSplitMode}
         onOpenAiAssistant={onOpenAiAssistant}
+        onOpenHelpDialog={onOpenHelpDialog}
         onOpenNewConnection={onOpenNewConnection}
         onToggleUtilityDrawer={onToggleUtilityDrawer}
         onSelectSession={onSelectSession}

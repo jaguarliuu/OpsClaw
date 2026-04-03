@@ -1,4 +1,4 @@
-type TerminalSearchShortcutEvent = {
+type TerminalShortcutEvent = {
   ctrlKey: boolean;
   key: string;
   metaKey: boolean;
@@ -20,9 +20,34 @@ export type ResolvedSshTerminalInput = {
 };
 
 export function shouldToggleSshTerminalSearchShortcut(
-  event: TerminalSearchShortcutEvent
+  event: TerminalShortcutEvent
 ) {
-  return (event.ctrlKey || event.metaKey) && event.key === 'f' && event.type === 'keydown';
+  return (
+    (event.ctrlKey || event.metaKey) &&
+    event.key.toLowerCase() === 'f' &&
+    event.type === 'keydown'
+  );
+}
+
+export function resolveSshTerminalClipboardShortcut(input: {
+  event: TerminalShortcutEvent;
+  hasSelection: boolean;
+}) {
+  const { event, hasSelection } = input;
+  if (event.type !== 'keydown' || (!event.ctrlKey && !event.metaKey)) {
+    return null;
+  }
+
+  const key = event.key.toLowerCase();
+  if (key === 'c') {
+    return hasSelection ? 'copy-selection' : null;
+  }
+
+  if (key === 'v') {
+    return 'paste-from-clipboard';
+  }
+
+  return null;
 }
 
 export function shouldConfirmSshTerminalPaste(text: string) {

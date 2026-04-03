@@ -40,10 +40,7 @@ export default function SettingsPage() {
       <div className="border-b border-neutral-800/50 bg-[#111214]/80 backdrop-blur-sm sticky top-0 z-10">
         <div
           className="max-w-6xl mx-auto px-8 py-5"
-          style={{
-            ...desktopWindowChrome.topBarStyle,
-            ...desktopWindowChrome.windowControlsInsetStyle,
-          }}
+          style={desktopWindowChrome.topBarStyle}
         >
           <div className="flex items-center gap-4">
             <Button
@@ -53,6 +50,7 @@ export default function SettingsPage() {
                 void navigate('/');
               }}
               className="hover:bg-neutral-800/50 transition-colors"
+              style={desktopWindowChrome.interactiveStyle}
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>
@@ -66,14 +64,14 @@ export default function SettingsPage() {
 
       <div className="max-w-6xl mx-auto px-8 py-8">
         <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-8">
-          <TabsList className="bg-[#17181b] border border-neutral-800/50 p-1.5">
-            <TabsTrigger value="terminal" className="data-[state=active]:bg-[#1e2025] data-[state=active]:shadow-sm transition-all">
+          <TabsList className="bg-[#17181b] border border-neutral-800/50 p-1.5" style={desktopWindowChrome.interactiveStyle}>
+            <TabsTrigger value="terminal" className="data-[state=active]:bg-[#1e2025] data-[state=active]:shadow-sm transition-all" style={desktopWindowChrome.interactiveStyle}>
               终端配置
             </TabsTrigger>
-            <TabsTrigger value="llm" className="data-[state=active]:bg-[#1e2025] data-[state=active]:shadow-sm transition-all">
+            <TabsTrigger value="llm" className="data-[state=active]:bg-[#1e2025] data-[state=active]:shadow-sm transition-all" style={desktopWindowChrome.interactiveStyle}>
               LLM 配置
             </TabsTrigger>
-            <TabsTrigger value="memory" className="data-[state=active]:bg-[#1e2025] data-[state=active]:shadow-sm transition-all">
+            <TabsTrigger value="memory" className="data-[state=active]:bg-[#1e2025] data-[state=active]:shadow-sm transition-all" style={desktopWindowChrome.interactiveStyle}>
               记忆文档
             </TabsTrigger>
           </TabsList>

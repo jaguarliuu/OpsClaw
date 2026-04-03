@@ -1,1 +1,1 @@
-{"root":["./vite.config.ts","./build/vitebase.test.ts","./build/vitebase.ts","./build/vitemanualchunks.test.ts","./build/vitemanualchunks.ts"],"version":"5.8.3"}
+{"root":["./vite.config.ts","./build/vitebase.ts","./build/vitemanualchunks.ts"],"version":"5.8.3"}

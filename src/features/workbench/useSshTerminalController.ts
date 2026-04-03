@@ -103,7 +103,9 @@ export function useSshTerminalController({
     }
 
     websocket.send(JSON.stringify({ type: 'input', payload: `${normalizedCommand}\n` }));
-    void recordCommand({ command: normalizedCommand, nodeId: session.nodeId });
+    void recordCommand({ command: normalizedCommand, nodeId: session.nodeId }).catch((error) => {
+      console.error('[SshTerminalController] command-history:record_error', error);
+    });
   }, [session.nodeId, websocketRef]);
 
   const executeCommand = useCallback((command: string) => {

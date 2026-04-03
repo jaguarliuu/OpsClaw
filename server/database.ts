@@ -192,7 +192,7 @@ function ensureLlmProvidersTable(database: SqlDatabaseHandle) {
           Array.isArray(parsedModels) &&
           parsedModels.every((item) => typeof item === 'string' && item.trim())
         ) {
-          models = parsedModels;
+          models = parsedModels as string[];
         }
       } catch {
         models = rawModel ? [rawModel] : [];

@@ -1,6 +1,6 @@
 import type { ToolCall } from '@mariozechner/pi-ai';
 
-import type { ToolExecutionEnvelope } from './agentTypes.js';
+import type { AgentPolicySummary, ToolExecutionEnvelope } from './agentTypes.js';
 import { logAgent } from './logger.js';
 import { evaluateToolPolicy } from './toolPolicy.js';
 import type { ToolExecutionContext, ToolHandler, ToolRegistry } from './toolTypes.js';
@@ -11,7 +11,7 @@ function buildErrorEnvelope(
   message: string,
   startedAt: number,
   code = 'tool_execution_failed',
-  options?: { retryable?: boolean; approvalRequired?: boolean }
+  options?: { retryable?: boolean; approvalRequired?: boolean; policy?: AgentPolicySummary }
 ): ToolExecutionEnvelope {
   const completedAt = Date.now();
 
@@ -29,6 +29,7 @@ function buildErrorEnvelope(
       completedAt,
       durationMs: completedAt - startedAt,
       approvalRequired: options?.approvalRequired,
+      policy: options?.policy,
     },
   };
 }
@@ -87,16 +88,25 @@ export class ToolExecutor {
     });
 
     if (decision.kind === 'deny') {
+      const policy: AgentPolicySummary = {
+        action: 'deny',
+        matches: decision.matches,
+      };
       return buildErrorEnvelope(
         handler.definition.name,
         toolCallId,
         decision.reason,
         startedAt,
-        'tool_denied'
+        'tool_denied',
+        { policy }
       );
     }
 
     if (decision.kind === 'require_approval') {
+      const policy: AgentPolicySummary = {
+        action: 'require_approval',
+        matches: decision.matches,
+      };
       ctx.emit({
         type: 'approval_required',
         runId: ctx.runId,
@@ -104,6 +114,7 @@ export class ToolExecutor {
         toolCallId,
         toolName: handler.definition.name,
         reason: decision.reason,
+        policy,
         timestamp: startedAt,
       });
 
@@ -113,7 +124,7 @@ export class ToolExecutor {
         `${decision.reason} 当前版本尚未提供交互审批流程。`,
         startedAt,
         'approval_required',
-        { approvalRequired: true }
+        { approvalRequired: true, policy }
       );
     }
 

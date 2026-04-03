@@ -5,6 +5,11 @@ import type { Terminal } from '@xterm/xterm';
 
 import { searchCommands, recordCommand } from '@/features/workbench/api';
 import {
+  buildSshTerminalCopyFeedbackText,
+  SSH_TERMINAL_COPY_FEEDBACK_DURATION_MS,
+} from '@/features/workbench/sshTerminalCopyFeedbackModel';
+import {
+  resolveSshTerminalClipboardShortcut,
   shouldConfirmSshTerminalPaste,
   shouldToggleSshTerminalSearchShortcut,
   resolveSshTerminalInput,
@@ -62,14 +67,58 @@ export function useSshTerminalRuntime({
   toggleSearch,
   websocketRef,
 }: UseSshTerminalRuntimeOptions) {
+  const [copyFeedbackVisible, setCopyFeedbackVisible] = useState(false);
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<string | null>(null);
+  const copyFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestionRef = useRef<string | null>(null);
   const suggestionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     suggestionRef.current = suggestion;
   }, [suggestion]);
+
+  const readClipboardText = useCallback(async () => {
+    if (window.__OPSCLAW_CLIPBOARD__) {
+      return window.__OPSCLAW_CLIPBOARD__.readText();
+    }
+    if (typeof navigator.clipboard?.readText === 'function') {
+      return navigator.clipboard.readText();
+    }
+    throw new Error('剪贴板读取不可用。');
+  }, []);
+
+  const writeClipboardText = useCallback(async (text: string) => {
+    if (!text) {
+      return;
+    }
+
+    if (window.__OPSCLAW_CLIPBOARD__) {
+      await window.__OPSCLAW_CLIPBOARD__.writeText(text);
+      return;
+    }
+    if (typeof navigator.clipboard?.writeText === 'function') {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    throw new Error('剪贴板写入不可用。');
+  }, []);
+
+  const forwardPasteText = useCallback((text: string) => {
+    if (!text) {
+      return;
+    }
+
+    if (shouldConfirmSshTerminalPaste(text)) {
+      setPendingPaste(text);
+      return;
+    }
+
+    const websocket = websocketRef.current;
+    if (websocket?.readyState === WebSocket.OPEN) {
+      websocket.send(JSON.stringify({ type: 'input', payload: text }));
+    }
+  }, [websocketRef]);
 
   const fetchSuggestion = useCallback((input: string) => {
     if (suggestionTimerRef.current) {
@@ -82,13 +131,18 @@ export function useSshTerminalRuntime({
     }
 
     suggestionTimerRef.current = setTimeout(() => {
-      void searchCommands(input, sessionNodeIdRef.current).then((results) => {
-        if (results.length > 0 && results[0].command.startsWith(input)) {
-          setSuggestion(results[0].command);
-        } else {
+      void searchCommands(input, sessionNodeIdRef.current)
+        .then((results) => {
+          if (results.length > 0 && results[0].command.startsWith(input)) {
+            setSuggestion(results[0].command);
+          } else {
+            setSuggestion(null);
+          }
+        })
+        .catch((error) => {
+          console.error('[SshTerminalRuntime] command-history:search_error', error);
           setSuggestion(null);
-        }
-      });
+        });
     }, SUGGESTION_QUERY_DELAY_MS);
   }, [sessionNodeIdRef]);
 
@@ -107,6 +161,46 @@ export function useSshTerminalRuntime({
   const dismissPendingPaste = useCallback(() => {
     setPendingPaste(null);
   }, []);
+
+  const showCopyFeedback = useCallback(() => {
+    if (copyFeedbackTimerRef.current) {
+      clearTimeout(copyFeedbackTimerRef.current);
+    }
+
+    setCopyFeedbackVisible(true);
+    copyFeedbackTimerRef.current = setTimeout(() => {
+      setCopyFeedbackVisible(false);
+      copyFeedbackTimerRef.current = null;
+    }, SSH_TERMINAL_COPY_FEEDBACK_DURATION_MS);
+  }, []);
+
+  const copySelection = useCallback(() => {
+    const terminal = terminalRef.current;
+    if (!terminal?.hasSelection()) {
+      return;
+    }
+
+    const selectedText = terminal.getSelection();
+    void writeClipboardText(selectedText).catch((error) => {
+      console.error('[SshTerminalRuntime] clipboard:copy_error', error);
+    });
+    showCopyFeedback();
+  }, [showCopyFeedback, terminalRef, writeClipboardText]);
+
+  const pasteFromClipboard = useCallback(() => {
+    void readClipboardText()
+      .then((text) => {
+        forwardPasteText(text);
+      })
+      .catch((error) => {
+        console.error('[SshTerminalRuntime] clipboard:paste_error', error);
+      });
+  }, [forwardPasteText, readClipboardText]);
+
+  const selectAll = useCallback(() => {
+    terminalRef.current?.selectAll();
+    terminalRef.current?.focus();
+  }, [terminalRef]);
 
   useEffect(() => {
     if (!containerRef.current || initializedRef.current || initializingRef.current) {
@@ -152,6 +246,22 @@ export function useSshTerminalRuntime({
         terminal.focus();
 
         terminal.attachCustomKeyEventHandler((event) => {
+          const clipboardShortcut = resolveSshTerminalClipboardShortcut({
+            event,
+            hasSelection: terminal.hasSelection(),
+          });
+          if (clipboardShortcut === 'copy-selection') {
+            event.preventDefault();
+            copySelection();
+            return false;
+          }
+
+          if (clipboardShortcut === 'paste-from-clipboard') {
+            event.preventDefault();
+            pasteFromClipboard();
+            return false;
+          }
+
           if (shouldToggleSshTerminalSearchShortcut(event)) {
             event.preventDefault();
             toggleSearch();
@@ -163,13 +273,9 @@ export function useSshTerminalRuntime({
 
         const handlePaste = (event: ClipboardEvent) => {
           const text = event.clipboardData?.getData('text') ?? '';
-          if (!shouldConfirmSshTerminalPaste(text)) {
-            return;
-          }
-
           event.preventDefault();
           event.stopPropagation();
-          setPendingPaste(text);
+          forwardPasteText(text);
         };
 
         container.addEventListener('paste', handlePaste, { capture: true });
@@ -193,6 +299,8 @@ export function useSshTerminalRuntime({
             void recordCommand({
               command: resolution.commandToRecord,
               nodeId: sessionNodeIdRef.current,
+            }).catch((error) => {
+              console.error('[SshTerminalRuntime] command-history:record_error', error);
             });
           }
 
@@ -230,6 +338,11 @@ export function useSshTerminalRuntime({
             clearTimeout(suggestionTimerRef.current);
             suggestionTimerRef.current = null;
           }
+          if (copyFeedbackTimerRef.current) {
+            clearTimeout(copyFeedbackTimerRef.current);
+            copyFeedbackTimerRef.current = null;
+          }
+          setCopyFeedbackVisible(false);
           inputBufferRef.current = '';
           setSuggestion(null);
           setPendingPaste(null);
@@ -276,6 +389,7 @@ export function useSshTerminalRuntime({
     onRuntimeReadyChange,
     onRuntimeLoadError,
     rejectPendingExecution,
+    readClipboardText,
     scheduleFitAndResize,
     searchAddonRef,
     sessionNodeIdRef,
@@ -283,12 +397,21 @@ export function useSshTerminalRuntime({
     terminalRef,
     toggleSearch,
     websocketRef,
+    copySelection,
+    pasteFromClipboard,
+    forwardPasteText,
+    writeClipboardText,
   ]);
 
   return {
+    copyFeedbackText: buildSshTerminalCopyFeedbackText(),
+    copyFeedbackVisible,
     confirmPendingPaste,
+    copySelection,
     dismissPendingPaste,
     pendingPaste,
+    pasteFromClipboard,
+    selectAll,
     suggestion,
     suggestionVisible: suggestion !== null && inputBufferRef.current !== '',
   };

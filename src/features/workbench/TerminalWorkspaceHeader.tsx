@@ -13,6 +13,7 @@ import type { SplitLayout } from '@/features/workbench/workbenchTerminalWorkspac
 import { cn } from '@/lib/utils';
 
 type TerminalWorkspaceHeaderProps = {
+  desktopInteractiveStyle?: React.CSSProperties;
   activeSessionId: string | null;
   activeSession: LiveSession | null;
   desktopTopBarStyle?: React.CSSProperties;
@@ -26,6 +27,7 @@ type TerminalWorkspaceHeaderProps = {
   onEnterSplitMode: (layout: 'horizontal' | 'vertical') => void;
   onExitSplitMode: () => void;
   onOpenAiAssistant: () => void;
+  onOpenHelpDialog: () => void;
   onOpenNewConnection: () => void;
   onToggleUtilityDrawer: () => void;
   onSelectSession: (sessionId: string) => void;
@@ -75,6 +77,7 @@ function renderToolActionContent(action: ReturnType<typeof buildWorkbenchToolAct
 export function TerminalWorkspaceHeader({
   activeSession,
   activeSessionId,
+  desktopInteractiveStyle,
   desktopTopBarStyle,
   desktopWindowControlsInsetStyle,
   isUtilityDrawerOpen,
@@ -86,13 +89,14 @@ export function TerminalWorkspaceHeader({
   onEnterSplitMode,
   onExitSplitMode,
   onOpenAiAssistant,
+  onOpenHelpDialog,
   onOpenNewConnection,
   onToggleUtilityDrawer,
   onSelectSession,
   onToggleSidebar,
 }: TerminalWorkspaceHeaderProps) {
   const layoutActions = buildWorkbenchLayoutActions(splitLayout);
-  const [utilityDrawerAction, aiAssistantAction] = buildWorkbenchToolActions({
+  const [helpDialogAction, utilityDrawerAction, aiAssistantAction] = buildWorkbenchToolActions({
     isMacShortcutPlatform,
     isUtilityDrawerOpen,
   });
@@ -103,7 +107,7 @@ export function TerminalWorkspaceHeader({
         className="flex items-stretch justify-between border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] px-2"
         style={desktopTopBarStyle}
       >
-        <div className="flex min-w-0 items-stretch gap-1 overflow-auto">
+        <div className="flex min-w-0 items-stretch gap-1 overflow-auto pt-2" style={desktopInteractiveStyle}>
           {sidebarCollapsed ? (
             <Button
               aria-label="展开连接管理器"
@@ -158,7 +162,9 @@ export function TerminalWorkspaceHeader({
           </Button>
         </div>
 
-        <div className="flex items-center gap-1" style={desktopWindowControlsInsetStyle}>
+        <div className="min-w-6 flex-1" />
+
+        <div className="flex items-center gap-1 pt-2" style={desktopWindowControlsInsetStyle}>
           <div className="flex items-center">
             {layoutActions.map((action) => {
               const Icon = layoutActionIconMap[action.icon];
@@ -185,13 +191,14 @@ export function TerminalWorkspaceHeader({
             })}
           </div>
 
-          {[utilityDrawerAction, aiAssistantAction].map((action) => (
+          {[helpDialogAction, utilityDrawerAction, aiAssistantAction].map((action) => (
             <Button
               key={action.id}
               className={cn('transition-colors', getWorkbenchActionClassName(action.tone))}
               onClick={() => {
                 performWorkbenchToolAction(action, {
                   onOpenAiAssistant,
+                  onOpenHelpDialog,
                   onToggleUtilityDrawer,
                 });
               }}

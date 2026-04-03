@@ -80,7 +80,6 @@ export function useWorkbenchProfileActions({
     setModalError(nextState.modalError);
     setFormValues(nextState.formValues);
     setIsConnectionPanelOpen(nextState.isConnectionPanelOpen);
-    setIsSidebarCollapsed(nextState.isSidebarCollapsed);
   };
 
   const closeConnectionPanel = () => {
