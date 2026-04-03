@@ -206,6 +206,35 @@ void test('getRun returns a defensive snapshot instead of the live registry reco
   assert.equal(freshSnapshot?.openGate?.reason, gate.reason);
 });
 
+void test('expiring a gate twice is rejected', () => {
+  const registry = createAgentRunRegistry();
+  registry.registerRun({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    task: 'check expire invariant',
+  });
+
+  const gate = registry.openGate({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    kind: 'terminal_input',
+    reason: '命令正在等待用户在终端中继续输入。',
+    deadlineAt: 1_700_000_000_000,
+    payload: {
+      toolCallId: 'call-1',
+      toolName: 'session.run_command',
+      command: 'sudo passwd root',
+      timeoutMs: 300000,
+    },
+  });
+
+  registry.expireGate({ runId: 'run-1', gateId: gate.id });
+  assert.throws(
+    () => registry.expireGate({ runId: 'run-1', gateId: gate.id }),
+    /open/
+  );
+});
+
 const validApprovalGateInput: OpenHumanGateInput = {
   runId: 'run-1',
   sessionId: 'session-1',

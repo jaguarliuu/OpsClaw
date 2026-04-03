@@ -97,6 +97,9 @@ export function createAgentRunRegistry() {
       if (!run?.openGate || run.openGate.id !== input.gateId) {
         throw new Error('指定 human gate 不存在。');
       }
+      if (run.openGate.status !== 'open') {
+        throw new Error('只能 expire 当前处于 open 状态的 human gate。');
+      }
 
       run.openGate.status = 'expired';
       run.state = 'suspended';
