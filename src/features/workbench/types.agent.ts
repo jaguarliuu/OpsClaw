@@ -34,7 +34,7 @@ export type ApprovalGatePayload = {
   toolCallId: string;
   toolName: string;
   arguments: Record<string, unknown>;
-  policy?: AgentPolicySummary;
+  policy: AgentPolicySummary;
 };
 
 export type HumanGatePayload = TerminalInputGatePayload | ApprovalGatePayload;

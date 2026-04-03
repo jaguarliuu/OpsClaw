@@ -80,6 +80,17 @@ void test('opening a second open gate for the same run is rejected', () => {
       arguments: {
         command: 'sudo rm -rf /tmp/demo',
       },
+      policy: {
+        action: 'require_approval',
+        matches: [
+          {
+            ruleId: 'rule-1',
+            title: 'High risk command',
+            severity: 'high',
+            reason: 'sudo rm is destructive',
+          },
+        ],
+      },
     },
   });
 
@@ -96,6 +107,17 @@ void test('opening a second open gate for the same run is rejected', () => {
           toolName: 'session.run_command',
           arguments: {
             command: 'sudo whoami',
+          },
+          policy: {
+            action: 'require_approval',
+            matches: [
+              {
+                ruleId: 'rule-2',
+                title: 'Privileged command',
+                severity: 'medium',
+                reason: 'sudo requires approval',
+              },
+            ],
           },
         },
       }),
