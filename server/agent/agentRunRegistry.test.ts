@@ -235,6 +235,53 @@ void test('expiring a gate twice is rejected', () => {
   );
 });
 
+void test('opening a new gate on a suspended run is rejected', () => {
+  const registry = createAgentRunRegistry();
+  registry.registerRun({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    task: 'check run state invariant',
+  });
+
+  const gate = registry.openGate({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    kind: 'terminal_input',
+    reason: '命令正在等待用户在终端中继续输入。',
+    deadlineAt: 1_700_000_000_000,
+    payload: {
+      toolCallId: 'call-1',
+      toolName: 'session.run_command',
+      command: 'sudo passwd root',
+      timeoutMs: 300000,
+    },
+  });
+
+  registry.expireGate({ runId: 'run-1', gateId: gate.id });
+  assert.throws(
+    () =>
+      registry.openGate({
+        runId: 'run-1',
+        sessionId: 'session-1',
+        kind: 'approval',
+        reason: '高危命令需要人工批准。',
+        deadlineAt: 1_700_000_000_100,
+        payload: {
+          toolCallId: 'call-2',
+          toolName: 'session.run_command',
+          arguments: {
+            command: 'sudo whoami',
+          },
+          policy: {
+            action: 'require_approval',
+            matches: [],
+          },
+        },
+      }),
+    /running/
+  );
+});
+
 const validApprovalGateInput: OpenHumanGateInput = {
   runId: 'run-1',
   sessionId: 'session-1',

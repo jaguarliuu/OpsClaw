@@ -55,6 +55,9 @@ export function createAgentRunRegistry() {
       if (!run) {
         throw new Error('Agent run 不存在。');
       }
+      if (run.state !== 'running') {
+        throw new Error('只有处于 running 状态的 run 才能打开新的 human gate。');
+      }
       if (run.sessionId !== input.sessionId) {
         throw new Error('指定 session 与当前 run 不匹配。');
       }
