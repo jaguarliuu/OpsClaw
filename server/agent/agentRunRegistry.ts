@@ -37,6 +37,24 @@ export type OpenHumanGateInput =
 export function createAgentRunRegistry() {
   const runs = new Map<string, AgentRunRecord>();
 
+  function getRequiredRun(runId: string) {
+    const run = runs.get(runId);
+    if (!run) {
+      throw new Error('Agent run 不存在。');
+    }
+
+    return run;
+  }
+
+  function getRequiredGate(runId: string, gateId: string) {
+    const run = getRequiredRun(runId);
+    if (!run.openGate || run.openGate.id !== gateId) {
+      throw new Error('指定 human gate 不存在。');
+    }
+
+    return { run, gate: run.openGate };
+  }
+
   return {
     registerRun(input: RegisterRunInput) {
       if (runs.has(input.runId)) {
@@ -51,10 +69,7 @@ export function createAgentRunRegistry() {
     },
 
     openGate(input: OpenHumanGateInput) {
-      const run = runs.get(input.runId);
-      if (!run) {
-        throw new Error('Agent run 不存在。');
-      }
+      const run = getRequiredRun(input.runId);
       if (run.state !== 'running') {
         throw new Error('只有处于 running 状态的 run 才能打开新的 human gate。');
       }
@@ -96,16 +111,81 @@ export function createAgentRunRegistry() {
     },
 
     expireGate(input: { runId: string; gateId: string }) {
-      const run = runs.get(input.runId);
-      if (!run?.openGate || run.openGate.id !== input.gateId) {
-        throw new Error('指定 human gate 不存在。');
-      }
-      if (run.openGate.status !== 'open') {
+      const { run, gate } = getRequiredGate(input.runId, input.gateId);
+      if (gate.status !== 'open') {
         throw new Error('只能 expire 当前处于 open 状态的 human gate。');
       }
 
-      run.openGate.status = 'expired';
+      gate.status = 'expired';
       run.state = 'suspended';
+    },
+
+    markGateReopened(input: { runId: string; gateId: string; deadlineAt: number }) {
+      const { run, gate } = getRequiredGate(input.runId, input.gateId);
+      if (gate.kind !== 'terminal_input') {
+        throw new Error('只有 terminal_input gate 支持重新进入等待。');
+      }
+      if (gate.status !== 'expired') {
+        throw new Error('只有处于 expired 状态的 gate 才能重新等待。');
+      }
+
+      gate.status = 'open';
+      gate.deadlineAt = input.deadlineAt;
+      run.state = 'waiting_for_human';
+      return structuredClone(gate);
+    },
+
+    resolveGate(input: { runId: string; gateId: string }) {
+      const { run, gate } = getRequiredGate(input.runId, input.gateId);
+      if (gate.status !== 'open') {
+        throw new Error('只能 resolve 当前处于 open 状态的 human gate。');
+      }
+
+      gate.status = 'resolved';
+      run.state = 'suspended';
+      return structuredClone(gate);
+    },
+
+    rejectGate(input: { runId: string; gateId: string }) {
+      const { run, gate } = getRequiredGate(input.runId, input.gateId);
+      if (gate.status !== 'open') {
+        throw new Error('只能 reject 当前处于 open 状态的 human gate。');
+      }
+
+      gate.status = 'rejected';
+      run.state = 'suspended';
+      return structuredClone(gate);
+    },
+
+    markRunRunning(input: { runId: string; clearGate?: boolean }) {
+      const run = getRequiredRun(input.runId);
+      run.state = 'running';
+      if (input.clearGate) {
+        run.openGate = null;
+      }
+
+      return structuredClone(run);
+    },
+
+    markRunCompleted(runId: string) {
+      const run = getRequiredRun(runId);
+      run.state = 'completed';
+      run.openGate = null;
+      return structuredClone(run);
+    },
+
+    markRunFailed(runId: string) {
+      const run = getRequiredRun(runId);
+      run.state = 'failed';
+      run.openGate = null;
+      return structuredClone(run);
+    },
+
+    markRunCancelled(runId: string) {
+      const run = getRequiredRun(runId);
+      run.state = 'cancelled';
+      run.openGate = null;
+      return structuredClone(run);
     },
 
     getRun(runId: string) {

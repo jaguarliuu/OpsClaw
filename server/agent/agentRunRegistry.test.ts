@@ -282,6 +282,84 @@ void test('opening a new gate on a suspended run is rejected', () => {
   );
 });
 
+void test('reopening an expired terminal_input gate moves the run back to waiting_for_human', () => {
+  const registry = createAgentRunRegistry();
+  registry.registerRun({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    task: 'resume suspended wait',
+  });
+
+  const gate = registry.openGate({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    kind: 'terminal_input',
+    reason: '命令正在等待用户在终端中继续输入。',
+    deadlineAt: 1_700_000_000_000,
+    payload: {
+      toolCallId: 'call-1',
+      toolName: 'session.run_command',
+      command: 'sudo passwd root',
+      timeoutMs: 300000,
+    },
+  });
+
+  registry.expireGate({ runId: 'run-1', gateId: gate.id });
+  const reopenedGate = registry.markGateReopened({
+    runId: 'run-1',
+    gateId: gate.id,
+    deadlineAt: 1_700_000_000_100,
+  });
+  const snapshot = registry.getRun('run-1');
+
+  assert.equal(snapshot?.state, 'waiting_for_human');
+  assert.equal(reopenedGate.status, 'open');
+  assert.equal(reopenedGate.deadlineAt, 1_700_000_000_100);
+});
+
+void test('resolving or rejecting a gate is only allowed while it is open', () => {
+  const registry = createAgentRunRegistry();
+  registry.registerRun({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    task: 'approval review',
+  });
+
+  const gate = registry.openGate({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    kind: 'approval',
+    reason: '高危命令需要人工批准。',
+    deadlineAt: 1_700_000_000_000,
+    payload: {
+      toolCallId: 'call-1',
+      toolName: 'session.run_command',
+      arguments: {
+        command: 'systemctl restart nginx',
+      },
+      policy: {
+        action: 'require_approval',
+        matches: [
+          {
+            ruleId: 'service.restart',
+            title: '服务重启',
+            severity: 'high',
+            reason: '重启服务前需要人工确认。',
+          },
+        ],
+      },
+    },
+  });
+
+  const resolvedGate = registry.resolveGate({ runId: 'run-1', gateId: gate.id });
+  assert.equal(resolvedGate.status, 'resolved');
+  assert.equal(registry.getRun('run-1')?.state, 'suspended');
+  assert.throws(
+    () => registry.rejectGate({ runId: 'run-1', gateId: gate.id }),
+    /open/
+  );
+});
+
 const validApprovalGateInput: OpenHumanGateInput = {
   runId: 'run-1',
   sessionId: 'session-1',
