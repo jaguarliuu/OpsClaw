@@ -12,7 +12,15 @@ export type RegisteredSessionSummary = {
   connectedAt: number | null;
 };
 
+type PendingExecutionState =
+  | 'running'
+  | 'awaiting_human_input'
+  | 'suspended_waiting_for_input'
+  | 'completed'
+  | 'failed';
+
 type PendingExecution = {
+  state: PendingExecutionState;
   command: string;
   startedAt: number;
   startMarker: string;
@@ -21,7 +29,7 @@ type PendingExecution = {
   captureStarted: boolean;
   resolve: (result: SessionCommandResult) => void;
   reject: (error: Error) => void;
-  timeoutId: ReturnType<typeof setTimeout>;
+  timeoutId: ReturnType<typeof setTimeout> | null;
   maxOutputChars: number;
   cleanupAbortListener: (() => void) | null;
   humanInputTimeoutMs: number;
@@ -132,15 +140,30 @@ export class SessionRegistry {
     pendingExecution: PendingExecution,
     timeoutMs: number,
     errorMessage: string,
-    logEvent: string
+    logEvent: string,
+    mode: 'reject' | 'suspend' = 'reject'
   ) {
-    clearTimeout(pendingExecution.timeoutId);
+    if (pendingExecution.timeoutId) {
+      clearTimeout(pendingExecution.timeoutId);
+    }
     pendingExecution.timeoutId = setTimeout(() => {
       const activeSession = this.sessions.get(session.sessionId);
       if (
         !activeSession?.pendingExecution ||
         activeSession.pendingExecution.startMarker !== pendingExecution.startMarker
       ) {
+        return;
+      }
+
+      if (mode === 'suspend') {
+        pendingExecution.timeoutId = null;
+        pendingExecution.state = 'suspended_waiting_for_input';
+        logSession(logEvent, {
+          sessionId: activeSession.sessionId,
+          command: pendingExecution.command,
+          startMarker: pendingExecution.startMarker,
+          humanInputDetected: pendingExecution.humanInputDetectedAt !== null,
+        });
         return;
       }
 
@@ -167,8 +190,11 @@ export class SessionRegistry {
       return false;
     }
 
-    clearTimeout(pendingExecution.timeoutId);
+    if (pendingExecution.timeoutId) {
+      clearTimeout(pendingExecution.timeoutId);
+    }
     pendingExecution.cleanupAbortListener?.();
+    pendingExecution.state = 'failed';
     session.pendingExecution = null;
 
     if (options?.sendInterrupt) {
@@ -320,6 +346,9 @@ export class SessionRegistry {
 
     if (pendingExecution.humanInputDetectedAt === null) {
       pendingExecution.humanInputDetectedAt = Date.now();
+      if (pendingExecution.state === 'running') {
+        pendingExecution.state = 'awaiting_human_input';
+      }
       logSession('execute_command_human_input_detected', {
         sessionId,
         command: pendingExecution.command,
@@ -350,12 +379,21 @@ export class SessionRegistry {
       pendingExecution.pendingUserInputLine += char;
     }
 
+    if (pendingExecution.state === 'suspended_waiting_for_input') {
+      return;
+    }
+
+    if (pendingExecution.state === 'running') {
+      pendingExecution.state = 'awaiting_human_input';
+    }
+
     this.schedulePendingExecutionTimeout(
       session,
       pendingExecution,
       pendingExecution.humanInputTimeoutMs,
       '命令等待人工输入超时，Agent 已停止等待结果。',
-      'execute_command_human_input_timeout'
+      'execute_command_human_input_suspended',
+      'suspend'
     );
   }
 
@@ -370,6 +408,41 @@ export class SessionRegistry {
     }
 
     return this.toSummary(session);
+  }
+
+  getPendingExecutionDebug(sessionId: string) {
+    const session = this.sessions.get(sessionId);
+    if (!session?.pendingExecution) {
+      return null;
+    }
+
+    return {
+      state: session.pendingExecution.state,
+      command: session.pendingExecution.command,
+      startMarker: session.pendingExecution.startMarker,
+    };
+  }
+
+  resumePendingExecutionWait(sessionId: string, timeoutMs: number) {
+    const session = this.sessions.get(sessionId);
+    if (!session?.pendingExecution) {
+      throw new Error('当前会话没有等待中的命令。');
+    }
+
+    if (session.pendingExecution.state !== 'suspended_waiting_for_input') {
+      throw new Error('当前命令不处于可恢复的等待状态。');
+    }
+
+    session.pendingExecution.state = 'awaiting_human_input';
+    session.pendingExecution.humanInputTimeoutMs = timeoutMs;
+    this.schedulePendingExecutionTimeout(
+      session,
+      session.pendingExecution,
+      timeoutMs,
+      '命令等待人工输入超时，Agent 已停止等待结果。',
+      'execute_command_human_input_suspended',
+      'suspend'
+    );
   }
 
   getTranscript(sessionId: string, maxChars?: number) {
@@ -468,6 +541,7 @@ export class SessionRegistry {
       }
 
       session.pendingExecution = {
+        state: 'running',
         command: trimmedCommand,
         startedAt,
         startMarker,
@@ -547,8 +621,11 @@ export class SessionRegistry {
       return;
     }
 
-    clearTimeout(pendingExecution.timeoutId);
+    if (pendingExecution.timeoutId) {
+      clearTimeout(pendingExecution.timeoutId);
+    }
     pendingExecution.cleanupAbortListener?.();
+    pendingExecution.state = 'completed';
     session.pendingExecution = null;
 
     const completedAt = Date.now();
