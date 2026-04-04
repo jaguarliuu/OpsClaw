@@ -1,5 +1,5 @@
 import { buildServerHttpBaseUrl } from './serverBase';
-import type { AgentApprovalMode, AgentStreamEvent } from './types.agent';
+import type { AgentApprovalMode, AgentRunSnapshot, AgentStreamEvent } from './types.agent';
 
 type StreamAgentRunOptions = {
   providerId: string;
@@ -39,6 +39,80 @@ export async function streamAgentRun({
     signal,
   });
 
+  await consumeAgentEventStream(response, onEvent);
+}
+
+export async function resumeAgentGate(runId: string, gateId: string) {
+  const response = await fetch(
+    `${buildServerHttpBaseUrl()}/api/agent/runs/${runId}/gates/${gateId}/resume-waiting`,
+    {
+      method: 'POST',
+    }
+  );
+
+  return readJson<AgentRunSnapshot>(response);
+}
+
+export async function resolveAgentGate(runId: string, gateId: string) {
+  const response = await fetch(
+    `${buildServerHttpBaseUrl()}/api/agent/runs/${runId}/gates/${gateId}/resolve`,
+    {
+      method: 'POST',
+    }
+  );
+
+  return readJson<AgentRunSnapshot>(response);
+}
+
+export async function rejectAgentGate(runId: string, gateId: string) {
+  const response = await fetch(
+    `${buildServerHttpBaseUrl()}/api/agent/runs/${runId}/gates/${gateId}/reject`,
+    {
+      method: 'POST',
+    }
+  );
+
+  return readJson<AgentRunSnapshot>(response);
+}
+
+export async function streamAgentRunContinuation({
+  runId,
+  signal,
+  onEvent,
+}: {
+  runId: string;
+  signal?: AbortSignal;
+  onEvent?: (event: AgentStreamEvent) => void;
+}) {
+  const response = await fetch(`${buildServerHttpBaseUrl()}/api/agent/runs/${runId}/stream`, {
+    method: 'POST',
+    signal,
+  });
+
+  await consumeAgentEventStream(response, onEvent);
+}
+
+async function readJson<T>(response: Response) {
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`;
+
+    try {
+      const payload = (await response.json()) as { message?: string };
+      message = payload.message ?? message;
+    } catch {
+      // ignore invalid JSON payload
+    }
+
+    throw new Error(message);
+  }
+
+  return (await response.json()) as T;
+}
+
+async function consumeAgentEventStream(
+  response: Response,
+  onEvent?: (event: AgentStreamEvent) => void
+) {
   if (!response.ok) {
     let message = `HTTP ${response.status}`;
 

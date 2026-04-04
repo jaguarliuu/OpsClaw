@@ -23,6 +23,7 @@ type UseAiAssistantPanelStateOptions = {
   open: boolean;
   activeSessionId: string | null;
   sessions: LiveSession[];
+  isAgentInputLocked?: boolean;
   isRunning: boolean;
   isStreaming: boolean;
 };
@@ -31,6 +32,7 @@ export function useAiAssistantPanelState({
   open,
   activeSessionId,
   sessions,
+  isAgentInputLocked = false,
   isRunning,
   isStreaming,
 }: UseAiAssistantPanelStateOptions) {
@@ -100,7 +102,7 @@ export function useAiAssistantPanelState({
     };
   }, [open, activeSessionId, sessions]);
 
-  const isBusy = mode === 'agent' ? isRunning : isStreaming;
+  const isBusy = mode === 'agent' ? isRunning || isAgentInputLocked : isStreaming;
   const resolvedSelectedModel = getValidAiAssistantModelValue(modelOptions, selectedModel);
   const resolvedSelectedSessionId = getValidAiAssistantSessionId(
     sessions,

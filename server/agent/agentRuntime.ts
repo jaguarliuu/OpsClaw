@@ -69,6 +69,7 @@ type PendingRunAction =
   | { kind: 'reject_approval' };
 
 type PausedRunHandle = {
+  pause: ToolPauseOutcome;
   pendingAction: PendingRunAction | null;
   continueRun: (options: {
     emit: (event: AgentStreamEvent) => void;
@@ -380,19 +381,26 @@ export class OpsAgentRuntime {
     if (snapshot.openGate.status !== 'expired') {
       throw new Error('只有 suspended 的 terminal_input gate 才能继续等待。');
     }
-    if (!this.dependencies.sessions.resumePendingExecutionWait) {
-      throw new Error('当前运行环境不支持恢复等待中的命令。');
-    }
-
     const pausedRun = this.pausedRuns.get(runId);
     if (!pausedRun) {
       throw new Error('当前 run 没有可恢复的执行上下文。');
     }
+    if (pausedRun.pause.gateKind !== 'terminal_input') {
+      throw new Error('当前 run 没有 terminal_input 恢复上下文。');
+    }
 
-    this.dependencies.sessions.resumePendingExecutionWait(
-      snapshot.sessionId,
-      snapshot.openGate.payload.timeoutMs
-    );
+    const settledEnvelope = pausedRun.pause.continuation.getSettledEnvelope();
+    const pendingExecution = this.dependencies.sessions.getPendingExecutionDebug?.(snapshot.sessionId);
+    if (!settledEnvelope && pendingExecution !== null) {
+      if (!this.dependencies.sessions.resumePendingExecutionWait) {
+        throw new Error('当前运行环境不支持恢复等待中的命令。');
+      }
+
+      this.dependencies.sessions.resumePendingExecutionWait(
+        snapshot.sessionId,
+        snapshot.openGate.payload.timeoutMs
+      );
+    }
     this.agentRunRegistry.markGateReopened({
       runId,
       gateId,
@@ -1015,12 +1023,14 @@ export class OpsAgentRuntime {
             const resumed = await this.resumePausedToolCall({
               runId,
               emit: resumedEmit,
+              signal: resumedSignal,
               action,
               pause: executionResult,
             });
 
             if (resumed.kind === 'paused') {
               this.pausedRuns.set(runId, {
+                pause: executionResult,
                 pendingAction: null,
                 continueRun,
               });
@@ -1051,6 +1061,7 @@ export class OpsAgentRuntime {
 
           if (pauseOutcome.kind === 'paused') {
             this.pausedRuns.set(runId, {
+              pause: executionResult,
               pendingAction: null,
               continueRun,
             });
@@ -1114,13 +1125,14 @@ export class OpsAgentRuntime {
       return { kind: 'paused' };
     }
 
+    const terminalPause = options.pause as Extract<ToolPauseOutcome, { gateKind: 'terminal_input' }>;
     return this.waitForTerminalInputGate({
       runId: options.runId,
       sessionId: options.input.sessionId,
       gate,
       emit: options.emit,
-      waitForCompletion: options.pause.continuation.waitForCompletion,
-      command: options.pause.payload.command,
+      waitForCompletion: () => terminalPause.continuation.waitForCompletion(),
+      command: terminalPause.payload.command,
     });
   }
 
@@ -1129,10 +1141,10 @@ export class OpsAgentRuntime {
     sessionId: string;
     gate: HumanGateRecord;
     emit: (event: AgentStreamEvent) => void;
-    waitForCompletion: Promise<ToolExecutionEnvelope>;
+    waitForCompletion: () => Promise<ToolExecutionEnvelope>;
     command: string;
   }): Promise<PauseResolution> {
-    const completionPromise = options.waitForCompletion.then((envelope) => ({
+    const completionPromise = options.waitForCompletion().then((envelope) => ({
       kind: 'completed' as const,
       envelope,
     }));
@@ -1224,6 +1236,7 @@ export class OpsAgentRuntime {
   private async resumePausedToolCall(options: {
     runId: string;
     emit: (event: AgentStreamEvent) => void;
+    signal: AbortSignal;
     action: PendingRunAction;
     pause: ToolPauseOutcome;
   }): Promise<PauseResolution> {
@@ -1260,7 +1273,7 @@ export class OpsAgentRuntime {
         });
         return {
           kind: 'completed',
-          envelope: await options.pause.continuation.resume(),
+          envelope: await options.pause.continuation.resume(options.signal),
         };
       }
 
@@ -1304,13 +1317,14 @@ export class OpsAgentRuntime {
       throw new Error('terminal_input gate 当前不处于等待状态。');
     }
 
+    const terminalPause = options.pause as Extract<ToolPauseOutcome, { gateKind: 'terminal_input' }>;
     return this.waitForTerminalInputGate({
       runId: options.runId,
       sessionId: snapshot.sessionId,
       gate: snapshot.openGate,
       emit: options.emit,
-      waitForCompletion: options.pause.continuation.waitForCompletion,
-      command: options.pause.payload.command,
+      waitForCompletion: () => terminalPause.continuation.waitForCompletion(options.signal),
+      command: terminalPause.payload.command,
     });
   }
 }

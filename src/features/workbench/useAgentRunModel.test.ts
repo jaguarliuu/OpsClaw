@@ -189,3 +189,83 @@ void test('returns null for run_started because it should not append a timeline 
     null
   );
 });
+
+void test('maps human_gate_opened events into dedicated human_gate timeline items', () => {
+  const item = mapAgentEventToTimelineItem(
+    {
+      type: 'human_gate_opened',
+      runId: 'run-1',
+      gate: {
+        id: 'gate-1',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        kind: 'terminal_input',
+        status: 'open',
+        reason: '命令正在等待你在终端中继续输入。',
+        openedAt: 1,
+        deadlineAt: 2,
+        payload: {
+          toolCallId: 'call-1',
+          toolName: 'session.run_command',
+          command: 'sudo passwd root',
+          timeoutMs: 300_000,
+        },
+      },
+      timestamp: Date.now(),
+    },
+    'item-gate-1'
+  );
+
+  assert.deepEqual(item, {
+    id: 'item-gate-1',
+    kind: 'human_gate',
+    runId: 'run-1',
+    gate: {
+      id: 'gate-1',
+      runId: 'run-1',
+      sessionId: 'session-1',
+      kind: 'terminal_input',
+      status: 'open',
+      reason: '命令正在等待你在终端中继续输入。',
+      openedAt: 1,
+      deadlineAt: 2,
+      payload: {
+        toolCallId: 'call-1',
+        toolName: 'session.run_command',
+        command: 'sudo passwd root',
+        timeoutMs: 300_000,
+      },
+    },
+  });
+});
+
+void test('applyAgentEventToTimeline appends human_gate status transitions as timeline entries', () => {
+  const items = applyAgentEventToTimeline(
+    [],
+    {
+      type: 'human_gate_expired',
+      runId: 'run-1',
+      gate: {
+        id: 'gate-1',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        kind: 'terminal_input',
+        status: 'expired',
+        reason: '命令等待人工输入超时，Agent 已停止等待结果。',
+        openedAt: 1,
+        deadlineAt: 2,
+        payload: {
+          toolCallId: 'call-1',
+          toolName: 'session.run_command',
+          command: 'sudo passwd root',
+          timeoutMs: 300_000,
+        },
+      },
+      timestamp: Date.now(),
+    },
+    () => 'item-gate-expired'
+  );
+
+  assert.equal(items[0]?.kind, 'human_gate');
+  assert.equal(items[0]?.gate.status, 'expired');
+});

@@ -60,6 +60,14 @@ export type ApprovalGateRecord = HumanGateRecordBase & {
 
 export type HumanGateRecord = TerminalInputGateRecord | ApprovalGateRecord;
 
+export type AgentRunSnapshot = {
+  runId: string;
+  sessionId: string;
+  task: string;
+  state: AgentRunState;
+  openGate: HumanGateRecord | null;
+};
+
 export type ToolExecutionEnvelope = {
   toolName: string;
   toolCallId: string;
@@ -199,6 +207,7 @@ export type AgentStreamEvent =
 export type AgentTimelineItem =
   | { id: string; kind: 'user'; text: string }
   | { id: string; kind: 'assistant'; text: string; step: number }
+  | { id: string; kind: 'human_gate'; runId: string; gate: HumanGateRecord }
   | {
       id: string;
       kind: 'tool_call';

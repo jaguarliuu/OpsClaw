@@ -107,4 +107,87 @@ export function registerAgentRoutes(
       response.end();
     }
   });
+
+  app.post('/api/agent/runs/:runId/gates/:gateId/resume-waiting', (request, response) => {
+    try {
+      const snapshot = agentRuntime.resumeWaiting(request.params.runId, request.params.gateId);
+      response.json(snapshot);
+    } catch (error) {
+      console.error('[Agent] resume gate error:', error);
+      response.status(500).json({ message: '恢复等待中的 Agent gate 失败。' });
+    }
+  });
+
+  app.post('/api/agent/runs/:runId/gates/:gateId/resolve', (request, response) => {
+    try {
+      const snapshot = agentRuntime.resolveGate(request.params.runId, request.params.gateId);
+      response.json(snapshot);
+    } catch (error) {
+      console.error('[Agent] resolve gate error:', error);
+      response.status(500).json({ message: '批准 Agent gate 失败。' });
+    }
+  });
+
+  app.post('/api/agent/runs/:runId/gates/:gateId/reject', (request, response) => {
+    try {
+      const snapshot = agentRuntime.rejectGate(request.params.runId, request.params.gateId);
+      response.json(snapshot);
+    } catch (error) {
+      console.error('[Agent] reject gate error:', error);
+      response.status(500).json({ message: '拒绝 Agent gate 失败。' });
+    }
+  });
+
+  app.post('/api/agent/runs/:runId/stream', async (request, response) => {
+    try {
+      response.setHeader('Content-Type', 'text/event-stream');
+      response.setHeader('Cache-Control', 'no-cache');
+      response.setHeader('Connection', 'keep-alive');
+      response.flushHeaders?.();
+
+      const abortController = new AbortController();
+      let finished = false;
+
+      request.on('aborted', () => {
+        if (!finished) {
+          abortController.abort();
+        }
+      });
+
+      response.on('close', () => {
+        if (!finished) {
+          abortController.abort();
+        }
+      });
+
+      try {
+        await agentRuntime.streamContinuation(
+          request.params.runId,
+          (event) => {
+            response.write(`data: ${JSON.stringify(event)}\n\n`);
+          },
+          abortController.signal
+        );
+      } finally {
+        finished = true;
+        response.end();
+      }
+    } catch (error) {
+      console.error('[Agent] continuation stream error:', error);
+      if (!response.headersSent) {
+        response.status(500).json({ message: 'Agent 继续执行失败。' });
+        return;
+      }
+
+      response.write(
+        `data: ${JSON.stringify({
+          type: 'run_failed',
+          runId: request.params.runId,
+          error: error instanceof Error ? error.message : 'Agent 继续执行失败。',
+          timestamp: Date.now(),
+        })}\n\n`
+      );
+      response.end();
+    }
+  });
 }

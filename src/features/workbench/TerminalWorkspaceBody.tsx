@@ -2,7 +2,7 @@ import type { MutableRefObject, MouseEvent as ReactMouseEvent, RefObject } from 
 
 import { Button } from '@/components/ui/button';
 import { SshTerminalPane, type SshTerminalPaneHandle } from '@/features/workbench/SshTerminalPane';
-import type { ConnectionStatus, LiveSession } from '@/features/workbench/types';
+import type { AgentSessionLock, ConnectionStatus, LiveSession } from '@/features/workbench/types';
 import {
   buildDividerStyle,
   buildPaneStyle,
@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 
 type TerminalWorkspaceBodyProps = {
   activeSessionId: string | null;
+  agentSessionLock: AgentSessionLock | null;
   focusedPane: FocusedPane;
   paneSessionIds: PaneSessionIds;
   sessions: LiveSession[];
@@ -38,6 +39,7 @@ type TerminalWorkspaceBodyProps = {
 
 export function TerminalWorkspaceBody({
   activeSessionId,
+  agentSessionLock,
   focusedPane,
   paneSessionIds,
   sessions,
@@ -83,6 +85,7 @@ export function TerminalWorkspaceBody({
               return (
                 <SshTerminalPane
                   active={session.id === activeSessionId}
+                  agentSessionLock={agentSessionLock?.sessionId === session.id ? agentSessionLock : null}
                   key={session.id}
                   onStatusChange={onSessionStatusChange}
                   ref={(handle) => {
@@ -97,6 +100,7 @@ export function TerminalWorkspaceBody({
               return (
                 <SshTerminalPane
                   active={false}
+                  agentSessionLock={agentSessionLock?.sessionId === session.id ? agentSessionLock : null}
                   key={session.id}
                   onStatusChange={onSessionStatusChange}
                   ref={(handle) => {
@@ -128,6 +132,7 @@ export function TerminalWorkspaceBody({
               >
                 <SshTerminalPane
                   active={renderState.isFocusedPane}
+                  agentSessionLock={agentSessionLock?.sessionId === session.id ? agentSessionLock : null}
                   show={true}
                   onStatusChange={onSessionStatusChange}
                   ref={(handle) => {

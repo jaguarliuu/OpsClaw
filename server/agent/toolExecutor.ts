@@ -15,6 +15,46 @@ import type {
 const TERMINAL_INPUT_POLL_INTERVAL_MS = 25;
 const DEFAULT_TERMINAL_INPUT_TIMEOUT_MS = 300_000;
 
+function createContinuationSignalController(initialSignal: AbortSignal) {
+  const controller = new AbortController();
+  let cleanup: (() => void) | null = null;
+
+  const release = () => {
+    cleanup?.();
+    cleanup = null;
+  };
+
+  const bind = (signal?: AbortSignal) => {
+    release();
+    if (!signal || controller.signal.aborted) {
+      return;
+    }
+
+    if (signal.aborted) {
+      controller.abort();
+      return;
+    }
+
+    const handleAbort = () => {
+      release();
+      controller.abort();
+    };
+
+    signal.addEventListener('abort', handleAbort, { once: true });
+    cleanup = () => {
+      signal.removeEventListener('abort', handleAbort);
+    };
+  };
+
+  bind(initialSignal);
+
+  return {
+    signal: controller.signal,
+    bind,
+    release,
+  };
+}
+
 function buildErrorEnvelope(
   toolName: string,
   toolCallId: string,
@@ -119,6 +159,7 @@ export class ToolExecutor {
     }
 
     if (decision.kind === 'require_approval') {
+      const continuationSignal = createContinuationSignalController(ctx.signal);
       const policy: AgentPolicySummary = {
         action: 'require_approval',
         matches: decision.matches,
@@ -129,6 +170,7 @@ export class ToolExecutor {
         arguments: (args ?? {}) as Record<string, unknown>,
         policy,
       };
+      continuationSignal.release();
 
       return {
         kind: 'pause',
@@ -136,9 +178,20 @@ export class ToolExecutor {
         reason: decision.reason,
         payload,
         continuation: {
-          resume: async () => {
+          resume: async (signal) => {
+            continuationSignal.bind(signal);
             const approvedStartedAt = Date.now();
-            return this.executeAllowedHandler(handler, toolCallId, args, ctx, approvedStartedAt);
+            try {
+              return await this.executeAllowedHandler(
+                handler,
+                toolCallId,
+                args,
+                { ...ctx, signal: continuationSignal.signal },
+                approvedStartedAt
+              );
+            } finally {
+              continuationSignal.release();
+            }
           },
           reject: () =>
             buildErrorEnvelope(
@@ -193,8 +246,24 @@ export class ToolExecutor {
       typeof args === 'object' && args !== null
         ? (args as { sessionId?: unknown; command?: unknown })
         : null;
-
-    const executionPromise = this.executeAllowedHandler(handler, toolCallId, args, ctx, startedAt);
+    const continuationSignal = createContinuationSignalController(ctx.signal);
+    const managedContext = {
+      ...ctx,
+      signal: continuationSignal.signal,
+    };
+    let settledEnvelope: ToolExecutionEnvelope | null = null;
+    const executionPromise = this.executeAllowedHandler(
+      handler,
+      toolCallId,
+      args,
+      managedContext,
+      startedAt
+    ).then((envelope) => {
+      settledEnvelope = envelope;
+      return envelope;
+    }).finally(() => {
+      continuationSignal.release();
+    });
     const completionPromise = executionPromise.then((envelope) => ({
       kind: 'completed' as const,
       envelope,
@@ -210,6 +279,10 @@ export class ToolExecutor {
 
     const sessionId = commandArgs.sessionId;
     const command = commandArgs.command;
+
+    if (!ctx.capabilities.sessions.getPendingExecutionDebug) {
+      return executionPromise;
+    }
 
     while (true) {
       const result = await Promise.race([
@@ -242,6 +315,7 @@ export class ToolExecutor {
         sessionLabel: ctx.sessionLabel,
         timeoutMs: DEFAULT_TERMINAL_INPUT_TIMEOUT_MS,
       };
+      continuationSignal.release();
 
       return {
         kind: 'pause',
@@ -249,11 +323,11 @@ export class ToolExecutor {
         reason: '命令正在等待你在终端中继续输入。',
         payload,
         continuation: {
-          waitForCompletion: executionPromise,
-          resume: async () => {
-            ctx.capabilities.sessions.resumePendingExecutionWait(sessionId, payload.timeoutMs);
+          waitForCompletion: async (signal) => {
+            continuationSignal.bind(signal);
             return executionPromise;
           },
+          getSettledEnvelope: () => settledEnvelope,
         },
       };
     }

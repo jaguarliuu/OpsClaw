@@ -14,6 +14,7 @@ import { TerminalWorkspaceBody } from '@/features/workbench/TerminalWorkspaceBod
 import { TerminalWorkspaceHeader } from '@/features/workbench/TerminalWorkspaceHeader';
 import type { SshTerminalPaneHandle } from '@/features/workbench/SshTerminalPane';
 import type {
+  AgentSessionLock,
   ConnectionStatus,
   LiveSession,
   TerminalCommandExecutionResult,
@@ -29,6 +30,7 @@ export type TerminalWorkspaceHandle = {
 
 type TerminalWorkspaceProps = {
   activeSessionId: string | null;
+  agentSessionLock: AgentSessionLock | null;
   isUtilityDrawerOpen: boolean;
   isMacShortcutPlatform: boolean;
   sessions: LiveSession[];
@@ -46,6 +48,7 @@ type TerminalWorkspaceProps = {
 export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWorkspaceProps>(
   function TerminalWorkspace({
   activeSessionId,
+  agentSessionLock,
   isUtilityDrawerOpen,
   isMacShortcutPlatform,
   sessions,
@@ -218,6 +221,7 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
 
       <TerminalWorkspaceBody
         activeSessionId={activeSessionId}
+        agentSessionLock={agentSessionLock}
         focusedPane={focusedPane}
         paneSessionIds={paneSessionIds}
         sessions={sessions}

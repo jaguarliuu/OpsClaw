@@ -102,8 +102,8 @@ export type ToolPauseOutcome =
       reason: string;
       payload: TerminalInputGatePayload;
       continuation: {
-        waitForCompletion: Promise<ToolExecutionEnvelope>;
-        resume: () => Promise<ToolExecutionEnvelope>;
+        waitForCompletion: (signal?: AbortSignal) => Promise<ToolExecutionEnvelope>;
+        getSettledEnvelope: () => ToolExecutionEnvelope | null;
       };
     }
   | {
@@ -112,7 +112,7 @@ export type ToolPauseOutcome =
       reason: string;
       payload: ApprovalGatePayload;
       continuation: {
-        resume: () => Promise<ToolExecutionEnvelope>;
+        resume: (signal?: AbortSignal) => Promise<ToolExecutionEnvelope>;
         reject: () => ToolExecutionEnvelope;
       };
     };

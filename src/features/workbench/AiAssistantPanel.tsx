@@ -12,7 +12,7 @@ import { MarkdownContent } from '@/components/ui/MarkdownContent';
 import { AGENT_MAX_STEP_OPTIONS } from './agentRunSettings';
 import { useAiAssistantPanelState } from './useAiAssistantPanelState';
 import { useStreamingChat } from './useStreamingChat';
-import { useAgentRun } from './useAgentRun';
+import type { UseAgentRunResult } from './useAgentRun';
 import {
   getAgentStepBudgetHint,
   getAiAssistantThemeClasses,
@@ -20,6 +20,12 @@ import {
   getValidAiAssistantSessionId,
   shouldAutoScrollAiAssistantTimeline,
 } from './aiAssistantPanelModel';
+import {
+  getHumanGateDescription,
+  getHumanGatePrimaryActionLabel,
+  getHumanGateSecondaryActionLabel,
+  getHumanGateTitle,
+} from './agentGateUiModel';
 import { formatAgentPolicySummary } from './agentPolicyUiModel';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { LiveSession } from './types';
@@ -235,7 +241,136 @@ function ToolResultCard({
   );
 }
 
-function AgentTimelineCard({ item, themeMode }: { item: AgentTimelineItem; themeMode: 'dark' | 'light' }) {
+function HumanGateCard({
+  item,
+  isBusy,
+  isContinuationPending,
+  onApprove,
+  onContinue,
+  onReject,
+  onResume,
+  sessionLabel,
+  themeMode,
+}: {
+  item: Extract<AgentTimelineItem, { kind: 'human_gate' }>;
+  isBusy: boolean;
+  isContinuationPending: boolean;
+  onApprove: (runId: string, gateId: string) => Promise<void>;
+  onContinue: (runId: string) => Promise<void>;
+  onReject: (runId: string, gateId: string) => Promise<void>;
+  onResume: (runId: string, gateId: string) => Promise<void>;
+  sessionLabel: string;
+  themeMode: 'dark' | 'light';
+}) {
+  const { gate } = item;
+  const primaryActionLabel = isContinuationPending ? '继续运行' : getHumanGatePrimaryActionLabel(gate);
+  const secondaryActionLabel = isContinuationPending ? null : getHumanGateSecondaryActionLabel(gate);
+  const policySummary = gate.kind === 'approval' ? formatAgentPolicySummary(gate.payload.policy) : null;
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-amber-500/20 bg-[linear-gradient(180deg,rgba(245,158,11,0.12),rgba(245,158,11,0.04))] shadow-[0_16px_38px_rgba(245,158,11,0.08)]">
+      <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
+        <div>
+          <div className="mb-1 flex items-center gap-2">
+            <span className={`rounded-full border border-amber-400/20 bg-amber-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${themeMode === 'light' ? 'text-amber-700' : 'text-amber-200'}`}>
+              Human Gate
+            </span>
+            <span className="text-[11px] text-[var(--app-text-secondary)]">
+              {gate.kind === 'approval' ? '审批' : '终端交互'}
+            </span>
+          </div>
+          <div className="text-sm font-medium text-[var(--app-text-primary)]">{getHumanGateTitle(gate)}</div>
+        </div>
+        <span className="text-[11px] text-[var(--app-text-secondary)]">{sessionLabel}</span>
+      </div>
+      <div className="space-y-3 px-4 py-4">
+        <div className="text-sm leading-relaxed text-[var(--app-text-primary)]">{gate.reason}</div>
+        <div className="text-xs leading-relaxed text-[var(--app-text-secondary)]">
+          {getHumanGateDescription(gate)}
+        </div>
+        <div className="rounded-lg border border-white/8 bg-white/[0.04] px-3 py-2 text-xs text-[var(--app-text-secondary)]">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--app-text-tertiary)]">
+            {gate.kind === 'approval' ? '工具' : '命令'}
+          </div>
+          <div className="mt-1 break-all font-mono text-[11px] text-[var(--app-text-primary)]">
+            {gate.kind === 'approval' ? gate.payload.toolName : gate.payload.command}
+          </div>
+        </div>
+        {policySummary ? (
+          <div className="rounded-lg border border-white/8 bg-white/[0.04] px-3 py-2 text-xs text-[var(--app-text-secondary)]">
+            {policySummary}
+          </div>
+        ) : null}
+        {gate.kind === 'approval' ? (
+          <MarkdownContent
+            content={formatToolArguments(gate.payload.arguments)}
+            className="rounded-lg border border-white/8 bg-[var(--app-bg-base)] px-3 py-3 text-xs"
+          />
+        ) : null}
+        {primaryActionLabel || secondaryActionLabel ? (
+          <div className="flex flex-wrap gap-2">
+            {primaryActionLabel ? (
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={() => {
+                  if (isContinuationPending) {
+                    void onContinue(item.runId);
+                    return;
+                  }
+
+                  if (gate.kind === 'approval') {
+                    void onApprove(item.runId, gate.id);
+                    return;
+                  }
+
+                  void onResume(item.runId, gate.id);
+                }}
+                className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-medium text-black transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {primaryActionLabel}
+              </button>
+            ) : null}
+            {secondaryActionLabel ? (
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={() => {
+                  void onReject(item.runId, gate.id);
+                }}
+                className="rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-[var(--app-text-primary)] transition-colors hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {secondaryActionLabel}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AgentTimelineCard({
+  item,
+  isBusy,
+  isContinuationPending,
+  onApprove,
+  onContinue,
+  onReject,
+  onResume,
+  sessionLabel,
+  themeMode,
+}: {
+  item: AgentTimelineItem;
+  isBusy: boolean;
+  isContinuationPending: boolean;
+  onApprove: (runId: string, gateId: string) => Promise<void>;
+  onContinue: (runId: string) => Promise<void>;
+  onReject: (runId: string, gateId: string) => Promise<void>;
+  onResume: (runId: string, gateId: string) => Promise<void>;
+  sessionLabel: string;
+  themeMode: 'dark' | 'light';
+}) {
   if (item.kind === 'user') {
     return (
       <div className="flex justify-end">
@@ -275,6 +410,22 @@ function AgentTimelineCard({ item, themeMode }: { item: AgentTimelineItem; theme
 
   if (item.kind === 'tool_result') {
     return <ToolResultCard item={item} themeMode={themeMode} />;
+  }
+
+  if (item.kind === 'human_gate') {
+    return (
+      <HumanGateCard
+        isBusy={isBusy}
+        isContinuationPending={isContinuationPending}
+        item={item}
+        onApprove={onApprove}
+        onContinue={onContinue}
+        onReject={onReject}
+        onResume={onResume}
+        sessionLabel={sessionLabel}
+        themeMode={themeMode}
+      />
+    );
   }
 
   if (item.kind === 'warning') {
@@ -324,6 +475,7 @@ type Props = {
   onClose: () => void;
   sessions: LiveSession[];
   activeSessionId: string | null;
+  agentRun: UseAgentRunResult;
 };
 
 export function AiAssistantPanel({
@@ -331,6 +483,7 @@ export function AiAssistantPanel({
   onClose,
   sessions,
   activeSessionId,
+  agentRun,
 }: Props) {
   const { appTheme } = useTerminalSettings();
   const {
@@ -347,8 +500,12 @@ export function AiAssistantPanel({
     error: agentError,
     runAgent,
     stopAgent,
+    approveGate,
+    continuePendingRun,
+    rejectGate,
+    resumeGate,
     clearItems: clearAgentItems,
-  } = useAgentRun();
+  } = agentRun;
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -370,11 +527,19 @@ export function AiAssistantPanel({
     open,
     activeSessionId,
     sessions,
+    isAgentInputLocked:
+      agentRun.activeGate !== null || agentRun.pendingContinuationRunId !== null,
     isRunning,
     isStreaming,
   });
   const visibleError = mode === 'agent' ? agentError : chatError;
   const isBusy = mode === 'agent' ? isRunning : isStreaming;
+  const isAgentInputLocked =
+    mode === 'agent' &&
+    (agentRun.activeGate !== null || agentRun.pendingContinuationRunId !== null);
+  const canClearAgentItems =
+    mode !== 'agent' ||
+    (agentRun.activeGate === null && agentRun.pendingContinuationRunId === null);
   const themeClasses = getAiAssistantThemeClasses(appTheme.mode);
   const resolvedSelectedModel = getValidAiAssistantModelValue(modelOptions, selectedModel);
   const resolvedSelectedSessionId = getValidAiAssistantSessionId(
@@ -398,8 +563,10 @@ export function AiAssistantPanel({
                 return `${item.kind}:${item.toolName}:${JSON.stringify(item.arguments).length}`;
               case 'tool_result':
                 return `${item.kind}:${item.toolName}:${JSON.stringify(item.result).length}`;
+              case 'human_gate':
+                return `${item.kind}:${item.runId}:${item.gate.id}:${item.gate.status}`;
               default:
-                return 'unknown';
+                return ((unreachable: never) => unreachable)(item);
             }
           })
           .join('|')
@@ -437,7 +604,12 @@ export function AiAssistantPanel({
     if (!option) return;
 
     if (mode === 'agent') {
-      if (!resolvedSelectedSessionId || isRunning) {
+      if (
+        !resolvedSelectedSessionId ||
+        isRunning ||
+        agentRun.activeGate !== null ||
+        agentRun.pendingContinuationRunId !== null
+      ) {
         return;
       }
 
@@ -513,8 +685,13 @@ export function AiAssistantPanel({
         <div className="flex items-center gap-1 shrink-0 z-10 relative">
           <button
             onClick={mode === 'agent' ? clearAgentItems : clearChatMessages}
-            className={`flex items-center gap-1 text-[11px] px-2 py-1.5 ${themeClasses.secondaryTextClass} hover:text-[var(--app-text-primary)] hover:bg-[var(--app-bg-elevated3)] rounded-md transition-colors`}
-            title="新对话"
+            disabled={!canClearAgentItems}
+            className={`flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] transition-colors ${
+              canClearAgentItems
+                ? `${themeClasses.secondaryTextClass} hover:bg-[var(--app-bg-elevated3)] hover:text-[var(--app-text-primary)]`
+                : 'cursor-not-allowed text-[var(--app-text-tertiary)] opacity-60'
+            }`}
+            title={canClearAgentItems ? '新对话' : '请先处理当前等待中的 human gate'}
           >
             <span>新对话</span>
           </button>
@@ -582,7 +759,34 @@ export function AiAssistantPanel({
           </div>
         )}
         {mode === 'agent'
-          ? agentItems.map((item) => <AgentTimelineCard key={item.id} item={item} themeMode={appTheme.mode} />)
+          ? agentItems.map((item) => {
+              const sessionLabel =
+                item.kind === 'human_gate'
+                  ? sessions.find((session) => session.id === item.gate.sessionId)?.label ??
+                    item.gate.sessionId
+                  : resolvedSelectedSessionId
+                    ? sessions.find((session) => session.id === resolvedSelectedSessionId)?.label ??
+                      resolvedSelectedSessionId
+                    : '未指定会话';
+
+              return (
+                <AgentTimelineCard
+                  key={item.id}
+                  isBusy={isBusy}
+                  isContinuationPending={
+                    item.kind === 'human_gate' &&
+                    agentRun.pendingContinuationRunId === item.runId
+                  }
+                  item={item}
+                  onApprove={approveGate}
+                  onContinue={continuePendingRun}
+                  onReject={rejectGate}
+                  onResume={resumeGate}
+                  sessionLabel={sessionLabel}
+                  themeMode={appTheme.mode}
+                />
+              );
+            })
           : chatMessages.map((msg, i) => (
               <div
                 key={i}
@@ -650,10 +854,12 @@ export function AiAssistantPanel({
             }}
             placeholder={
               mode === 'agent'
-                ? '例如：检查当前机器磁盘和内存是否异常，并给出结论'
+                ? isAgentInputLocked
+                  ? '请先处理当前 human gate，再发起新的 Agent 任务'
+                  : '例如：检查当前机器磁盘和内存是否异常，并给出结论'
                 : '请输入你的问题，按 Enter 发送'
             }
-            disabled={!selectedModel || isBusy}
+            disabled={!selectedModel || isBusy || isAgentInputLocked}
             rows={3}
             className="ai-assistant-textarea w-full px-3 pt-3 pb-2 bg-transparent border-0 text-[13px] text-[var(--app-text-primary)] placeholder:text-neutral-600 focus:outline-none resize-none"
           />
@@ -698,7 +904,7 @@ export function AiAssistantPanel({
             
             <button
               onClick={handleSend}
-              disabled={!canSend}
+              disabled={!canSend || isAgentInputLocked}
               className="h-7 w-7 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:bg-neutral-800 disabled:text-neutral-500 flex items-center justify-center transition-all shrink-0 text-white shadow-sm"
               title="发送"
             >

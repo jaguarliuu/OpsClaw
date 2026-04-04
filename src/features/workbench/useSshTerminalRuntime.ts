@@ -16,9 +16,10 @@ import {
 } from '@/features/workbench/sshTerminalRuntimeModel';
 import { loadTerminalRuntime } from '@/features/workbench/terminalRuntimeLoader';
 import { TERMINAL_THEMES } from '@/features/workbench/terminalSettings';
-import type { ConnectionStatus } from '@/features/workbench/types';
+import type { AgentSessionLock, ConnectionStatus } from '@/features/workbench/types';
 
 type UseSshTerminalRuntimeOptions = {
+  agentSessionLock: AgentSessionLock | null;
   containerRef: RefObject<HTMLDivElement | null>;
   disposeViewport: () => void;
   fitAddonRef: MutableRefObject<FitAddon | null>;
@@ -50,6 +51,7 @@ function logSshTerminalRuntime(event: string, details: Record<string, unknown> =
 }
 
 export function useSshTerminalRuntime({
+  agentSessionLock,
   containerRef,
   disposeViewport,
   fitAddonRef,
@@ -71,12 +73,31 @@ export function useSshTerminalRuntime({
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<string | null>(null);
   const copyFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isAgentLockedRef = useRef(false);
   const suggestionRef = useRef<string | null>(null);
   const suggestionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     suggestionRef.current = suggestion;
   }, [suggestion]);
+
+  const isAgentLocked = agentSessionLock !== null;
+
+  useEffect(() => {
+    isAgentLockedRef.current = isAgentLocked;
+  }, [isAgentLocked]);
+
+  useEffect(() => {
+    if (!isAgentLocked) {
+      return;
+    }
+
+    if (suggestionTimerRef.current) {
+      clearTimeout(suggestionTimerRef.current);
+      suggestionTimerRef.current = null;
+    }
+    setSuggestion(null);
+  }, [isAgentLocked]);
 
   const readClipboardText = useCallback(async () => {
     if (window.__OPSCLAW_CLIPBOARD__) {
@@ -121,6 +142,11 @@ export function useSshTerminalRuntime({
   }, [websocketRef]);
 
   const fetchSuggestion = useCallback((input: string) => {
+    if (isAgentLockedRef.current) {
+      setSuggestion(null);
+      return;
+    }
+
     if (suggestionTimerRef.current) {
       clearTimeout(suggestionTimerRef.current);
     }
@@ -295,7 +321,7 @@ export function useSshTerminalRuntime({
           inputBufferRef.current = resolution.nextInputBuffer;
           setSuggestion(resolution.nextSuggestion);
 
-          if (resolution.commandToRecord) {
+          if (!isAgentLockedRef.current && resolution.commandToRecord) {
             void recordCommand({
               command: resolution.commandToRecord,
               nodeId: sessionNodeIdRef.current,
@@ -304,7 +330,7 @@ export function useSshTerminalRuntime({
             });
           }
 
-          if (resolution.suggestionQuery !== null) {
+          if (!isAgentLockedRef.current && resolution.suggestionQuery !== null) {
             fetchSuggestion(resolution.suggestionQuery);
           }
         });
@@ -413,6 +439,6 @@ export function useSshTerminalRuntime({
     pasteFromClipboard,
     selectAll,
     suggestion,
-    suggestionVisible: suggestion !== null && inputBufferRef.current !== '',
+    suggestionVisible: !isAgentLocked && suggestion !== null && inputBufferRef.current !== '',
   };
 }

@@ -1783,3 +1783,598 @@ test('rejectGate 会把 approval gate 转成结构化拒绝结果并继续推进
   assert.equal(executeCalls, 0);
   assert.equal(runtime.getRunSnapshot(runId)?.state, 'completed');
 });
+
+test('resolveGate 会在原始请求已 abort 后改用 continuation signal 执行 approval 工具', async () => {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  const initialEvents: unknown[] = [];
+  const resumedEvents: unknown[] = [];
+  let completionCalls = 0;
+  let executeCalls = 0;
+
+  const initialController = new AbortController();
+
+  const runtime = new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      async executeCommand(
+        _sessionId: string,
+        command: string,
+        options?: { signal?: AbortSignal }
+      ) {
+        executeCalls += 1;
+        if (options?.signal?.aborted) {
+          throw new Error('approval continuation received aborted signal');
+        }
+
+        return {
+          sessionId: 'session-1',
+          command,
+          exitCode: 0,
+          output: 'nginx restarted',
+          truncated: false,
+          startedAt: Date.now(),
+          completedAt: Date.now(),
+          durationMs: 5,
+        };
+      },
+    } as never,
+    completeAgentContext: async () => {
+      completionCalls += 1;
+      if (completionCalls === 1) {
+        return createAssistantMessage({
+          stopReason: 'toolUse',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'call-1',
+              name: 'session.run_command',
+              arguments: {
+                sessionId: 'session-1',
+                command: 'systemctl restart nginx',
+              },
+            },
+          ],
+        });
+      }
+
+      return createAssistantMessage({
+        stopReason: 'stop',
+        content: [{ type: 'text', text: 'nginx 已重启。' }],
+      });
+    },
+  });
+
+  await runtime.run(
+    {
+      providerId: 'provider-1',
+      provider: createProvider(),
+      model: 'qwen-plus',
+      task: '重启 nginx 服务',
+      sessionId: 'session-1',
+      approvalMode: 'manual-sensitive',
+    },
+    event => {
+      initialEvents.push(event);
+      if (
+        typeof event === 'object' &&
+        event !== null &&
+        'type' in event &&
+        (event as { type?: unknown }).type === 'human_gate_opened'
+      ) {
+        initialController.abort();
+      }
+    },
+    initialController.signal
+  );
+
+  const openedGateEvent = initialEvents.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'human_gate_opened'
+  ) as { runId?: unknown; gate?: { id?: unknown } } | undefined;
+
+  const runId = typeof openedGateEvent?.runId === 'string' ? openedGateEvent.runId : null;
+  const gateId =
+    openedGateEvent?.gate && typeof openedGateEvent.gate.id === 'string'
+      ? openedGateEvent.gate.id
+      : null;
+
+  assert.ok(runId);
+  assert.ok(gateId);
+
+  const snapshot = runtime.resolveGate(runId, gateId);
+  assert.equal(snapshot?.openGate?.status, 'resolved');
+
+  await runtime.streamContinuation(
+    runId,
+    event => {
+      resumedEvents.push(event);
+    },
+    new AbortController().signal
+  );
+
+  const toolFinishedEvent = resumedEvents.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'tool_execution_finished'
+  ) as { result?: { ok?: unknown; error?: { message?: unknown } } } | undefined;
+
+  assert.equal(toolFinishedEvent?.result?.ok, true);
+  assert.equal(toolFinishedEvent?.result?.error?.message, undefined);
+  assert.equal(executeCalls, 1);
+  assert.equal(runtime.getRunSnapshot(runId)?.state, 'completed');
+});
+
+test('terminal_input gate 在原始请求已 abort 后仍可通过 continuation signal 恢复并完成', async () => {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  const initialEvents: unknown[] = [];
+  const resumedEvents: unknown[] = [];
+  let completionCalls = 0;
+  let pendingStateChecks = 0;
+  let resumeCalls = 0;
+  let pendingExecutionState: 'awaiting_human_input' | 'suspended_waiting_for_input' =
+    'awaiting_human_input';
+  let resolveCommand:
+    | ((value: {
+        sessionId: string;
+        command: string;
+        exitCode: number;
+        output: string;
+        truncated: boolean;
+        startedAt: number;
+        completedAt: number;
+        durationMs: number;
+      }) => void)
+    | null = null;
+  let rejectCommand: ((error: Error) => void) | null = null;
+
+  const initialController = new AbortController();
+
+  const runtime = new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      getPendingExecutionDebug() {
+        pendingStateChecks += 1;
+        if (resumeCalls === 0 && pendingStateChecks >= 2) {
+          pendingExecutionState = 'suspended_waiting_for_input';
+        }
+
+        return {
+          state: pendingExecutionState,
+          command: 'sudo passwd root',
+          startMarker: '__OPSCLAW_CMD_START_test__',
+        };
+      },
+      resumePendingExecutionWait() {
+        resumeCalls += 1;
+        pendingExecutionState = 'awaiting_human_input';
+      },
+      async executeCommand(
+        _sessionId: string,
+        command: string,
+        options?: { signal?: AbortSignal }
+      ) {
+        return new Promise((resolve, reject) => {
+          resolveCommand = resolve;
+          rejectCommand = reject;
+          if (options?.signal) {
+            options.signal.addEventListener(
+              'abort',
+              () => {
+                reject(new Error('interactive command aborted by stale signal'));
+              },
+              { once: true }
+            );
+          }
+        }).then(result => ({
+          ...(result as {
+            sessionId: string;
+            command: string;
+            exitCode: number;
+            output: string;
+            truncated: boolean;
+            startedAt: number;
+            completedAt: number;
+            durationMs: number;
+          }),
+          command,
+        }));
+      },
+    } as never,
+    completeAgentContext: async () => {
+      completionCalls += 1;
+      if (completionCalls === 1) {
+        return createAssistantMessage({
+          stopReason: 'toolUse',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'call-1',
+              name: 'session.run_command',
+              arguments: {
+                sessionId: 'session-1',
+                command: 'sudo passwd root',
+              },
+            },
+          ],
+        });
+      }
+
+      return createAssistantMessage({
+        stopReason: 'stop',
+        content: [{ type: 'text', text: '密码已经设置完成。' }],
+      });
+    },
+  });
+
+  await runtime.run(
+    {
+      providerId: 'provider-1',
+      provider: createProvider(),
+      model: 'qwen-plus',
+      task: '设置 root 密码',
+      sessionId: 'session-1',
+    },
+    event => {
+      initialEvents.push(event);
+      if (
+        typeof event === 'object' &&
+        event !== null &&
+        'type' in event &&
+        (event as { type?: unknown }).type === 'human_gate_opened'
+      ) {
+        initialController.abort();
+      }
+    },
+    initialController.signal
+  );
+
+  const openedGateEvent = initialEvents.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'human_gate_opened'
+  ) as { runId?: unknown; gate?: { id?: unknown } } | undefined;
+
+  const runId = typeof openedGateEvent?.runId === 'string' ? openedGateEvent.runId : null;
+  const gateId =
+    openedGateEvent?.gate && typeof openedGateEvent.gate.id === 'string'
+      ? openedGateEvent.gate.id
+      : null;
+
+  assert.ok(runId);
+  assert.ok(gateId);
+  assert.equal(
+    initialEvents.some(
+      event =>
+        typeof event === 'object' &&
+        event !== null &&
+        'type' in event &&
+        (event as { type?: unknown }).type === 'run_failed'
+    ),
+    false
+  );
+
+  const snapshot = runtime.resumeWaiting(runId, gateId);
+  assert.equal(snapshot?.state, 'waiting_for_human');
+
+  const continuation = runtime.streamContinuation(
+    runId,
+    event => {
+      resumedEvents.push(event);
+    },
+    new AbortController().signal
+  );
+
+  setTimeout(() => {
+    pendingExecutionState = 'awaiting_human_input';
+    resolveCommand?.({
+      sessionId: 'session-1',
+      command: 'sudo passwd root',
+      exitCode: 0,
+      output: 'password updated successfully',
+      truncated: false,
+      startedAt: Date.now(),
+      completedAt: Date.now(),
+      durationMs: 42,
+    });
+  }, 10);
+
+  await continuation;
+
+  assert.equal(rejectCommand === null, false);
+  assert.equal(
+    resumedEvents.some(
+      event =>
+        typeof event === 'object' &&
+        event !== null &&
+        'type' in event &&
+        (event as { type?: unknown }).type === 'run_completed'
+    ),
+    true
+  );
+  assert.equal(runtime.getRunSnapshot(runId)?.state, 'completed');
+});
+
+test('terminal_input gate 过期后若底层命令已自行完成，resumeWaiting 仍可继续推进 run', async () => {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  const initialEvents: unknown[] = [];
+  const resumedEvents: unknown[] = [];
+  let completionCalls = 0;
+  let pendingStateChecks = 0;
+  let pendingExecutionState: 'awaiting_human_input' | 'suspended_waiting_for_input' | 'completed' =
+    'awaiting_human_input';
+  let commandCompleted = false;
+  let resolveCommand:
+    | ((value: {
+        sessionId: string;
+        command: string;
+        exitCode: number;
+        output: string;
+        truncated: boolean;
+        startedAt: number;
+        completedAt: number;
+        durationMs: number;
+      }) => void)
+    | null = null;
+
+  const runtime = new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      getPendingExecutionDebug() {
+        pendingStateChecks += 1;
+        if (!commandCompleted && pendingStateChecks >= 2) {
+          pendingExecutionState = 'suspended_waiting_for_input';
+        }
+
+        if (commandCompleted) {
+          return null;
+        }
+
+        return {
+          state: pendingExecutionState,
+          command: 'sudo passwd root',
+          startMarker: '__OPSCLAW_CMD_START_test__',
+        };
+      },
+      resumePendingExecutionWait() {
+        if (commandCompleted) {
+          throw new Error('当前会话没有等待中的命令。');
+        }
+
+        pendingExecutionState = 'awaiting_human_input';
+      },
+      async executeCommand(_sessionId: string, command: string) {
+        return new Promise((resolve) => {
+          resolveCommand = resolve;
+        }).then(result => ({
+          ...(result as {
+            sessionId: string;
+            command: string;
+            exitCode: number;
+            output: string;
+            truncated: boolean;
+            startedAt: number;
+            completedAt: number;
+            durationMs: number;
+          }),
+          command,
+        }));
+      },
+    } as never,
+    completeAgentContext: async () => {
+      completionCalls += 1;
+      if (completionCalls === 1) {
+        return createAssistantMessage({
+          stopReason: 'toolUse',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'call-1',
+              name: 'session.run_command',
+              arguments: {
+                sessionId: 'session-1',
+                command: 'sudo passwd root',
+              },
+            },
+          ],
+        });
+      }
+
+      return createAssistantMessage({
+        stopReason: 'stop',
+        content: [{ type: 'text', text: '密码已经设置完成。' }],
+      });
+    },
+  });
+
+  await runtime.run(
+    {
+      providerId: 'provider-1',
+      provider: createProvider(),
+      model: 'qwen-plus',
+      task: '设置 root 密码',
+      sessionId: 'session-1',
+    },
+    event => {
+      initialEvents.push(event);
+    },
+    new AbortController().signal
+  );
+
+  const openedGateEvent = initialEvents.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'human_gate_opened'
+  ) as { runId?: unknown; gate?: { id?: unknown } } | undefined;
+
+  const runId = typeof openedGateEvent?.runId === 'string' ? openedGateEvent.runId : null;
+  const gateId =
+    openedGateEvent?.gate && typeof openedGateEvent.gate.id === 'string'
+      ? openedGateEvent.gate.id
+      : null;
+
+  assert.ok(runId);
+  assert.ok(gateId);
+  assert.equal(runtime.getRunSnapshot(runId)?.state, 'suspended');
+
+  commandCompleted = true;
+  const finalizeCommand = resolveCommand;
+  if (!finalizeCommand) {
+    throw new Error('expected pending command resolver');
+  }
+  (finalizeCommand as (value: {
+    sessionId: string;
+    command: string;
+    exitCode: number;
+    output: string;
+    truncated: boolean;
+    startedAt: number;
+    completedAt: number;
+    durationMs: number;
+  }) => void)({
+    sessionId: 'session-1',
+    command: 'sudo passwd root',
+    exitCode: 0,
+    output: 'password updated successfully',
+    truncated: false,
+    startedAt: Date.now(),
+    completedAt: Date.now(),
+    durationMs: 42,
+  });
+
+  const snapshot = runtime.resumeWaiting(runId, gateId);
+  assert.equal(snapshot?.openGate?.status, 'open');
+
+  await runtime.streamContinuation(
+    runId,
+    event => {
+      resumedEvents.push(event);
+    },
+    new AbortController().signal
+  );
+
+  assert.equal(
+    resumedEvents.some(
+      event =>
+        typeof event === 'object' &&
+        event !== null &&
+        'type' in event &&
+        (event as { type?: unknown }).type === 'run_completed'
+    ),
+    true
+  );
+  assert.equal(runtime.getRunSnapshot(runId)?.state, 'completed');
+});

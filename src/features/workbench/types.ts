@@ -69,6 +69,15 @@ export type LiveSession = {
   errorMessage?: string;
 };
 
+export type AgentSessionLock = {
+  sessionId: string;
+  runId: string;
+  gateId: string;
+  status: 'open' | 'expired';
+  reason: string;
+  command: string;
+};
+
 export type LlmProviderType = 'zhipu' | 'minimax' | 'qwen' | 'deepseek' | 'openai_compatible';
 
 export type LlmProvider = {

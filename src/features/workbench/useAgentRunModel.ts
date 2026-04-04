@@ -104,6 +104,20 @@ export function mapAgentEventToTimelineItem(
     };
   }
 
+  if (
+    event.type === 'human_gate_opened' ||
+    event.type === 'human_gate_resolved' ||
+    event.type === 'human_gate_rejected' ||
+    event.type === 'human_gate_expired'
+  ) {
+    return {
+      id: itemId,
+      kind: 'human_gate',
+      runId: event.runId,
+      gate: event.gate,
+    };
+  }
+
   if (event.type === 'run_completed') {
     return {
       id: itemId,
