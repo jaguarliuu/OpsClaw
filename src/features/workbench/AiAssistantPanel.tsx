@@ -26,6 +26,7 @@ import {
   getHumanGateSecondaryActionLabel,
   getHumanGateTitle,
 } from './agentGateUiModel';
+import { createAgentSessionModel } from './agentSessionModel';
 import { formatAgentPolicySummary } from './agentPolicyUiModel';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { LiveSession } from './types';
@@ -507,6 +508,10 @@ export function AiAssistantPanel({
     clearItems: clearAgentItems,
   } = agentRun;
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const agentSessionModel = createAgentSessionModel({
+    activeGate: agentRun.activeGate,
+    pendingContinuationRunId: agentRun.pendingContinuationRunId,
+  });
 
   const {
     canSend,
@@ -527,19 +532,14 @@ export function AiAssistantPanel({
     open,
     activeSessionId,
     sessions,
-    isAgentInputLocked:
-      agentRun.activeGate !== null || agentRun.pendingContinuationRunId !== null,
+    isAgentInputLocked: agentSessionModel.isInteractionLocked,
     isRunning,
     isStreaming,
   });
   const visibleError = mode === 'agent' ? agentError : chatError;
   const isBusy = mode === 'agent' ? isRunning : isStreaming;
-  const isAgentInputLocked =
-    mode === 'agent' &&
-    (agentRun.activeGate !== null || agentRun.pendingContinuationRunId !== null);
-  const canClearAgentItems =
-    mode !== 'agent' ||
-    (agentRun.activeGate === null && agentRun.pendingContinuationRunId === null);
+  const isAgentInputLocked = mode === 'agent' && agentSessionModel.isInteractionLocked;
+  const canClearAgentItems = mode !== 'agent' || agentSessionModel.canClearAgentItems;
   const themeClasses = getAiAssistantThemeClasses(appTheme.mode);
   const resolvedSelectedModel = getValidAiAssistantModelValue(modelOptions, selectedModel);
   const resolvedSelectedSessionId = getValidAiAssistantSessionId(
@@ -604,12 +604,7 @@ export function AiAssistantPanel({
     if (!option) return;
 
     if (mode === 'agent') {
-      if (
-        !resolvedSelectedSessionId ||
-        isRunning ||
-        agentRun.activeGate !== null ||
-        agentRun.pendingContinuationRunId !== null
-      ) {
+      if (!resolvedSelectedSessionId || isRunning || !agentSessionModel.canStartAgentRun) {
         return;
       }
 

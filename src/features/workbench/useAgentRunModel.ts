@@ -1,4 +1,16 @@
-import type { AgentStreamEvent, AgentTimelineItem } from './types.agent';
+import type {
+  AgentRunState,
+  AgentStreamEvent,
+  AgentTimelineItem,
+  HumanGateRecord,
+} from './types.agent';
+
+export type AgentEventState = {
+  runId: string | null;
+  runState: AgentRunState | null;
+  activeGate: HumanGateRecord | null;
+  error: string | null;
+};
 
 function findLastAssistantItemIndex(items: AgentTimelineItem[], step: number) {
   for (let index = items.length - 1; index >= 0; index -= 1) {
@@ -171,4 +183,71 @@ export function applyAgentEventToTimeline(
 
   const timelineItem = mapAgentEventToTimelineItem(event, createItemId());
   return timelineItem ? [...items, timelineItem] : items;
+}
+
+export function reduceAgentEventState(
+  state: AgentEventState,
+  event: AgentStreamEvent
+): AgentEventState {
+  if (event.type === 'run_started') {
+    return {
+      ...state,
+      runId: event.runId,
+      error: null,
+    };
+  }
+
+  if (event.type === 'run_state_changed') {
+    return {
+      ...state,
+      runState: event.state,
+    };
+  }
+
+  if (event.type === 'human_gate_opened' || event.type === 'human_gate_expired') {
+    return {
+      ...state,
+      runId: event.runId,
+      activeGate: event.gate,
+    };
+  }
+
+  if (event.type === 'human_gate_resolved' || event.type === 'human_gate_rejected') {
+    return {
+      ...state,
+      runId: event.runId,
+      activeGate: null,
+    };
+  }
+
+  if (event.type === 'run_completed') {
+    return {
+      ...state,
+      runId: event.runId,
+      runState: 'completed',
+      activeGate: null,
+      error: null,
+    };
+  }
+
+  if (event.type === 'run_failed') {
+    return {
+      ...state,
+      runId: event.runId,
+      runState: 'failed',
+      activeGate: null,
+      error: event.error,
+    };
+  }
+
+  if (event.type === 'run_cancelled') {
+    return {
+      ...state,
+      runId: event.runId,
+      runState: 'cancelled',
+      activeGate: null,
+    };
+  }
+
+  return state;
 }

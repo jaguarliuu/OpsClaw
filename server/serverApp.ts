@@ -3,13 +3,7 @@ import http from 'node:http';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 
-import { OpsAgentRuntime } from './agent/agentRuntime.js';
-import { FileMemoryStore } from './agent/fileMemoryStore.js';
-import { SessionRegistry } from './agent/sessionRegistry.js';
-import { createFileMemoryToolProvider } from './agent/tools/fileMemoryProvider.js';
-import { sessionToolProvider } from './agent/tools/sessionProvider.js';
-import { ToolExecutor } from './agent/toolExecutor.js';
-import { createToolRegistry } from './agent/toolRegistry.js';
+import { createAgentRuntimeBundle } from './agent/runtimeBundle.js';
 import { createCommandHistoryStore } from './commandHistoryStore.js';
 import { registerOpsClawHttpApi } from './httpApi.js';
 import { createLlmProviderStore } from './llmProviderStore.js';
@@ -25,23 +19,9 @@ export async function createOpsClawServerApp(options: CreateOpsClawServerAppOpti
   const commandHistoryStore = await createCommandHistoryStore();
   const llmProviderStore = await createLlmProviderStore();
   const scriptLibraryStore = await createScriptLibraryStore();
-  const sessionRegistry = new SessionRegistry();
-  const fileMemoryStore = new FileMemoryStore();
-  const toolRegistry = createToolRegistry();
-  toolRegistry.registerProvider(sessionToolProvider);
-  toolRegistry.registerProvider(
-    createFileMemoryToolProvider({
-      getNodeById: (id) => nodeStore.getNode(id),
-      getGroupById: (id) => nodeStore.getGroup(id),
-    })
-  );
-  const toolExecutor = new ToolExecutor(toolRegistry);
-  const agentRuntime = new OpsAgentRuntime({
-    toolRegistry,
-    toolExecutor,
-    fileMemory: fileMemoryStore,
+  const { sessionRegistry, fileMemoryStore, agentRuntime } = createAgentRuntimeBundle({
     getNodeById: (id) => nodeStore.getNode(id),
-    sessions: sessionRegistry,
+    getGroupById: (id) => nodeStore.getGroup(id),
   });
   const app = express();
   const server = http.createServer(app);

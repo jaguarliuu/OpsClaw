@@ -16,6 +16,9 @@ export type AgentRunRecord = {
 };
 
 export type RegisterRunInput = Pick<AgentRunRecord, 'runId' | 'sessionId' | 'task'>;
+export type AgentRunSnapshotStore = {
+  save: (snapshot: AgentRunRecord) => void;
+};
 
 type OpenHumanGateInputBase = {
   runId: string;
@@ -34,8 +37,14 @@ export type OpenHumanGateInput =
       payload: ApprovalGatePayload;
     });
 
-export function createAgentRunRegistry() {
+export function createAgentRunRegistry(options?: {
+  snapshotStore?: AgentRunSnapshotStore;
+}) {
   const runs = new Map<string, AgentRunRecord>();
+
+  function saveSnapshot(run: AgentRunRecord) {
+    options?.snapshotStore?.save(structuredClone(run));
+  }
 
   function getRequiredRun(runId: string) {
     const run = runs.get(runId);
@@ -66,6 +75,7 @@ export function createAgentRunRegistry() {
         state: 'running',
         openGate: null,
       });
+      saveSnapshot(getRequiredRun(input.runId));
     },
 
     openGate(input: OpenHumanGateInput) {
@@ -107,6 +117,7 @@ export function createAgentRunRegistry() {
 
       run.state = 'waiting_for_human';
       run.openGate = gate;
+      saveSnapshot(run);
       return structuredClone(gate);
     },
 
@@ -118,6 +129,7 @@ export function createAgentRunRegistry() {
 
       gate.status = 'expired';
       run.state = 'suspended';
+      saveSnapshot(run);
     },
 
     markGateReopened(input: { runId: string; gateId: string; deadlineAt: number }) {
@@ -132,6 +144,7 @@ export function createAgentRunRegistry() {
       gate.status = 'open';
       gate.deadlineAt = input.deadlineAt;
       run.state = 'waiting_for_human';
+      saveSnapshot(run);
       return structuredClone(gate);
     },
 
@@ -143,6 +156,7 @@ export function createAgentRunRegistry() {
 
       gate.status = 'resolved';
       run.state = 'suspended';
+      saveSnapshot(run);
       return structuredClone(gate);
     },
 
@@ -154,6 +168,7 @@ export function createAgentRunRegistry() {
 
       gate.status = 'rejected';
       run.state = 'suspended';
+      saveSnapshot(run);
       return structuredClone(gate);
     },
 
@@ -164,6 +179,7 @@ export function createAgentRunRegistry() {
         run.openGate = null;
       }
 
+      saveSnapshot(run);
       return structuredClone(run);
     },
 
@@ -171,6 +187,7 @@ export function createAgentRunRegistry() {
       const run = getRequiredRun(runId);
       run.state = 'completed';
       run.openGate = null;
+      saveSnapshot(run);
       return structuredClone(run);
     },
 
@@ -178,6 +195,7 @@ export function createAgentRunRegistry() {
       const run = getRequiredRun(runId);
       run.state = 'failed';
       run.openGate = null;
+      saveSnapshot(run);
       return structuredClone(run);
     },
 
@@ -185,7 +203,18 @@ export function createAgentRunRegistry() {
       const run = getRequiredRun(runId);
       run.state = 'cancelled';
       run.openGate = null;
+      saveSnapshot(run);
       return structuredClone(run);
+    },
+
+    getReattachableRun(sessionId: string) {
+      const candidates = Array.from(runs.values()).reverse();
+      const run = candidates.find(
+        (candidate) =>
+          candidate.sessionId === sessionId &&
+          (candidate.state === 'waiting_for_human' || candidate.state === 'suspended')
+      );
+      return run ? structuredClone(run) : null;
     },
 
     getRun(runId: string) {

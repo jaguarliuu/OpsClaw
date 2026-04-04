@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { AgentTimelineItem } from './types.agent.js';
 import {
   applyAgentEventToTimeline,
+  reduceAgentEventState,
   mapAgentEventToTimelineItem,
 } from './useAgentRunModel.js';
 
@@ -268,4 +269,53 @@ void test('applyAgentEventToTimeline appends human_gate status transitions as ti
 
   assert.equal(items[0]?.kind, 'human_gate');
   assert.equal(items[0]?.gate.status, 'expired');
+});
+
+void test('reduceAgentEventState centralizes run state and gate projection for lifecycle events', () => {
+  const waitingState = reduceAgentEventState(
+    {
+      runId: null,
+      runState: 'running',
+      activeGate: null,
+      error: null,
+    },
+    {
+      type: 'human_gate_opened',
+      runId: 'run-1',
+      gate: {
+        id: 'gate-1',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        kind: 'terminal_input',
+        status: 'open',
+        reason: '命令正在等待你在终端中继续输入。',
+        openedAt: 1,
+        deadlineAt: 2,
+        payload: {
+          toolCallId: 'call-1',
+          toolName: 'session.run_command',
+          command: 'sudo passwd root',
+          timeoutMs: 300_000,
+        },
+      },
+      timestamp: Date.now(),
+    }
+  );
+
+  assert.equal(waitingState.activeGate?.id, 'gate-1');
+  assert.equal(waitingState.runState, 'running');
+
+  const failedState = reduceAgentEventState(waitingState, {
+    type: 'run_failed',
+    runId: 'run-1',
+    error: 'Agent 执行失败',
+    timestamp: Date.now(),
+  });
+
+  assert.deepEqual(failedState, {
+    runId: 'run-1',
+    runState: 'failed',
+    activeGate: null,
+    error: 'Agent 执行失败',
+  });
 });

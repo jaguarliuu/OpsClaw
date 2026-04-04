@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { AssistantMessage, AssistantMessageEventStream, Context } from '@mariozechner/pi-ai';
 
 import type { StoredLlmProvider } from '../llmProviderStore.js';
+import { createAgentRunRegistry } from './agentRunRegistry.js';
 import { createToolRegistry } from './toolRegistry.js';
 import { ToolExecutor } from './toolExecutor.js';
 import { OpsAgentRuntime } from './agentRuntime.js';
@@ -352,6 +353,58 @@ test('streamAgentContext 可将 assistant 文本按 delta 流式发出，同时�
     'run_completed',
   ]);
   assert.deepEqual(deltas, ['正在', '检查磁盘']);
+});
+
+test('getSessionReattachableRun returns the latest suspended or waiting snapshot for a session', () => {
+  const agentRunRegistry = createAgentRunRegistry();
+  agentRunRegistry.registerRun({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    task: 'older run',
+  });
+  const gate = agentRunRegistry.openGate({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    kind: 'terminal_input',
+    reason: '命令正在等待用户在终端中继续输入。',
+    deadlineAt: 1_700_000_000_000,
+    payload: {
+      toolCallId: 'call-1',
+      toolName: 'session.run_command',
+      command: 'sudo passwd root',
+      timeoutMs: 300000,
+    },
+  });
+  agentRunRegistry.expireGate({ runId: 'run-1', gateId: gate.id });
+
+  const runtime = new OpsAgentRuntime({
+    agentRunRegistry,
+    toolRegistry: createToolRegistry(),
+    toolExecutor: {} as never,
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession() {
+        return null;
+      },
+    } as never,
+  });
+
+  assert.equal(runtime.getSessionReattachableRun('session-1')?.runId, 'run-1');
 });
 
 test('自动记忆摘要失败时会回退到原始沉淀格式', async () => {
@@ -1269,6 +1322,13 @@ test('命中敏感命令策略时 approval gate 会打开并等待而不是产�
       'type' in event &&
       (event as { type?: unknown }).type === 'tool_execution_finished'
   );
+  const toolStartedEvent = events.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'tool_execution_started'
+  );
   const waitingStateEvent = events.find(
     event =>
       typeof event === 'object' &&
@@ -1286,6 +1346,7 @@ test('命中敏感命令策略时 approval gate 会打开并等待而不是产�
   assert.equal(approvalEvent.gate?.payload?.policy?.matches?.[0]?.title, '服务重启');
   assert.equal(waitingStateEvent !== undefined, true);
   assert.equal(approvalRequiredEvent === undefined, true);
+  assert.equal(toolStartedEvent === undefined, true);
   assert.equal(toolResultEvent === undefined, true);
   assert.equal(
     events.some(
@@ -1941,6 +2002,150 @@ test('resolveGate 会在原始请求已 abort 后改用 continuation signal 执�
   assert.equal(toolFinishedEvent?.result?.ok, true);
   assert.equal(toolFinishedEvent?.result?.error?.message, undefined);
   assert.equal(executeCalls, 1);
+  assert.equal(runtime.getRunSnapshot(runId)?.state, 'completed');
+});
+
+test('approval continuation 若在恢复后抛出异常，会保留可检查的暂停上下文', async () => {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  const initialEvents: unknown[] = [];
+  let completionCalls = 0;
+  let allowCompletion = false;
+  let executeCalls = 0;
+
+  const runtime = new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      async executeCommand() {
+        executeCalls += 1;
+        return {
+          command: 'systemctl restart nginx',
+          exitCode: 0,
+          output: 'ok',
+          durationMs: 8,
+        };
+      },
+    } as never,
+    completeAgentContext: async () => {
+      completionCalls += 1;
+      if (completionCalls === 1) {
+        return createAssistantMessage({
+          stopReason: 'toolUse',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'call-1',
+              name: 'session.run_command',
+              arguments: {
+                sessionId: 'session-1',
+                command: 'systemctl restart nginx',
+              },
+            },
+          ],
+        });
+      }
+
+      if (!allowCompletion) {
+        throw new Error('resume follow-up failed');
+      }
+
+      return createAssistantMessage({
+        stopReason: 'stop',
+        content: [{ type: 'text', text: 'nginx 已重启。' }],
+      });
+    },
+  });
+
+  await runtime.run(
+    {
+      providerId: 'provider-1',
+      provider: createProvider(),
+      model: 'qwen-plus',
+      task: '重启 nginx 服务',
+      sessionId: 'session-1',
+      approvalMode: 'manual-sensitive',
+    },
+    event => {
+      initialEvents.push(event);
+    },
+    new AbortController().signal
+  );
+
+  const openedGateEvent = initialEvents.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'human_gate_opened'
+  ) as { runId?: unknown; gate?: { id?: unknown } } | undefined;
+
+  const runId = typeof openedGateEvent?.runId === 'string' ? openedGateEvent.runId : null;
+  const gateId =
+    openedGateEvent?.gate && typeof openedGateEvent.gate.id === 'string'
+      ? openedGateEvent.gate.id
+      : null;
+
+  assert.ok(runId);
+  assert.ok(gateId);
+
+  runtime.resolveGate(runId, gateId);
+
+  await assert.rejects(
+    runtime.streamContinuation(
+      runId,
+      () => {},
+      new AbortController().signal
+    ),
+    /resume follow-up failed/
+  );
+
+  const failedSnapshot = runtime.getRunSnapshot(runId);
+  assert.equal(failedSnapshot?.state, 'running');
+  assert.equal(failedSnapshot?.openGate?.status, 'resolved');
+
+  allowCompletion = true;
+
+  await runtime.streamContinuation(
+    runId,
+    () => {},
+    new AbortController().signal
+  );
+
+  assert.equal(executeCalls, 2);
   assert.equal(runtime.getRunSnapshot(runId)?.state, 'completed');
 });
 

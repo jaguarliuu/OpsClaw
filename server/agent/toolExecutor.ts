@@ -15,6 +15,27 @@ import type {
 const TERMINAL_INPUT_POLL_INTERVAL_MS = 25;
 const DEFAULT_TERMINAL_INPUT_TIMEOUT_MS = 300_000;
 
+function emitToolExecutionStarted(
+  ctx: ToolExecutionContext,
+  toolCallId: string,
+  toolName: string
+) {
+  logAgent('tool_execution_started', {
+    runId: ctx.runId,
+    step: ctx.step,
+    toolCallId,
+    toolName,
+  });
+  ctx.emit({
+    type: 'tool_execution_started',
+    runId: ctx.runId,
+    step: ctx.step,
+    toolCallId,
+    toolName,
+    timestamp: Date.now(),
+  });
+}
+
 function createContinuationSignalController(initialSignal: AbortSignal) {
   const controller = new AbortController();
   let cleanup: (() => void) | null = null;
@@ -227,21 +248,6 @@ export class ToolExecutor {
     ctx: ToolExecutionContext,
     startedAt: number
   ): Promise<ToolExecutionEnvelope | ToolPauseOutcome> {
-    ctx.emit({
-      type: 'tool_execution_started',
-      runId: ctx.runId,
-      step: ctx.step,
-      toolCallId,
-      toolName: handler.definition.name,
-      timestamp: startedAt,
-    });
-    logAgent('tool_execution_started', {
-      runId: ctx.runId,
-      step: ctx.step,
-      toolCallId,
-      toolName: handler.definition.name,
-    });
-
     const commandArgs =
       typeof args === 'object' && args !== null
         ? (args as { sessionId?: unknown; command?: unknown })
@@ -341,6 +347,7 @@ export class ToolExecutor {
     startedAt: number
   ): Promise<ToolExecutionEnvelope> {
     try {
+      emitToolExecutionStarted(ctx, toolCallId, handler.definition.name);
       const result = await handler.execute(args, ctx);
 
       if (handler.definition.formatResult) {
@@ -383,3 +390,5 @@ export class ToolExecutor {
     }
   }
 }
+
+export type ToolCallExecutor = Pick<ToolExecutor, 'executeToolCall'>;

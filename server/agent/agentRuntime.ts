@@ -1,15 +1,20 @@
 import { randomUUID } from 'node:crypto';
 
 import {
-  validateToolCall,
-  type AssistantMessage,
   type Context,
-  type ToolCall,
-  type ToolResultMessage,
 } from '@mariozechner/pi-ai';
 
 import { completeAgentContext, streamAgentContext } from '../llmClient.js';
 import type { CreateAgentRunInput, AgentStreamEvent, ToolExecutionEnvelope } from './agentTypes.js';
+import {
+  createAgentLoopState,
+  extractAssistantText,
+  type AgentLoopOutcome,
+  type AgentLoopState,
+  type StableObservation,
+  resumeAgentLoop,
+  runAgentLoop,
+} from './agentLoop.js';
 import { createAgentRunRegistry } from './agentRunRegistry.js';
 import type { FileMemoryStore } from './fileMemoryStore.js';
 import type { HumanGateRecord } from './humanGateTypes.js';
@@ -21,8 +26,6 @@ import type { ToolPauseOutcome, ToolRegistry } from './toolTypes.js';
 
 const DEFAULT_INITIAL_STEP_BUDGET = 8;
 const DEFAULT_HARD_MAX_STEPS = 15;
-const STEP_BUDGET_RENEWAL_GRANTS = [4, 2, 1] as const;
-const NO_PROGRESS_WINDOW_SIZE = 3;
 const DEFAULT_MAX_COMMAND_OUTPUT_CHARS = 4000;
 const MAX_AUTO_MEMORY_OBSERVATIONS = 4;
 const MAX_MEMORY_PROMPT_CHARS = 6000;
@@ -52,17 +55,6 @@ type AgentRuntimeDependencies = {
   completeAgentContext?: typeof completeAgentContext;
 };
 
-type StableObservation = {
-  command: string;
-  exitCode: number;
-  output: string;
-  durationMs: number;
-};
-
-type StepBudgetProgress = {
-  madeProgress: boolean;
-};
-
 type PendingRunAction =
   | { kind: 'resume_waiting' }
   | { kind: 'resolve_approval' }
@@ -82,102 +74,6 @@ type PauseResolution =
   | { kind: 'paused' }
   | { kind: 'failed' }
   | { kind: 'completed'; envelope: ToolExecutionEnvelope };
-
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== 'object') {
-    if (typeof value === 'string') {
-      return JSON.stringify(value.slice(0, 300));
-    }
-
-    return JSON.stringify(value);
-  }
-
-  if (Array.isArray(value)) {
-    return `[${value.map(item => stableStringify(item)).join(',')}]`;
-  }
-
-  return `{${Object.keys(value)
-    .sort()
-    .map(key => `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`)
-    .join(',')}}`;
-}
-
-function buildToolCallSignature(toolCall: ToolCall) {
-  return `${toolCall.name}:${stableStringify(toolCall.arguments)}`;
-}
-
-function buildToolResultSignature(envelope: ToolExecutionEnvelope) {
-  if (!envelope.ok) {
-    return null;
-  }
-
-  return `${envelope.toolName}:${stableStringify(envelope.data ?? null)}`;
-}
-
-function buildStepBudgetRenewalGrants(hardMaxSteps: number) {
-  const grants: number[] = [];
-  let remaining = Math.max(0, hardMaxSteps - DEFAULT_INITIAL_STEP_BUDGET);
-
-  for (const grant of STEP_BUDGET_RENEWAL_GRANTS) {
-    if (remaining <= 0) {
-      break;
-    }
-
-    const nextGrant = Math.min(grant, remaining);
-    grants.push(nextGrant);
-    remaining -= nextGrant;
-  }
-
-  while (remaining > 0) {
-    const nextGrant = 1;
-    grants.push(nextGrant);
-    remaining -= nextGrant;
-  }
-
-  while (remaining > 0) {
-    grants.push(1);
-    remaining -= 1;
-  }
-
-  return grants;
-}
-
-function hasRecentProgress(stepProgressHistory: StepBudgetProgress[]) {
-  return stepProgressHistory.slice(-NO_PROGRESS_WINDOW_SIZE).some(entry => entry.madeProgress);
-}
-
-function extractStableObservation(envelope: ToolExecutionEnvelope): StableObservation | null {
-  if (envelope.toolName !== 'session.run_command' || !envelope.ok || !envelope.data || typeof envelope.data !== 'object') {
-    return null;
-  }
-
-  const payload = envelope.data as {
-    command?: unknown;
-    exitCode?: unknown;
-    output?: unknown;
-    durationMs?: unknown;
-  };
-
-  if (
-    typeof payload.command !== 'string' ||
-    typeof payload.exitCode !== 'number' ||
-    typeof payload.output !== 'string'
-  ) {
-    return null;
-  }
-
-  const normalizedOutput = payload.output.trim();
-  if (!normalizedOutput) {
-    return null;
-  }
-
-  return {
-    command: payload.command,
-    exitCode: payload.exitCode,
-    output: normalizedOutput.slice(0, 3000),
-    durationMs: typeof payload.durationMs === 'number' ? payload.durationMs : 0,
-  };
-}
 
 function formatAutoMemoryEntry(task: string, finalAnswer: string, observations: StableObservation[]) {
   const timestamp = new Date().toISOString();
@@ -226,71 +122,6 @@ function buildMemoryObservationDigest(observations: StableObservation[]) {
       ].join('\n')
     )
     .join('\n\n');
-}
-
-function extractAssistantText(message: AssistantMessage) {
-  return message.content
-    .filter((block): block is Extract<AssistantMessage['content'][number], { type: 'text' }> => block.type === 'text')
-    .map(block => block.text.trim())
-    .filter(Boolean)
-    .join('\n')
-    .trim();
-}
-
-function extractToolCalls(message: AssistantMessage) {
-  return message.content.filter(
-    (block): block is ToolCall => block.type === 'toolCall'
-  );
-}
-
-function buildToolResultMessage(
-  envelope: ToolExecutionEnvelope,
-  toolCallId: string,
-  toolName: string
-): ToolResultMessage {
-  return {
-    role: 'toolResult',
-    toolCallId,
-    toolName,
-    content: [
-      {
-        type: 'text',
-        text: JSON.stringify(envelope),
-      },
-    ],
-    isError: !envelope.ok,
-    timestamp: Date.now(),
-  };
-}
-
-async function consumeAssistantMessageStream(options: {
-  stream: ReturnType<typeof streamAgentContext>;
-  emit: (event: AgentStreamEvent) => void;
-  runId: string;
-  step: number;
-}) {
-  for await (const event of options.stream) {
-    if (event.type === 'text_delta' && event.delta) {
-      options.emit({
-        type: 'assistant_message_delta',
-        runId: options.runId,
-        delta: event.delta,
-        step: options.step,
-        timestamp: Date.now(),
-      });
-      continue;
-    }
-
-    if (event.type === 'done') {
-      return event.message;
-    }
-
-    if (event.type === 'error') {
-      return event.error;
-    }
-  }
-
-  throw new Error('模型流未返回完成事件。');
 }
 
 async function summarizeStableObservationsForMemory(options: {
@@ -368,6 +199,10 @@ export class OpsAgentRuntime {
 
   getRunSnapshot(runId: string) {
     return this.agentRunRegistry.getRun(runId);
+  }
+
+  getSessionReattachableRun(sessionId: string) {
+    return this.agentRunRegistry.getReattachableRun(sessionId);
   }
 
   resumeWaiting(runId: string, gateId: string) {
@@ -462,12 +297,19 @@ export class OpsAgentRuntime {
     }
 
     const action = pausedRun.pendingAction;
-    this.pausedRuns.delete(runId);
-    await pausedRun.continueRun({
-      emit,
-      signal,
-      action,
-    });
+    pausedRun.pendingAction = null;
+    try {
+      await pausedRun.continueRun({
+        emit,
+        signal,
+        action,
+      });
+    } catch (error) {
+      if (this.pausedRuns.get(runId) === pausedRun && pausedRun.pendingAction === null) {
+        pausedRun.pendingAction = action;
+      }
+      throw error;
+    }
   }
 
   async run(
@@ -477,9 +319,7 @@ export class OpsAgentRuntime {
   ) {
     const runId = randomUUID();
     const hardMaxSteps = Math.max(1, input.maxSteps ?? DEFAULT_HARD_MAX_STEPS);
-    let currentStepBudget = Math.min(DEFAULT_INITIAL_STEP_BUDGET, hardMaxSteps);
-    const stepBudgetRenewalGrants = buildStepBudgetRenewalGrants(hardMaxSteps);
-    let stepBudgetRenewalIndex = 0;
+    const initialStepBudget = Math.min(DEFAULT_INITIAL_STEP_BUDGET, hardMaxSteps);
     const maxCommandOutputChars =
       input.maxCommandOutputChars ?? DEFAULT_MAX_COMMAND_OUTPUT_CHARS;
     const completeContext = this.dependencies.completeAgentContext ?? completeAgentContext;
@@ -487,11 +327,6 @@ export class OpsAgentRuntime {
       this.dependencies.streamAgentContext ?? (this.dependencies.completeAgentContext ? null : streamAgentContext);
     const session = this.dependencies.sessions.getSession(input.sessionId);
     const globalMemory = await this.dependencies.fileMemory.readGlobalMemory();
-    const stableObservations: StableObservation[] = [];
-    const seenToolCallSignatures = new Set<string>();
-    const seenSuccessfulResultSignatures = new Set<string>();
-    const stepProgressHistory: StepBudgetProgress[] = [];
-
     if (!session) {
       logAgent('run_failed_missing_session', {
         runId,
@@ -509,7 +344,7 @@ export class OpsAgentRuntime {
     const context: Context = {
       systemPrompt: buildAgentSystemPrompt({
         sessionId: input.sessionId,
-        initialStepBudget: currentStepBudget,
+        initialStepBudget,
         hardMaxSteps,
       }),
       messages: [
@@ -568,59 +403,42 @@ export class OpsAgentRuntime {
       task: input.task.trim(),
       hasGlobalMemory: globalMemory.exists,
     });
-    const executeStep = async (
-      step: number,
+    const loopState = createAgentLoopState({
+      provider: input.provider,
+      model: input.model,
+      runId,
+      task: input.task.trim(),
+      sessionId: input.sessionId,
+      sessionLabel,
+      approvalMode: input.approvalMode ?? 'auto-readonly',
+      maxCommandOutputChars,
+      hardMaxSteps,
+      initialStepBudget,
+      context,
+      toolRegistry: this.dependencies.toolRegistry,
+      toolExecutor: this.dependencies.toolExecutor,
+      sessions: this.dependencies.sessions as never,
+      fileMemory: this.dependencies.fileMemory,
+      completeAgentContext: completeContext,
+      streamAgentContext: stepStreamContext,
+    });
+    const emitLoopEvents = (
+      events: AgentStreamEvent[],
+      activeEmit: (event: AgentStreamEvent) => void
+    ) => {
+      for (const event of events) {
+        activeEmit(event);
+      }
+    };
+
+    const processLoopOutcome = async (
+      outcome: AgentLoopOutcome,
+      currentLoopState: AgentLoopState,
       activeEmit: (event: AgentStreamEvent) => void,
       activeSignal: AbortSignal
     ): Promise<void> => {
-      if (activeSignal.aborted) {
-        this.agentRunRegistry.markRunCancelled(runId);
-        logAgent('run_cancelled_before_step', { runId, step });
-        activeEmit({
-          type: 'run_cancelled',
-          runId,
-          step,
-          timestamp: Date.now(),
-        });
-        return;
-      }
-
-      logAgent('step_model_request_started', { runId, step });
-      const assistantMessage = stepStreamContext
-        ? await consumeAssistantMessageStream({
-            stream: stepStreamContext(input.provider, input.model, context, activeSignal),
-            emit: activeEmit,
-            runId,
-            step,
-          })
-        : await completeContext(
-            input.provider,
-            input.model,
-            context,
-            activeSignal
-          );
-
-      context.messages.push(assistantMessage);
-      logAgent('step_model_request_finished', {
-        runId,
-        step,
-        stopReason: assistantMessage.stopReason,
-        contentBlocks: assistantMessage.content.length,
-      });
-
-      const assistantText = extractAssistantText(assistantMessage);
-      if (assistantText) {
-        activeEmit({
-          type: 'assistant_message',
-          runId,
-          text: assistantText,
-          step,
-          timestamp: Date.now(),
-        });
-      }
-
-      if (assistantMessage.stopReason === 'stop') {
-        if (session.nodeId && stableObservations.length > 0) {
+      if (outcome.kind === 'completed') {
+        if (session.nodeId && outcome.stableObservations.length > 0) {
           const node = this.dependencies.getNodeById(session.nodeId);
           if (node) {
             try {
@@ -634,7 +452,7 @@ export class OpsAgentRuntime {
                 runId,
                 sessionId: input.sessionId,
                 nodeId: node.id,
-                observations: stableObservations.length,
+                observations: outcome.stableObservations.length,
               });
 
               try {
@@ -642,9 +460,9 @@ export class OpsAgentRuntime {
                   provider: input.provider,
                   model: input.model,
                   task: input.task.trim(),
-                  finalAnswer: assistantText || '任务已完成。',
+                  finalAnswer: outcome.finalAnswer,
                   existingNodeMemory: existingNodeMemory.content,
-                  observations: stableObservations,
+                  observations: outcome.stableObservations,
                   completeAgentContextFn: completeContext,
                   signal: activeSignal,
                 });
@@ -666,8 +484,8 @@ export class OpsAgentRuntime {
               if (!memoryEntry) {
                 memoryEntry = formatAutoMemoryEntry(
                   input.task.trim(),
-                  assistantText || '任务已完成。',
-                  stableObservations
+                  outcome.finalAnswer,
+                  outcome.stableObservations
                 );
               }
 
@@ -680,7 +498,7 @@ export class OpsAgentRuntime {
                 runId,
                 sessionId: input.sessionId,
                 nodeId: node.id,
-                observations: stableObservations.length,
+                observations: outcome.stableObservations.length,
               });
             } catch (error) {
               logAgent('auto_node_memory_persist_failed', {
@@ -695,395 +513,118 @@ export class OpsAgentRuntime {
 
         this.agentRunRegistry.markRunCompleted(runId);
         this.pausedRuns.delete(runId);
-        logAgent('run_completed', { runId, step });
+        logAgent('run_completed', { runId, step: outcome.steps });
         activeEmit({
           type: 'run_completed',
           runId,
-          finalAnswer: assistantText || '任务已完成。',
-          steps: step,
+          finalAnswer: outcome.finalAnswer,
+          steps: outcome.steps,
           timestamp: Date.now(),
         });
         return;
       }
 
-      if (assistantMessage.stopReason === 'error') {
-        const errorMessage = assistantMessage.errorMessage?.trim() || '模型请求失败。';
+      if (outcome.kind === 'failed') {
         this.agentRunRegistry.markRunFailed(runId);
         this.pausedRuns.delete(runId);
-        logAgent('run_failed_model_error', {
+        logAgent('run_failed_loop', {
           runId,
-          step,
-          error: errorMessage,
+          step: outcome.step,
+          error: outcome.error,
         });
         activeEmit({
           type: 'run_failed',
           runId,
-          error: errorMessage,
-          step,
+          error: outcome.error,
+          step: outcome.step,
           timestamp: Date.now(),
         });
         return;
       }
 
-      if (assistantMessage.stopReason === 'aborted') {
+      if (outcome.kind === 'cancelled') {
         this.agentRunRegistry.markRunCancelled(runId);
         this.pausedRuns.delete(runId);
-        logAgent('run_cancelled_model_request', { runId, step });
+        logAgent('run_cancelled_loop', { runId, step: outcome.step });
         activeEmit({
           type: 'run_cancelled',
           runId,
-          step,
+          step: outcome.step,
           timestamp: Date.now(),
         });
         return;
       }
 
-      if (assistantMessage.stopReason === 'length') {
-        this.agentRunRegistry.markRunFailed(runId);
-        this.pausedRuns.delete(runId);
-        logAgent('run_failed_length', { runId, step });
-        activeEmit({
-          type: 'run_failed',
+      let continueRun: PausedRunHandle['continueRun'];
+      continueRun = async ({ emit: resumedEmit, signal: resumedSignal, action }) => {
+        const resumed = await this.resumePausedToolCall({
           runId,
-          error: '模型输出达到长度上限，Agent 已停止。',
-          step,
-          timestamp: Date.now(),
+          emit: resumedEmit,
+          signal: resumedSignal,
+          action,
+          pause: outcome.pause,
         });
-        return;
-      }
 
-      if (assistantMessage.stopReason !== 'toolUse') {
-        this.agentRunRegistry.markRunFailed(runId);
-        this.pausedRuns.delete(runId);
-        logAgent('run_failed_unhandled_stop_reason', {
-          runId,
-          step,
-          stopReason: assistantMessage.stopReason,
-        });
-        activeEmit({
-          type: 'run_failed',
-          runId,
-          error: '模型返回了未处理的 stopReason。',
-          step,
-          timestamp: Date.now(),
-        });
-        return;
-      }
+        if (resumed.kind === 'paused') {
+          this.pausedRuns.set(runId, {
+            pause: outcome.pause,
+            pendingAction: null,
+            continueRun,
+          });
+          return;
+        }
+        if (resumed.kind === 'failed') {
+          return;
+        }
 
-      const availableTools = await this.dependencies.toolRegistry.listPiTools({
-        sessionId: input.sessionId,
-      });
-      const toolCalls = extractToolCalls(assistantMessage);
-      let stepMadeProgress = false;
-      let stepHadSuccessfulToolExecution = false;
-      logAgent('step_tool_calls_detected', {
+        const nextResult = await resumeAgentLoop(
+          currentLoopState,
+          resumed.envelope,
+          resumedSignal
+        );
+        if (action.kind === 'resolve_approval' || action.kind === 'reject_approval') {
+          this.agentRunRegistry.markRunRunning({
+            runId,
+            clearGate: true,
+          });
+        }
+        emitLoopEvents(nextResult.events, resumedEmit);
+        await processLoopOutcome(nextResult.outcome, currentLoopState, resumedEmit, resumedSignal);
+      };
+
+      const pauseOutcome = await this.handlePauseOutcome({
         runId,
-        step,
-        toolCalls: toolCalls.map(call => call.name),
+        input,
+        step: outcome.step,
+        emit: activeEmit,
+        signal: activeSignal,
+        pause: outcome.pause,
       });
 
-      if (toolCalls.length === 0) {
-        this.agentRunRegistry.markRunFailed(runId);
-        this.pausedRuns.delete(runId);
-        logAgent('run_failed_tool_use_without_tools', { runId, step });
-        activeEmit({
-          type: 'run_failed',
-          runId,
-          error: '模型请求了工具调用，但未返回任何工具。',
-          step,
-          timestamp: Date.now(),
+      if (pauseOutcome.kind === 'paused') {
+        this.pausedRuns.set(runId, {
+          pause: outcome.pause,
+          pendingAction: null,
+          continueRun,
         });
         return;
       }
-
-      const stepHasNewToolCallSignature = toolCalls.some((toolCall) => {
-        const signature = buildToolCallSignature(toolCall);
-        const isNew = !seenToolCallSignatures.has(signature);
-        seenToolCallSignatures.add(signature);
-        return isNew;
-      });
-
-      const finalizeToolEnvelope = (
-        toolCall: ToolCall,
-        envelope: ToolExecutionEnvelope,
-        emitFn: (event: AgentStreamEvent) => void
-      ) => {
-        logAgent('tool_execution_finished', {
-          runId,
-          step,
-          toolCallId: toolCall.id,
-          toolName: toolCall.name,
-          ok: envelope.ok,
-          durationMs: envelope.meta.durationMs,
-          error: envelope.error?.message,
-        });
-
-        const stableObservation = extractStableObservation(envelope);
-        if (stableObservation) {
-          stableObservations.push(stableObservation);
-        }
-
-        const resultSignature = buildToolResultSignature(envelope);
-        if (resultSignature) {
-          stepHadSuccessfulToolExecution = true;
-          if (!seenSuccessfulResultSignatures.has(resultSignature)) {
-            seenSuccessfulResultSignatures.add(resultSignature);
-            stepMadeProgress = true;
-          }
-        }
-
-        context.messages.push(buildToolResultMessage(envelope, toolCall.id, toolCall.name));
-
-        emitFn({
-          type: 'tool_execution_finished',
-          runId,
-          step,
-          toolCallId: toolCall.id,
-          toolName: toolCall.name,
-          result: envelope,
-          timestamp: Date.now(),
-        });
-      };
-
-      const finalizeStep = (emitFn: (event: AgentStreamEvent) => void) => {
-        if (!stepMadeProgress && stepHasNewToolCallSignature && stepHadSuccessfulToolExecution) {
-          stepMadeProgress = true;
-        }
-
-        stepProgressHistory.push({ madeProgress: stepMadeProgress });
-
-        if (step === currentStepBudget) {
-          const grant = stepBudgetRenewalGrants[stepBudgetRenewalIndex];
-
-          if (grant !== undefined && hasRecentProgress(stepProgressHistory)) {
-            currentStepBudget = Math.min(currentStepBudget + grant, hardMaxSteps);
-            stepBudgetRenewalIndex += 1;
-            logAgent('run_budget_extended', {
-              runId,
-              step,
-              grant,
-              nextBudget: currentStepBudget,
-              hardMaxSteps,
-            });
-            emitFn({
-              type: 'warning',
-              runId,
-              message: `已达到当前步数预算 ${step}，检测到仍有进展，自动续期 +${grant} 步（当前上限 ${currentStepBudget} / ${hardMaxSteps}）。`,
-              step,
-              timestamp: Date.now(),
-            });
-            return 'completed_step' as const;
-          }
-
-          const madeRecentProgress = hasRecentProgress(stepProgressHistory);
-          const warningMessage = madeRecentProgress
-            ? `已达到总执行上限 ${currentStepBudget}，Agent 停止继续尝试。`
-            : `已达到当前步数预算 ${step}，最近几步没有有效进展，Agent 停止继续尝试。`;
-          const errorMessage = madeRecentProgress
-            ? '已达到总执行上限，请缩小任务范围或提供更具体的目标。'
-            : '已达到当前步数预算且最近几步没有有效进展，请缩小任务范围或提供更具体的目标。';
-
-          this.agentRunRegistry.markRunFailed(runId);
-          this.pausedRuns.delete(runId);
-          logAgent('run_failed_step_budget_exhausted', {
-            runId,
-            step,
-            currentStepBudget,
-            hardMaxSteps,
-            reason: madeRecentProgress ? 'hard_cap' : 'no_progress',
-          });
-          emitFn({
-            type: 'warning',
-            runId,
-            message: warningMessage,
-            step,
-            timestamp: Date.now(),
-          });
-          emitFn({
-            type: 'run_failed',
-            runId,
-            error: errorMessage,
-            step,
-            timestamp: Date.now(),
-          });
-          return 'stopped' as const;
-        }
-
-        return 'completed_step' as const;
-      };
-
-      const executeToolCallAt = async (
-        index: number,
-        emitFn: (event: AgentStreamEvent) => void,
-        signalFn: AbortSignal
-      ): Promise<'paused' | 'completed_step' | 'stopped'> => {
-        if (index >= toolCalls.length) {
-          return finalizeStep(emitFn);
-        }
-
-        const toolCall = toolCalls[index];
-
-        if (signalFn.aborted) {
-          this.agentRunRegistry.markRunCancelled(runId);
-          this.pausedRuns.delete(runId);
-          logAgent('run_cancelled_during_tool_loop', {
-            runId,
-            step,
-            toolName: toolCall.name,
-          });
-          emitFn({
-            type: 'run_cancelled',
-            runId,
-            step,
-            timestamp: Date.now(),
-          });
-          return 'stopped';
-        }
-
-        emitFn({
-          type: 'tool_call',
-          runId,
-          step,
-          toolCallId: toolCall.id,
-          toolName: toolCall.name,
-          arguments: toolCall.arguments,
-          timestamp: Date.now(),
-        });
-        logAgent('tool_call_received', {
-          runId,
-          step,
-          toolCallId: toolCall.id,
-          toolName: toolCall.name,
-        });
-
-        let validatedArgs: unknown;
-        try {
-          validatedArgs = validateToolCall(availableTools, toolCall);
-          logAgent('tool_call_validated', {
-            runId,
-            step,
-            toolCallId: toolCall.id,
-            toolName: toolCall.name,
-          });
-        } catch (error) {
-          logAgent('tool_call_validation_failed', {
-            runId,
-            step,
-            toolCallId: toolCall.id,
-            toolName: toolCall.name,
-            error: error instanceof Error ? error.message : '工具参数校验失败。',
-          });
-          const envelope: ToolExecutionEnvelope = {
-            toolName: toolCall.name,
-            toolCallId: toolCall.id,
-            ok: false,
-            error: {
-              code: 'tool_validation_failed',
-              message: error instanceof Error ? error.message : '工具参数校验失败。',
-              retryable: true,
-            },
-            meta: {
-              startedAt: Date.now(),
-              completedAt: Date.now(),
-              durationMs: 0,
-            },
-          };
-          finalizeToolEnvelope(toolCall, envelope, emitFn);
-          return executeToolCallAt(index + 1, emitFn, signalFn);
-        }
-
-        const continueAfterEnvelope = async (
-          envelope: ToolExecutionEnvelope,
-          nextEmit: (event: AgentStreamEvent) => void,
-          nextSignal: AbortSignal
-        ) => {
-          finalizeToolEnvelope(toolCall, envelope, nextEmit);
-          return executeToolCallAt(index + 1, nextEmit, nextSignal);
-        };
-
-        const executionResult = await this.dependencies.toolExecutor.executeToolCall(toolCall, validatedArgs, {
-          runId,
-          userTask: input.task.trim(),
-          sessionId: input.sessionId,
-          sessionLabel,
-          step,
-          approvalMode: input.approvalMode ?? 'auto-readonly',
-          maxCommandOutputChars,
-          signal: signalFn,
-          capabilities: {
-            sessions: this.dependencies.sessions as never,
-            fileMemory: this.dependencies.fileMemory,
-          },
-          emit: emitFn,
-        });
-
-        if (executionResult.kind === 'pause') {
-          let continueRun: PausedRunHandle['continueRun'];
-          continueRun = async ({ emit: resumedEmit, signal: resumedSignal, action }) => {
-            const resumed = await this.resumePausedToolCall({
-              runId,
-              emit: resumedEmit,
-              signal: resumedSignal,
-              action,
-              pause: executionResult,
-            });
-
-            if (resumed.kind === 'paused') {
-              this.pausedRuns.set(runId, {
-                pause: executionResult,
-                pendingAction: null,
-                continueRun,
-              });
-              return;
-            }
-            if (resumed.kind === 'failed') {
-              return;
-            }
-
-            const status = await continueAfterEnvelope(
-              resumed.envelope,
-              resumedEmit,
-              resumedSignal
-            );
-            if (status === 'completed_step') {
-              await executeStep(step + 1, resumedEmit, resumedSignal);
-            }
-          };
-
-          const pauseOutcome = await this.handlePauseOutcome({
-            runId,
-            input,
-            step,
-            emit: emitFn,
-            signal: signalFn,
-            pause: executionResult,
-          });
-
-          if (pauseOutcome.kind === 'paused') {
-            this.pausedRuns.set(runId, {
-              pause: executionResult,
-              pendingAction: null,
-              continueRun,
-            });
-            return 'paused';
-          }
-          if (pauseOutcome.kind === 'failed') {
-            return 'stopped';
-          }
-
-          return continueAfterEnvelope(pauseOutcome.envelope, emitFn, signalFn);
-        }
-
-        return continueAfterEnvelope(executionResult.envelope, emitFn, signalFn);
-      };
-
-      const stepStatus = await executeToolCallAt(0, activeEmit, activeSignal);
-      if (stepStatus === 'completed_step') {
-        await executeStep(step + 1, activeEmit, activeSignal);
+      if (pauseOutcome.kind === 'failed') {
+        return;
       }
+
+      const nextResult = await resumeAgentLoop(
+        currentLoopState,
+        pauseOutcome.envelope,
+        activeSignal
+      );
+      emitLoopEvents(nextResult.events, activeEmit);
+      await processLoopOutcome(nextResult.outcome, currentLoopState, activeEmit, activeSignal);
     };
 
-    await executeStep(1, emit, signal);
+    const initialResult = await runAgentLoop(loopState, signal);
+    emitLoopEvents(initialResult.events, emit);
+    await processLoopOutcome(initialResult.outcome, loopState, emit, signal);
   }
 
   private async handlePauseOutcome(options: {
@@ -1263,7 +804,6 @@ export class OpsAgentRuntime {
         });
         this.agentRunRegistry.markRunRunning({
           runId: options.runId,
-          clearGate: true,
         });
         options.emit({
           type: 'run_state_changed',
@@ -1290,7 +830,6 @@ export class OpsAgentRuntime {
         });
         this.agentRunRegistry.markRunRunning({
           runId: options.runId,
-          clearGate: true,
         });
         options.emit({
           type: 'run_state_changed',
