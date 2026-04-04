@@ -2,6 +2,7 @@ import type { Static, Tool, TSchema } from '@mariozechner/pi-ai';
 
 import type { AgentApprovalMode, AgentStreamEvent, ToolExecutionEnvelope } from './agentTypes.js';
 import type { FileMemoryStore } from './fileMemoryStore.js';
+import type { ApprovalGatePayload, TerminalInputGatePayload } from './humanGateTypes.js';
 import type { SessionRegistry } from './sessionRegistry.js';
 
 export type ToolRiskLevel = 'safe' | 'caution' | 'dangerous';
@@ -24,6 +25,7 @@ export type ToolExecutionContext = {
   runId: string;
   userTask: string;
   sessionId: string | null;
+  sessionLabel?: string;
   step: number;
   approvalMode: AgentApprovalMode;
   maxCommandOutputChars: number;
@@ -92,3 +94,30 @@ export type ToolPolicyDecision =
   | { kind: 'allow'; matches?: ToolPolicyMatch[] }
   | { kind: 'deny'; reason: string; matches: ToolPolicyMatch[] }
   | { kind: 'require_approval'; reason: string; matches: ToolPolicyMatch[] };
+
+export type ToolPauseOutcome =
+  | {
+      kind: 'pause';
+      gateKind: 'terminal_input';
+      reason: string;
+      payload: TerminalInputGatePayload;
+      continuation: {
+        waitForCompletion: (signal?: AbortSignal) => Promise<ToolExecutionEnvelope>;
+        getSettledEnvelope: () => ToolExecutionEnvelope | null;
+      };
+    }
+  | {
+      kind: 'pause';
+      gateKind: 'approval';
+      reason: string;
+      payload: ApprovalGatePayload;
+      continuation: {
+        resume: (signal?: AbortSignal) => Promise<ToolExecutionEnvelope>;
+        reject: () => ToolExecutionEnvelope;
+      };
+    };
+
+export type ToolExecutionResult =
+  | { kind: 'success'; envelope: ToolExecutionEnvelope }
+  | { kind: 'failure'; envelope: ToolExecutionEnvelope }
+  | ToolPauseOutcome;

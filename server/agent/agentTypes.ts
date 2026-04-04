@@ -1,5 +1,7 @@
 import type { StoredLlmProvider } from '../llmProviderStore.js';
 
+import type { AgentRunState, HumanGateRecord } from './humanGateTypes.js';
+
 export type AgentApprovalMode = 'auto-readonly' | 'manual-sensitive';
 
 export type AgentPolicySummary = {
@@ -53,6 +55,12 @@ export type AgentStreamEvent =
       timestamp: number;
     }
   | {
+      type: 'run_state_changed';
+      runId: string;
+      state: AgentRunState;
+      timestamp: number;
+    }
+  | {
       type: 'assistant_message_delta';
       runId: string;
       delta: string;
@@ -100,6 +108,30 @@ export type AgentStreamEvent =
       toolName: string;
       reason: string;
       policy?: AgentPolicySummary;
+      timestamp: number;
+    }
+  | {
+      type: 'human_gate_opened';
+      runId: string;
+      gate: HumanGateRecord;
+      timestamp: number;
+    }
+  | {
+      type: 'human_gate_resolved';
+      runId: string;
+      gate: HumanGateRecord;
+      timestamp: number;
+    }
+  | {
+      type: 'human_gate_rejected';
+      runId: string;
+      gate: HumanGateRecord;
+      timestamp: number;
+    }
+  | {
+      type: 'human_gate_expired';
+      runId: string;
+      gate: HumanGateRecord;
       timestamp: number;
     }
   | {

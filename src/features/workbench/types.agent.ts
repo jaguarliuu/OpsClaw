@@ -11,6 +11,63 @@ export type AgentPolicySummary = {
   }>;
 };
 
+export type AgentRunState =
+  | 'running'
+  | 'waiting_for_human'
+  | 'suspended'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export type HumanGateKind = 'terminal_input' | 'approval';
+export type HumanGateStatus = 'open' | 'resolved' | 'rejected' | 'expired';
+
+export type TerminalInputGatePayload = {
+  toolCallId: string;
+  toolName: 'session.run_command';
+  command: string;
+  sessionLabel?: string;
+  timeoutMs: number;
+};
+
+export type ApprovalGatePayload = {
+  toolCallId: string;
+  toolName: string;
+  arguments: Record<string, unknown>;
+  policy: AgentPolicySummary;
+};
+
+export type HumanGatePayload = TerminalInputGatePayload | ApprovalGatePayload;
+type HumanGateRecordBase = {
+  id: string;
+  runId: string;
+  sessionId: string;
+  status: HumanGateStatus;
+  reason: string;
+  openedAt: number;
+  deadlineAt: number;
+};
+
+export type TerminalInputGateRecord = HumanGateRecordBase & {
+  kind: 'terminal_input';
+  payload: TerminalInputGatePayload;
+};
+
+export type ApprovalGateRecord = HumanGateRecordBase & {
+  kind: 'approval';
+  payload: ApprovalGatePayload;
+};
+
+export type HumanGateRecord = TerminalInputGateRecord | ApprovalGateRecord;
+
+export type AgentRunSnapshot = {
+  runId: string;
+  sessionId: string;
+  task: string;
+  state: AgentRunState;
+  openGate: HumanGateRecord | null;
+};
+
 export type ToolExecutionEnvelope = {
   toolName: string;
   toolCallId: string;
@@ -37,6 +94,12 @@ export type AgentStreamEvent =
       runId: string;
       sessionId: string;
       task: string;
+      timestamp: number;
+    }
+  | {
+      type: 'run_state_changed';
+      runId: string;
+      state: AgentRunState;
       timestamp: number;
     }
   | {
@@ -90,6 +153,30 @@ export type AgentStreamEvent =
       timestamp: number;
     }
   | {
+      type: 'human_gate_opened';
+      runId: string;
+      gate: HumanGateRecord;
+      timestamp: number;
+    }
+  | {
+      type: 'human_gate_resolved';
+      runId: string;
+      gate: HumanGateRecord;
+      timestamp: number;
+    }
+  | {
+      type: 'human_gate_rejected';
+      runId: string;
+      gate: HumanGateRecord;
+      timestamp: number;
+    }
+  | {
+      type: 'human_gate_expired';
+      runId: string;
+      gate: HumanGateRecord;
+      timestamp: number;
+    }
+  | {
       type: 'warning';
       runId: string;
       message: string;
@@ -120,6 +207,7 @@ export type AgentStreamEvent =
 export type AgentTimelineItem =
   | { id: string; kind: 'user'; text: string }
   | { id: string; kind: 'assistant'; text: string; step: number }
+  | { id: string; kind: 'human_gate'; runId: string; gate: HumanGateRecord }
   | {
       id: string;
       kind: 'tool_call';

@@ -23,7 +23,9 @@ import { useSshTerminalSearch } from '@/features/workbench/useSshTerminalSearch'
 import { useSshTerminalRuntime } from '@/features/workbench/useSshTerminalRuntime';
 import { useSshTerminalViewport } from '@/features/workbench/useSshTerminalViewport';
 import { useTerminalSettings } from '@/features/workbench/useTerminalSettings';
+import { getAgentSessionLockBannerText } from '@/features/workbench/agentGateUiModel';
 import type {
+  AgentSessionLock,
   ConnectionStatus,
   LiveSession,
   TerminalCommandExecutionResult,
@@ -32,6 +34,7 @@ import type {
 type SshTerminalPaneProps = {
   session: LiveSession;
   active: boolean;
+  agentSessionLock: AgentSessionLock | null;
   show?: boolean;
   onStatusChange: (sessionId: string, status: ConnectionStatus, errorMessage?: string) => void;
 };
@@ -52,7 +55,7 @@ function logSshTerminalPane(event: string, details: Record<string, unknown> = {}
 }
 
 export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPaneProps>(
-  function SshTerminalPane({ session, active, show, onStatusChange }, ref) {
+  function SshTerminalPane({ session, active, agentSessionLock, show, onStatusChange }, ref) {
     const { settings } = useTerminalSettings();
     const containerRef = useRef<HTMLDivElement | null>(null);
     const terminalRef = useRef<Terminal | null>(null);
@@ -129,6 +132,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
       processPendingExecutionChunk,
       rejectPendingExecution,
     } = useSshTerminalController({
+      agentSessionLock,
       containerRef,
       session,
       terminalRef,
@@ -155,6 +159,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
       suggestion,
       suggestionVisible,
     } = useSshTerminalRuntime({
+      agentSessionLock,
       containerRef,
       disposeViewport,
       fitAddonRef,
@@ -282,6 +287,15 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
         }}
       >
         <div className="xterm-pane h-full w-full" ref={containerRef} />
+
+        {agentSessionLock ? (
+          <div className="pointer-events-none absolute left-3 right-3 top-3 z-20 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200 shadow-[0_10px_30px_rgba(0,0,0,0.28)] backdrop-blur-sm">
+            <div>{getAgentSessionLockBannerText(agentSessionLock)}</div>
+            <div className="mt-1 font-mono text-[11px] text-amber-100/80">
+              {agentSessionLock.command}
+            </div>
+          </div>
+        ) : null}
 
         {isSearchOpen && (
           <SshTerminalSearchOverlay

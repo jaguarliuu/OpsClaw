@@ -27,7 +27,9 @@ import {
   LazyQuickConnectModal,
   LazyTerminalSettingsPanel,
 } from '@/features/workbench/workbenchLazyPanels';
+import { getAgentSessionLock } from '@/features/workbench/agentGateUiModel';
 import { useWorkbenchProfileActions } from '@/features/workbench/useWorkbenchProfileActions';
+import { useAgentRun } from '@/features/workbench/useAgentRun';
 import { useWorkbenchShellState } from '@/features/workbench/useWorkbenchShellState';
 import { useWorkbenchSessions } from '@/features/workbench/useWorkbenchSessions';
 import { useWorkbenchWorkspaceData } from '@/features/workbench/useWorkbenchWorkspaceData';
@@ -105,6 +107,8 @@ export function WorkbenchPage() {
     setIsSidebarCollapsed,
     setSelectedProfileId,
   });
+  const agentRun = useAgentRun();
+  const agentSessionLock = getAgentSessionLock(agentRun.activeGate);
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
   const {
     closeConnectionPanel,
@@ -249,6 +253,7 @@ export function WorkbenchPage() {
         <TerminalWorkspace
           ref={terminalWorkspaceRef}
           activeSessionId={activeSessionId}
+          agentSessionLock={agentSessionLock}
           isUtilityDrawerOpen={isUtilityDrawerOpen}
           isMacShortcutPlatform={typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)}
           onCloseSession={handleCloseSession}
@@ -413,6 +418,7 @@ export function WorkbenchPage() {
             onClose={closeAiAssistant}
             sessions={sessions}
             activeSessionId={activeSessionId}
+            agentRun={agentRun}
           />
         </Suspense>
       ) : null}

@@ -3,6 +3,20 @@ import test from 'node:test';
 
 import { SessionRegistry } from './sessionRegistry.js';
 
+type SessionRegistryInternals = SessionRegistry & {
+  getPendingExecutionDebug: (
+    sessionId: string
+  ) =>
+    | {
+        state: string;
+        command: string;
+        startMarker: string;
+      }
+    | null;
+  noteUserInput: (sessionId: string, payload: string) => void;
+  resumePendingExecutionWait: (sessionId: string, timeoutMs: number) => void;
+};
+
 function waitForMicrotask() {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, 0);
@@ -26,6 +40,10 @@ function extractMarkers(payload: string) {
     startMarker: startMarkerMatch![0],
     endMarkerPrefix: endMarkerPrefixMatch![0],
   };
+}
+
+function getRegistryInternals(registry: SessionRegistry): SessionRegistryInternals {
+  return registry as SessionRegistryInternals;
 }
 
 test('中断执行中的命令后会释放会话锁并允许再次执行', async () => {
@@ -72,8 +90,209 @@ test('中断执行中的命令后会释放会话锁并允许再次执行', async
   });
 });
 
-test('命令等待人工输入时会延长等待并在完成后返回后续输出', async () => {
+test('交互命令的人类输入超时会挂起等待而不是永久拒绝', async () => {
   const registry = new SessionRegistry();
+  const internals = getRegistryInternals(registry);
+  const sentPayloads: string[] = [];
+
+  registry.registerSession({
+    sessionId: 'session-1',
+    host: '10.0.0.8',
+    port: 22,
+    username: 'ubuntu',
+    sendInput(payload) {
+      sentPayloads.push(payload);
+    },
+  });
+  registry.updateSessionStatus('session-1', 'connected');
+
+  let settled = false;
+  const execution = registry
+    .executeCommand('session-1', 'python interactive.py', {
+      timeoutMs: 200,
+      humanInputTimeoutMs: 30,
+    } as never)
+    .finally(() => {
+      settled = true;
+    });
+
+  await waitForMicrotask();
+
+  const markers = extractMarkers(sentPayloads[0] ?? '');
+  registry.appendTerminalData('session-1', `\n${markers.startMarker}\nPassword: `);
+  internals.noteUserInput('session-1', 'secret');
+  internals.noteUserInput('session-1', '\n');
+
+  assert.deepEqual(internals.getPendingExecutionDebug('session-1'), {
+    state: 'awaiting_human_input',
+    command: 'python interactive.py',
+    startMarker: markers.startMarker,
+  });
+
+  await waitFor(60);
+
+  assert.equal(settled, false);
+  assert.deepEqual(internals.getPendingExecutionDebug('session-1'), {
+    state: 'suspended_waiting_for_input',
+    command: 'python interactive.py',
+    startMarker: markers.startMarker,
+  });
+
+  registry.appendTerminalData(
+    'session-1',
+    `Logged in\r\n${markers.endMarkerPrefix}0\r\n`
+  );
+
+  const result = await execution;
+
+  assert.match(result.output, /Password:/);
+  assert.match(result.output, /Logged in/);
+  assert.equal(internals.getPendingExecutionDebug('session-1'), null);
+});
+
+test('resumePendingExecutionWait 会重新挂起等待并允许命令稍后完成', async () => {
+  const registry = new SessionRegistry();
+  const internals = getRegistryInternals(registry);
+  const sentPayloads: string[] = [];
+
+  registry.registerSession({
+    sessionId: 'session-1',
+    host: '10.0.0.8',
+    port: 22,
+    username: 'ubuntu',
+    sendInput(payload) {
+      sentPayloads.push(payload);
+    },
+  });
+  registry.updateSessionStatus('session-1', 'connected');
+
+  const execution = registry.executeCommand('session-1', 'python interactive.py', {
+    timeoutMs: 200,
+    humanInputTimeoutMs: 30,
+  } as never);
+
+  await waitForMicrotask();
+
+  const markers = extractMarkers(sentPayloads[0] ?? '');
+  registry.appendTerminalData('session-1', `\n${markers.startMarker}\nPassword: `);
+  internals.noteUserInput('session-1', 'secret');
+  internals.noteUserInput('session-1', '\n');
+
+  await waitFor(60);
+
+  assert.deepEqual(internals.getPendingExecutionDebug('session-1'), {
+    state: 'suspended_waiting_for_input',
+    command: 'python interactive.py',
+    startMarker: markers.startMarker,
+  });
+
+  internals.resumePendingExecutionWait('session-1', 50);
+  assert.deepEqual(internals.getPendingExecutionDebug('session-1'), {
+    state: 'awaiting_human_input',
+    command: 'python interactive.py',
+    startMarker: markers.startMarker,
+  });
+
+  await waitFor(20);
+
+  assert.deepEqual(internals.getPendingExecutionDebug('session-1'), {
+    state: 'awaiting_human_input',
+    command: 'python interactive.py',
+    startMarker: markers.startMarker,
+  });
+
+  registry.appendTerminalData(
+    'session-1',
+    `Logged in\r\n${markers.endMarkerPrefix}0\r\n`
+  );
+
+  const result = await execution;
+
+  assert.match(result.output, /Logged in/);
+  assert.equal(internals.getPendingExecutionDebug('session-1'), null);
+});
+
+test('挂起中的交互命令在会话断开时仍会清理并拒绝原 promise', async () => {
+  const registry = new SessionRegistry();
+  const internals = getRegistryInternals(registry);
+  const sentPayloads: string[] = [];
+
+  registry.registerSession({
+    sessionId: 'session-1',
+    host: '10.0.0.8',
+    port: 22,
+    username: 'ubuntu',
+    sendInput(payload) {
+      sentPayloads.push(payload);
+    },
+  });
+  registry.updateSessionStatus('session-1', 'connected');
+
+  const execution = registry.executeCommand('session-1', 'python interactive.py', {
+    timeoutMs: 200,
+    humanInputTimeoutMs: 30,
+  } as never);
+
+  await waitForMicrotask();
+
+  const markers = extractMarkers(sentPayloads[0] ?? '');
+  registry.appendTerminalData('session-1', `\n${markers.startMarker}\nPassword: `);
+  internals.noteUserInput('session-1', 'secret');
+  internals.noteUserInput('session-1', '\n');
+
+  await waitFor(60);
+
+  assert.equal(internals.getPendingExecutionDebug('session-1')?.state, 'suspended_waiting_for_input');
+
+  registry.updateSessionStatus('session-1', 'closed', '连接已关闭');
+
+  await assert.rejects(execution, /连接已关闭/);
+  assert.equal(internals.getPendingExecutionDebug('session-1'), null);
+});
+
+test('恢复后的交互命令再次超时后会重新进入挂起状态', async () => {
+  const registry = new SessionRegistry();
+  const internals = getRegistryInternals(registry);
+  const sentPayloads: string[] = [];
+
+  registry.registerSession({
+    sessionId: 'session-1',
+    host: '10.0.0.8',
+    port: 22,
+    username: 'ubuntu',
+    sendInput(payload) {
+      sentPayloads.push(payload);
+    },
+  });
+  registry.updateSessionStatus('session-1', 'connected');
+
+  const execution = registry.executeCommand('session-1', 'python interactive.py', {
+    timeoutMs: 200,
+    humanInputTimeoutMs: 30,
+  } as never);
+
+  await waitForMicrotask();
+
+  const markers = extractMarkers(sentPayloads[0] ?? '');
+  registry.appendTerminalData('session-1', `\n${markers.startMarker}\nPassword: `);
+  internals.noteUserInput('session-1', 'secret');
+  internals.noteUserInput('session-1', '\n');
+
+  await waitFor(60);
+  assert.equal(internals.getPendingExecutionDebug('session-1')?.state, 'suspended_waiting_for_input');
+
+  internals.resumePendingExecutionWait('session-1', 30);
+  await waitFor(60);
+
+  assert.equal(internals.getPendingExecutionDebug('session-1')?.state, 'suspended_waiting_for_input');
+
+  registry.unregisterSession('session-1', 'cleanup');
+  await assert.rejects(execution, /cleanup/);
+});
+
+test('交互命令会继续隐藏人工输入内容', async () => {
+  const registry = new SessionRegistry();
+  const internals = getRegistryInternals(registry);
   const sentPayloads: string[] = [];
 
   registry.registerSession({
@@ -96,14 +315,8 @@ test('命令等待人工输入时会延长等待并在完成后返回后续输�
 
   const markers = extractMarkers(sentPayloads[0] ?? '');
   registry.appendTerminalData('session-1', `\n${markers.startMarker}\nPassword: `);
-  (registry as never as { noteUserInput: (sessionId: string, payload: string) => void }).noteUserInput(
-    'session-1',
-    'secret'
-  );
-  (registry as never as { noteUserInput: (sessionId: string, payload: string) => void }).noteUserInput(
-    'session-1',
-    '\n'
-  );
+  internals.noteUserInput('session-1', 'secret');
+  internals.noteUserInput('session-1', '\n');
 
   await waitFor(40);
 

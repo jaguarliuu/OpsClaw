@@ -14,7 +14,11 @@ import {
   getSshTerminalExecuteCommandError,
   normalizeSshTerminalCommand,
 } from '@/features/workbench/sshTerminalControllerModel';
-import type { LiveSession, TerminalCommandExecutionResult } from '@/features/workbench/types';
+import type {
+  AgentSessionLock,
+  LiveSession,
+  TerminalCommandExecutionResult,
+} from '@/features/workbench/types';
 import { stripAnsi } from '@/lib/utils';
 
 type PendingExecution = PendingExecutionCaptureState & {
@@ -24,6 +28,7 @@ type PendingExecution = PendingExecutionCaptureState & {
 };
 
 type UseSshTerminalControllerOptions = {
+  agentSessionLock: AgentSessionLock | null;
   containerRef: RefObject<HTMLDivElement | null>;
   session: LiveSession;
   terminalRef: MutableRefObject<{ clear: () => void; write: (data: string) => void } | null>;
@@ -40,6 +45,7 @@ type SshTerminalControllerHandle = {
 };
 
 export function useSshTerminalController({
+  agentSessionLock,
   containerRef,
   session,
   terminalRef,
@@ -92,6 +98,15 @@ export function useSshTerminalController({
   }, [containerRef]);
 
   const sendCommand = useCallback((command: string) => {
+    if (agentSessionLock) {
+      console.warn('[SshTerminalController] blocked:session_locked', {
+        sessionId: agentSessionLock.sessionId,
+        runId: agentSessionLock.runId,
+        gateId: agentSessionLock.gateId,
+      });
+      return;
+    }
+
     const normalizedCommand = normalizeSshTerminalCommand(command);
     const websocket = websocketRef.current;
 
@@ -106,9 +121,13 @@ export function useSshTerminalController({
     void recordCommand({ command: normalizedCommand, nodeId: session.nodeId }).catch((error) => {
       console.error('[SshTerminalController] command-history:record_error', error);
     });
-  }, [session.nodeId, websocketRef]);
+  }, [agentSessionLock, session.nodeId, websocketRef]);
 
   const executeCommand = useCallback((command: string) => {
+    if (agentSessionLock) {
+      return Promise.reject(new Error('当前终端被 Agent 锁定，暂时不能注入新命令。'));
+    }
+
     const normalizedCommand = normalizeSshTerminalCommand(command);
     const websocket = websocketRef.current;
     const errorMessage = getSshTerminalExecuteCommandError({
@@ -150,7 +169,7 @@ export function useSshTerminalController({
         })
       );
     });
-  }, [websocketRef]);
+  }, [agentSessionLock, websocketRef]);
 
   const getTranscript = useCallback(() => {
     return stripAnsi(transcriptRef.current);
