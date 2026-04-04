@@ -9,3 +9,5 @@ release/
 
 .agents/
 .worktrees/
+
+.study/
