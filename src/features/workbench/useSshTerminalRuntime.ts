@@ -14,6 +14,7 @@ import {
   shouldToggleSshTerminalSearchShortcut,
   resolveSshTerminalInput,
 } from '@/features/workbench/sshTerminalRuntimeModel';
+import { isAgentSessionLocked } from '@/features/workbench/agentSessionModel';
 import { loadTerminalRuntime } from '@/features/workbench/terminalRuntimeLoader';
 import { TERMINAL_THEMES } from '@/features/workbench/terminalSettings';
 import type { AgentSessionLock, ConnectionStatus } from '@/features/workbench/types';
@@ -81,7 +82,7 @@ export function useSshTerminalRuntime({
     suggestionRef.current = suggestion;
   }, [suggestion]);
 
-  const isAgentLocked = agentSessionLock !== null;
+  const isAgentLocked = isAgentSessionLocked(agentSessionLock);
 
   useEffect(() => {
     isAgentLockedRef.current = isAgentLocked;

@@ -225,3 +225,20 @@ export type AgentTimelineItem =
   | { id: string; kind: 'warning'; text: string; step?: number; policy?: AgentPolicySummary }
   | { id: string; kind: 'final'; text: string; steps: number }
   | { id: string; kind: 'status'; text: string };
+
+export function parseAgentStreamEvent(payload: unknown): AgentStreamEvent {
+  const value =
+    typeof payload === 'string'
+      ? JSON.parse(payload)
+      : payload;
+
+  if (
+    value === null ||
+    typeof value !== 'object' ||
+    typeof (value as { type?: unknown }).type !== 'string'
+  ) {
+    throw new Error('非法 Agent 事件。');
+  }
+
+  return value as AgentStreamEvent;
+}

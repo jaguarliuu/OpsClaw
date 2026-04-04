@@ -14,6 +14,7 @@ import {
   getSshTerminalExecuteCommandError,
   normalizeSshTerminalCommand,
 } from '@/features/workbench/sshTerminalControllerModel';
+import { isAgentSessionLocked } from '@/features/workbench/agentSessionModel';
 import type {
   AgentSessionLock,
   LiveSession,
@@ -98,7 +99,7 @@ export function useSshTerminalController({
   }, [containerRef]);
 
   const sendCommand = useCallback((command: string) => {
-    if (agentSessionLock) {
+    if (isAgentSessionLocked(agentSessionLock)) {
       console.warn('[SshTerminalController] blocked:session_locked', {
         sessionId: agentSessionLock.sessionId,
         runId: agentSessionLock.runId,
@@ -124,7 +125,7 @@ export function useSshTerminalController({
   }, [agentSessionLock, session.nodeId, websocketRef]);
 
   const executeCommand = useCallback((command: string) => {
-    if (agentSessionLock) {
+    if (isAgentSessionLocked(agentSessionLock)) {
       return Promise.reject(new Error('当前终端被 Agent 锁定，暂时不能注入新命令。'));
     }
 

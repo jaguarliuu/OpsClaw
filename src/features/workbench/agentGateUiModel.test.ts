@@ -2,8 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  getAgentSessionLock,
-  getAgentSessionLockBannerText,
   getHumanGateDescription,
   getHumanGatePrimaryActionLabel,
   getHumanGateSecondaryActionLabel,
@@ -88,37 +86,4 @@ void test('open terminal_input gates do not expose action buttons', () => {
   assert.equal(getHumanGateSecondaryActionLabel(gate), null);
   assert.equal(getHumanGateTitle(gate), '等待终端输入');
   assert.equal(getHumanGateDescription(gate), '请在对应终端中完成交互输入。');
-});
-
-void test('maps terminal_input gates into session locks and banner copy', () => {
-  const gate = {
-    id: 'gate-3',
-    runId: 'run-1',
-    sessionId: 'session-1',
-    kind: 'terminal_input' as const,
-    status: 'open' as const,
-    reason: '命令正在等待你在终端中继续输入。',
-    openedAt: 1,
-    deadlineAt: 2,
-    payload: {
-      toolCallId: 'call-3',
-      toolName: 'session.run_command' as const,
-      command: 'sudo passwd root',
-      timeoutMs: 300_000,
-    },
-  };
-
-  const lock = getAgentSessionLock(gate);
-  assert.deepEqual(lock, {
-    sessionId: 'session-1',
-    runId: 'run-1',
-    gateId: 'gate-3',
-    status: 'open',
-    reason: '命令正在等待你在终端中继续输入。',
-    command: 'sudo passwd root',
-  });
-  assert.equal(
-    getAgentSessionLockBannerText(lock!),
-    '该终端正在被 Agent 用于交互命令，请在此完成输入。'
-  );
 });

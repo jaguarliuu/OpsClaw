@@ -4,11 +4,22 @@ import {
   isRecord,
   readRequiredString,
 } from './support.js';
+import { createAgentEventStream, serializeSseEvent } from './agentEventStream.js';
 
 export function registerAgentRoutes(
   app: HttpRouteApp,
   { llmProviderStore, agentRuntime }: Pick<HttpApiDependencies, 'llmProviderStore' | 'agentRuntime'>
 ) {
+  app.get('/api/agent/sessions/:sessionId/runs/reattach', (request, response) => {
+    try {
+      const snapshot = agentRuntime.getSessionReattachableRun(request.params.sessionId);
+      response.json({ item: snapshot });
+    } catch (error) {
+      console.error('[Agent] get reattachable run error:', error);
+      response.status(500).json({ message: '读取可恢复的 Agent run 失败。' });
+    }
+  });
+
   app.post('/api/agent/runs', async (request, response) => {
     try {
       const body = isRecord(request.body) ? request.body : null;
@@ -44,31 +55,7 @@ export function registerAgentRoutes(
         return;
       }
 
-      response.setHeader('Content-Type', 'text/event-stream');
-      response.setHeader('Cache-Control', 'no-cache');
-      response.setHeader('Connection', 'keep-alive');
-      response.flushHeaders?.();
-
-      const abortController = new AbortController();
-      let finished = false;
-
-      request.on('aborted', () => {
-        if (!finished) {
-          abortController.abort();
-        }
-      });
-
-      response.on('close', () => {
-        if (!finished) {
-          abortController.abort();
-        }
-      });
-
-      const emit = (
-        event: Parameters<typeof agentRuntime.run>[1] extends (arg: infer T) => void ? T : never
-      ) => {
-        response.write(`data: ${JSON.stringify(event)}\n\n`);
-      };
+      const stream = createAgentEventStream(request, response);
 
       try {
         await agentRuntime.run(
@@ -82,12 +69,11 @@ export function registerAgentRoutes(
             maxSteps,
             maxCommandOutputChars,
           },
-          emit,
-          abortController.signal
+          stream.emit,
+          stream.signal
         );
       } finally {
-        finished = true;
-        response.end();
+        stream.close();
       }
     } catch (error) {
       console.error('[Agent] run error:', error);
@@ -97,12 +83,12 @@ export function registerAgentRoutes(
       }
 
       response.write(
-        `data: ${JSON.stringify({
+        serializeSseEvent({
           type: 'run_failed',
           runId: 'unknown',
           error: error instanceof Error ? error.message : 'Agent 执行失败。',
           timestamp: Date.now(),
-        })}\n\n`
+        })
       );
       response.end();
     }
@@ -140,37 +126,16 @@ export function registerAgentRoutes(
 
   app.post('/api/agent/runs/:runId/stream', async (request, response) => {
     try {
-      response.setHeader('Content-Type', 'text/event-stream');
-      response.setHeader('Cache-Control', 'no-cache');
-      response.setHeader('Connection', 'keep-alive');
-      response.flushHeaders?.();
-
-      const abortController = new AbortController();
-      let finished = false;
-
-      request.on('aborted', () => {
-        if (!finished) {
-          abortController.abort();
-        }
-      });
-
-      response.on('close', () => {
-        if (!finished) {
-          abortController.abort();
-        }
-      });
+      const stream = createAgentEventStream(request, response);
 
       try {
         await agentRuntime.streamContinuation(
           request.params.runId,
-          (event) => {
-            response.write(`data: ${JSON.stringify(event)}\n\n`);
-          },
-          abortController.signal
+          stream.emit,
+          stream.signal
         );
       } finally {
-        finished = true;
-        response.end();
+        stream.close();
       }
     } catch (error) {
       console.error('[Agent] continuation stream error:', error);
@@ -180,12 +145,12 @@ export function registerAgentRoutes(
       }
 
       response.write(
-        `data: ${JSON.stringify({
+        serializeSseEvent({
           type: 'run_failed',
           runId: request.params.runId,
           error: error instanceof Error ? error.message : 'Agent 继续执行失败。',
           timestamp: Date.now(),
-        })}\n\n`
+        })
       );
       response.end();
     }

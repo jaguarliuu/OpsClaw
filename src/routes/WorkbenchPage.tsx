@@ -27,7 +27,7 @@ import {
   LazyQuickConnectModal,
   LazyTerminalSettingsPanel,
 } from '@/features/workbench/workbenchLazyPanels';
-import { getAgentSessionLock } from '@/features/workbench/agentGateUiModel';
+import { createAgentSessionModel } from '@/features/workbench/agentSessionModel';
 import { useWorkbenchProfileActions } from '@/features/workbench/useWorkbenchProfileActions';
 import { useAgentRun } from '@/features/workbench/useAgentRun';
 import { useWorkbenchShellState } from '@/features/workbench/useWorkbenchShellState';
@@ -108,7 +108,10 @@ export function WorkbenchPage() {
     setSelectedProfileId,
   });
   const agentRun = useAgentRun();
-  const agentSessionLock = getAgentSessionLock(agentRun.activeGate);
+  const agentSessionLock = createAgentSessionModel({
+    activeGate: agentRun.activeGate,
+    pendingContinuationRunId: agentRun.pendingContinuationRunId,
+  }).sessionLock;
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
   const {
     closeConnectionPanel,

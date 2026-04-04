@@ -235,6 +235,102 @@ void test('expiring a gate twice is rejected', () => {
   );
 });
 
+void test('optional snapshot sink receives updated run snapshots after state transitions', () => {
+  const snapshots: Array<{ runId: string; state: string; gateStatus: string | null }> = [];
+  const registry = createAgentRunRegistry({
+    snapshotStore: {
+      save(snapshot) {
+        snapshots.push({
+          runId: snapshot.runId,
+          state: snapshot.state,
+          gateStatus: snapshot.openGate?.status ?? null,
+        });
+      },
+    },
+  });
+
+  registry.registerRun({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    task: 'wait for input',
+  });
+
+  const gate = registry.openGate({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    kind: 'terminal_input',
+    reason: '命令正在等待用户在终端中继续输入。',
+    deadlineAt: 1_700_000_000_000,
+    payload: {
+      toolCallId: 'call-1',
+      toolName: 'session.run_command',
+      command: 'sudo passwd root',
+      timeoutMs: 300000,
+    },
+  });
+
+  registry.expireGate({ runId: 'run-1', gateId: gate.id });
+
+  assert.deepEqual(snapshots, [
+    { runId: 'run-1', state: 'running', gateStatus: null },
+    { runId: 'run-1', state: 'waiting_for_human', gateStatus: 'open' },
+    { runId: 'run-1', state: 'suspended', gateStatus: 'expired' },
+  ]);
+});
+
+void test('getReattachableRun returns the latest waiting or suspended run for a session', () => {
+  const registry = createAgentRunRegistry();
+
+  registry.registerRun({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    task: 'older run',
+  });
+  const gate1 = registry.openGate({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    kind: 'terminal_input',
+    reason: '命令正在等待用户在终端中继续输入。',
+    deadlineAt: 1_700_000_000_000,
+    payload: {
+      toolCallId: 'call-1',
+      toolName: 'session.run_command',
+      command: 'sudo passwd root',
+      timeoutMs: 300000,
+    },
+  });
+  registry.expireGate({ runId: 'run-1', gateId: gate1.id });
+
+  registry.registerRun({
+    runId: 'run-2',
+    sessionId: 'session-1',
+    task: 'newer run',
+  });
+  registry.openGate({
+    runId: 'run-2',
+    sessionId: 'session-1',
+    kind: 'approval',
+    reason: '高危命令需要人工批准。',
+    deadlineAt: 1_700_000_000_100,
+    payload: {
+      toolCallId: 'call-2',
+      toolName: 'session.run_command',
+      arguments: {
+        command: 'systemctl restart nginx',
+      },
+      policy: {
+        action: 'require_approval',
+        matches: [],
+      },
+    },
+  });
+
+  const reattachable = registry.getReattachableRun('session-1');
+
+  assert.equal(reattachable?.runId, 'run-2');
+  assert.equal(reattachable?.state, 'waiting_for_human');
+});
+
 void test('opening a new gate on a suspended run is rejected', () => {
   const registry = createAgentRunRegistry();
   registry.registerRun({

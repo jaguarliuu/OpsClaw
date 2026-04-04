@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 import {
+  getReattachableAgentRun,
   rejectAgentGate,
   resolveAgentGate,
   resumeAgentGate,
@@ -13,7 +14,7 @@ import type {
   AgentTimelineItem,
   HumanGateRecord,
 } from './types.agent';
-import { applyAgentEventToTimeline } from './useAgentRunModel';
+import { applyAgentEventToTimeline, reduceAgentEventState } from './useAgentRunModel';
 
 type RunAgentOptions = {
   providerId: string;
@@ -38,6 +39,12 @@ export function useAgentRun() {
   const [activeGate, setActiveGate] = useState<HumanGateRecord | null>(null);
   const [pendingContinuationRunId, setPendingContinuationRunId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const eventStateRef = useRef({
+    runId: null as string | null,
+    runState: null as AgentRunState | null,
+    activeGate: null as HumanGateRecord | null,
+    error: null as string | null,
+  });
 
   const appendItem = useCallback((item: AgentTimelineItem) => {
     setItems((current) => [...current, item]);
@@ -45,27 +52,21 @@ export function useAgentRun() {
 
   const handleEvent = useCallback(
     (event: AgentStreamEvent) => {
-      if (event.type === 'run_started') {
-        setRunId(event.runId);
-        setPendingContinuationRunId(null);
-        return;
-      }
-
-      if (event.type === 'run_state_changed') {
-        setRunState(event.state);
-      }
-
-      if (event.type === 'human_gate_opened' || event.type === 'human_gate_expired') {
-        setActiveGate(event.gate);
-      }
-
-      if (event.type === 'human_gate_resolved' || event.type === 'human_gate_rejected') {
-        setActiveGate(null);
-      }
+      const nextEventState = reduceAgentEventState(eventStateRef.current, event);
+      eventStateRef.current = nextEventState;
+      setRunId(nextEventState.runId);
+      setRunState(nextEventState.runState);
+      setActiveGate(nextEventState.activeGate);
+      setError(nextEventState.error);
 
       setItems((current): AgentTimelineItem[] =>
         applyAgentEventToTimeline(current, event, createItemId)
       );
+
+      if (event.type === 'run_started') {
+        setPendingContinuationRunId(null);
+        return;
+      }
 
       if (event.type === 'run_completed') {
         setRunState('completed');
@@ -76,17 +77,12 @@ export function useAgentRun() {
       }
 
       if (event.type === 'run_failed') {
-        setRunState('failed');
-        setActiveGate(null);
         setPendingContinuationRunId(null);
-        setError(event.error);
         setIsRunning(false);
         return;
       }
 
       if (event.type === 'run_cancelled') {
-        setRunState('cancelled');
-        setActiveGate(null);
         setPendingContinuationRunId(null);
         setIsRunning(false);
       }
@@ -106,11 +102,21 @@ export function useAgentRun() {
       let actionApplied = false;
       abortControllerRef.current = controller;
       setError(null);
+      eventStateRef.current = {
+        ...eventStateRef.current,
+        error: null,
+      };
       setIsRunning(true);
 
       try {
         const snapshot = await action();
         actionApplied = true;
+        eventStateRef.current = {
+          ...eventStateRef.current,
+          runId: runIdToContinue,
+          runState: snapshot.state,
+          activeGate: snapshot.openGate,
+        };
         setRunState(snapshot.state);
         setActiveGate(snapshot.openGate);
         setPendingContinuationRunId(runIdToContinue);
@@ -164,6 +170,12 @@ export function useAgentRun() {
       const controller = new AbortController();
       abortControllerRef.current = controller;
       setError(null);
+      eventStateRef.current = {
+        runId: null,
+        runState: 'running',
+        activeGate: null,
+        error: null,
+      };
       setIsRunning(true);
       setRunId(null);
       setRunState('running');
@@ -220,6 +232,10 @@ export function useAgentRun() {
       const controller = new AbortController();
       abortControllerRef.current = controller;
       setError(null);
+      eventStateRef.current = {
+        ...eventStateRef.current,
+        error: null,
+      };
       setIsRunning(true);
 
       try {
@@ -276,12 +292,42 @@ export function useAgentRun() {
   );
 
   const clearItems = useCallback(() => {
+    eventStateRef.current = {
+      runId: null,
+      runState: null,
+      activeGate: null,
+      error: null,
+    };
     setItems([]);
     setError(null);
     setRunId(null);
     setRunState(null);
     setActiveGate(null);
     setPendingContinuationRunId(null);
+  }, []);
+
+  const loadReattachableRun = useCallback(async (sessionId: string) => {
+    const snapshot = await getReattachableAgentRun(sessionId);
+    if (!snapshot) {
+      return null;
+    }
+
+    eventStateRef.current = {
+      runId: snapshot.runId,
+      runState: snapshot.state,
+      activeGate: snapshot.openGate,
+      error: null,
+    };
+    setError(null);
+    setRunId(snapshot.runId);
+    setRunState(snapshot.state);
+    setActiveGate(snapshot.openGate);
+    setPendingContinuationRunId(
+      snapshot.state === 'waiting_for_human' || snapshot.state === 'suspended'
+        ? snapshot.runId
+        : null
+    );
+    return snapshot;
   }, []);
 
   return {
@@ -298,6 +344,7 @@ export function useAgentRun() {
     rejectGate,
     resumeGate,
     continuePendingRun,
+    loadReattachableRun,
     clearItems,
   };
 }

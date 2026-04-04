@@ -23,7 +23,7 @@ import { useSshTerminalSearch } from '@/features/workbench/useSshTerminalSearch'
 import { useSshTerminalRuntime } from '@/features/workbench/useSshTerminalRuntime';
 import { useSshTerminalViewport } from '@/features/workbench/useSshTerminalViewport';
 import { useTerminalSettings } from '@/features/workbench/useTerminalSettings';
-import { getAgentSessionLockBannerText } from '@/features/workbench/agentGateUiModel';
+import { getAgentSessionLockBannerText } from '@/features/workbench/agentSessionModel';
 import type {
   AgentSessionLock,
   ConnectionStatus,

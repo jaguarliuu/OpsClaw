@@ -1,5 +1,10 @@
 import { buildServerHttpBaseUrl } from './serverBase';
-import type { AgentApprovalMode, AgentRunSnapshot, AgentStreamEvent } from './types.agent';
+import {
+  parseAgentStreamEvent,
+  type AgentApprovalMode,
+  type AgentRunSnapshot,
+  type AgentStreamEvent,
+} from './types.agent';
 
 type StreamAgentRunOptions = {
   providerId: string;
@@ -51,6 +56,15 @@ export async function resumeAgentGate(runId: string, gateId: string) {
   );
 
   return readJson<AgentRunSnapshot>(response);
+}
+
+export async function getReattachableAgentRun(sessionId: string) {
+  const response = await fetch(
+    `${buildServerHttpBaseUrl()}/api/agent/sessions/${sessionId}/runs/reattach`
+  );
+
+  const payload = await readJson<{ item: AgentRunSnapshot | null }>(response);
+  return payload.item;
 }
 
 export async function resolveAgentGate(runId: string, gateId: string) {
@@ -154,7 +168,7 @@ async function consumeAgentEventStream(
         continue;
       }
 
-      const event = JSON.parse(payload) as AgentStreamEvent;
+      const event = parseAgentStreamEvent(payload);
       onEvent?.(event);
     }
   }

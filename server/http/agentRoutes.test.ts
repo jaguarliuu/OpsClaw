@@ -4,7 +4,7 @@ import test from 'node:test';
 import { registerAgentRoutes } from './agentRoutes.js';
 
 type RegisteredRoute = {
-  method: 'post';
+  method: 'get' | 'post';
   path: string;
   handler: (request: FakeRequest, response: FakeResponse) => Promise<void> | void;
 };
@@ -33,6 +33,9 @@ type FakeResponse = {
 
 function createFakeApp(routes: RegisteredRoute[]) {
   return {
+    get(path: string, handler: RegisteredRoute['handler']) {
+      routes.push({ method: 'get', path, handler });
+    },
     post(path: string, handler: RegisteredRoute['handler']) {
       routes.push({ method: 'post', path, handler });
     },
@@ -87,9 +90,10 @@ function createFakeResponse(): FakeResponse {
 
 function getRequiredRoute(
   routes: RegisteredRoute[],
-  path: string
+  path: string,
+  method: RegisteredRoute['method'] = 'post'
 ): RegisteredRoute['handler'] {
-  const route = routes.find((candidate) => candidate.method === 'post' && candidate.path === path);
+  const route = routes.find((candidate) => candidate.method === method && candidate.path === path);
   assert.ok(route, `missing route ${path}`);
   return route.handler;
 }
@@ -260,4 +264,124 @@ void test('stream continuation proxies SSE events for a resumed run', async () =
     'data: {"type":"run_state_changed","runId":"run-1","timestamp":1}\n\n',
     'data: {"type":"run_completed","runId":"run-1","timestamp":2}\n\n',
   ]);
+});
+
+void test('create run streams SSE events for a new agent run', async () => {
+  const routes: RegisteredRoute[] = [];
+  const app = createFakeApp(routes);
+  const calls: Array<{ providerId: string; model: string; task: string; sessionId: string }> = [];
+
+  registerAgentRoutes(app as never, {
+    llmProviderStore: {
+      getProviderWithApiKey(providerId: string) {
+        return {
+          id: providerId,
+          enabled: true,
+        };
+      },
+    } as never,
+    agentRuntime: {
+      async run(
+        input: {
+          providerId: string;
+          model: string;
+          task: string;
+          sessionId: string;
+        },
+        emit: (event: { type: string; runId: string; timestamp: number }) => void,
+        signal: AbortSignal
+      ) {
+        calls.push(input);
+        assert.equal(signal.aborted, false);
+        emit({
+          type: 'run_started',
+          runId: 'run-1',
+          timestamp: 1,
+        });
+        emit({
+          type: 'run_completed',
+          runId: 'run-1',
+          timestamp: 2,
+        });
+      },
+    } as never,
+  });
+
+  const handler = getRequiredRoute(routes, '/api/agent/runs');
+  const response = createFakeResponse();
+
+  await handler(
+    createFakeRequest({}, {
+      providerId: 'provider-1',
+      model: 'qwen-plus',
+      task: '检查磁盘',
+      sessionId: 'session-1',
+    }),
+    response
+  );
+
+  assert.deepEqual(calls, [
+    {
+      providerId: 'provider-1',
+      provider: {
+        id: 'provider-1',
+        enabled: true,
+      },
+      model: 'qwen-plus',
+      task: '检查磁盘',
+      sessionId: 'session-1',
+      approvalMode: 'auto-readonly',
+      maxSteps: undefined,
+      maxCommandOutputChars: undefined,
+    },
+  ]);
+  assert.equal(response.headers['Content-Type'], 'text/event-stream');
+  assert.equal(response.ended, true);
+  assert.deepEqual(response.chunks, [
+    'data: {"type":"run_started","runId":"run-1","timestamp":1}\n\n',
+    'data: {"type":"run_completed","runId":"run-1","timestamp":2}\n\n',
+  ]);
+});
+
+void test('reattach route returns the latest reattachable run snapshot for a session', async () => {
+  const routes: RegisteredRoute[] = [];
+  const app = createFakeApp(routes);
+
+  registerAgentRoutes(app as never, {
+    llmProviderStore: {} as never,
+    agentRuntime: {
+      getSessionReattachableRun(sessionId: string) {
+        assert.equal(sessionId, 'session-1');
+        return {
+          runId: 'run-2',
+          sessionId,
+          task: '重启 nginx',
+          state: 'waiting_for_human',
+          openGate: {
+            id: 'gate-2',
+            runId: 'run-2',
+            sessionId,
+            kind: 'approval',
+            status: 'open',
+            reason: '需要审批',
+            openedAt: 1,
+            deadlineAt: 2,
+            payload: {
+              toolCallId: 'call-2',
+              toolName: 'session.run_command',
+              arguments: { command: 'systemctl restart nginx' },
+              policy: { action: 'require_approval', matches: [] },
+            },
+          },
+        };
+      },
+    } as never,
+  });
+
+  const handler = getRequiredRoute(routes, '/api/agent/sessions/:sessionId/runs/reattach', 'get');
+  const response = createFakeResponse();
+
+  await handler(createFakeRequest({ sessionId: 'session-1' }), response);
+
+  assert.equal((response.body as { item?: { runId?: string } }).item?.runId, 'run-2');
 });
