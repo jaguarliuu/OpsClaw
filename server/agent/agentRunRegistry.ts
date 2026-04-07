@@ -4,6 +4,7 @@ import type {
   AgentRunState,
   ApprovalGatePayload,
   HumanGateRecord,
+  ParameterConfirmationGatePayload,
   TerminalInputGatePayload,
 } from './humanGateTypes.js';
 
@@ -35,6 +36,10 @@ export type OpenHumanGateInput =
   | (OpenHumanGateInputBase & {
       kind: 'approval';
       payload: ApprovalGatePayload;
+    })
+  | (OpenHumanGateInputBase & {
+      kind: 'parameter_confirmation';
+      payload: ParameterConfirmationGatePayload;
     });
 
 export function createAgentRunRegistry(options?: {
@@ -103,11 +108,23 @@ export function createAgentRunRegistry(options?: {
               deadlineAt: input.deadlineAt,
               payload: input.payload,
             }
+          : input.kind === 'approval'
+            ? {
+                id: randomUUID(),
+                runId: input.runId,
+                sessionId: run.sessionId,
+                kind: 'approval',
+                status: 'open',
+                reason: input.reason,
+                openedAt: Date.now(),
+                deadlineAt: input.deadlineAt,
+                payload: input.payload,
+              }
           : {
               id: randomUUID(),
               runId: input.runId,
               sessionId: run.sessionId,
-              kind: 'approval',
+              kind: 'parameter_confirmation',
               status: 'open',
               reason: input.reason,
               openedAt: Date.now(),

@@ -9,6 +9,7 @@ import {
 
 import { completeAgentContext, streamAgentContext } from '../llmClient.js';
 import type { StoredLlmProvider } from '../llmProviderStore.js';
+import type { EffectiveOpsClawRules } from './controlledExecutionTypes.js';
 import type { AgentApprovalMode, AgentStreamEvent, ToolExecutionEnvelope } from './agentTypes.js';
 import type { FileMemoryStore } from './fileMemoryStore.js';
 import { logAgent } from './logger.js';
@@ -59,8 +60,10 @@ export type CreateAgentLoopOptions = {
   task: string;
   sessionId: string;
   sessionLabel: string;
+  sessionGroupName: string | null;
   approvalMode: AgentApprovalMode;
   maxCommandOutputChars: number;
+  effectiveRules: EffectiveOpsClawRules;
   hardMaxSteps: number;
   initialStepBudget: number;
   context: Context;
@@ -473,9 +476,11 @@ async function executeToolCallsFromIndex(options: {
       userTask: options.state.task.trim(),
       sessionId: options.state.sessionId,
       sessionLabel: options.state.sessionLabel,
+      sessionGroupName: options.state.sessionGroupName,
       step: options.step,
       approvalMode: options.state.approvalMode,
       maxCommandOutputChars: options.state.maxCommandOutputChars,
+      effectiveRules: options.state.effectiveRules,
       signal: options.signal,
       capabilities: {
         sessions: options.state.sessions as never,

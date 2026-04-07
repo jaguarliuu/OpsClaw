@@ -43,7 +43,7 @@ function extractProtectedParameters(command: string): ExtractedProtectedParamete
   const parameters: ExtractedProtectedParameter[] = [];
 
   const userAddMatch = command.match(
-    /\b(?:useradd|adduser)\b(?:\s+-[^\s]+\s+)*([a-z_][a-z0-9_-]*)/i
+    /\b(?:useradd|adduser)\b(?:\s+-[^\s]+)*\s+([a-z_][a-z0-9_-]*)/i
   );
   if (userAddMatch) {
     parameters.push({ name: 'username', value: userAddMatch[1] });
@@ -89,6 +89,7 @@ export function buildSessionCommandPlan(input: {
   effectiveRules: EffectiveOpsClawRules;
   sessionGroupName: string | null;
   userTask: string;
+  confirmedFields?: Partial<Record<ProtectedParameterName, string>>;
 }): SessionCommandPlan {
   const intentKind = classifySessionCommandIntent(input.command);
   const intentRule = input.effectiveRules.intents[intentKind];
@@ -98,8 +99,11 @@ export function buildSessionCommandPlan(input: {
   );
   const parameters = extracted.map((parameter) => ({
     ...parameter,
-    confirmed: false,
-    source: detectParameterSource(input.userTask, parameter.value),
+    confirmed: input.confirmedFields?.[parameter.name] !== undefined,
+    source:
+      input.confirmedFields?.[parameter.name] !== undefined
+        ? 'user_confirmed'
+        : detectParameterSource(input.userTask, parameter.value),
   }));
 
   const hasProtectedInference = parameters.some(

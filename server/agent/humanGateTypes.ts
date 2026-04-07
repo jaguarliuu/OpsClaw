@@ -1,4 +1,9 @@
 import type { AgentPolicySummary } from './agentTypes.js';
+import type {
+  OpsClawIntentKind,
+  ParameterSource,
+  ProtectedParameterName,
+} from './controlledExecutionTypes.js';
 
 export type AgentRunState =
   | 'running'
@@ -8,7 +13,7 @@ export type AgentRunState =
   | 'failed'
   | 'cancelled';
 
-export type HumanGateKind = 'terminal_input' | 'approval';
+export type HumanGateKind = 'terminal_input' | 'approval' | 'parameter_confirmation';
 export type HumanGateStatus = 'open' | 'resolved' | 'rejected' | 'expired';
 
 export type TerminalInputGatePayload = {
@@ -26,7 +31,26 @@ export type ApprovalGatePayload = {
   policy: AgentPolicySummary;
 };
 
-export type HumanGatePayload = TerminalInputGatePayload | ApprovalGatePayload;
+export type ParameterConfirmationField = {
+  name: ProtectedParameterName;
+  label: string;
+  value: string;
+  required: boolean;
+  source: ParameterSource;
+};
+
+export type ParameterConfirmationGatePayload = {
+  toolCallId: string;
+  toolName: 'session.run_command';
+  command: string;
+  intentKind: OpsClawIntentKind;
+  fields: ParameterConfirmationField[];
+};
+
+export type HumanGatePayload =
+  | TerminalInputGatePayload
+  | ApprovalGatePayload
+  | ParameterConfirmationGatePayload;
 type HumanGateRecordBase = {
   id: string;
   runId: string;
@@ -47,4 +71,12 @@ export type ApprovalGateRecord = HumanGateRecordBase & {
   payload: ApprovalGatePayload;
 };
 
-export type HumanGateRecord = TerminalInputGateRecord | ApprovalGateRecord;
+export type ParameterConfirmationGateRecord = HumanGateRecordBase & {
+  kind: 'parameter_confirmation';
+  payload: ParameterConfirmationGatePayload;
+};
+
+export type HumanGateRecord =
+  | TerminalInputGateRecord
+  | ApprovalGateRecord
+  | ParameterConfirmationGateRecord;

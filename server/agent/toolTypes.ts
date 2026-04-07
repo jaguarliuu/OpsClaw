@@ -1,8 +1,13 @@
 import type { Static, Tool, TSchema } from '@mariozechner/pi-ai';
 
 import type { AgentApprovalMode, AgentStreamEvent, ToolExecutionEnvelope } from './agentTypes.js';
+import type { EffectiveOpsClawRules, ProtectedParameterName } from './controlledExecutionTypes.js';
 import type { FileMemoryStore } from './fileMemoryStore.js';
-import type { ApprovalGatePayload, TerminalInputGatePayload } from './humanGateTypes.js';
+import type {
+  ApprovalGatePayload,
+  ParameterConfirmationGatePayload,
+  TerminalInputGatePayload,
+} from './humanGateTypes.js';
 import type { SessionRegistry } from './sessionRegistry.js';
 
 export type ToolRiskLevel = 'safe' | 'caution' | 'dangerous';
@@ -26,9 +31,11 @@ export type ToolExecutionContext = {
   userTask: string;
   sessionId: string | null;
   sessionLabel?: string;
+  sessionGroupName: string | null;
   step: number;
   approvalMode: AgentApprovalMode;
   maxCommandOutputChars: number;
+  effectiveRules: EffectiveOpsClawRules;
   signal: AbortSignal;
   capabilities: {
     sessions: SessionRegistry;
@@ -112,7 +119,20 @@ export type ToolPauseOutcome =
       reason: string;
       payload: ApprovalGatePayload;
       continuation: {
-        resume: (signal?: AbortSignal) => Promise<ToolExecutionEnvelope>;
+        resume: (signal?: AbortSignal) => Promise<ToolExecutionEnvelope | ToolPauseOutcome>;
+        reject: () => ToolExecutionEnvelope;
+      };
+    }
+  | {
+      kind: 'pause';
+      gateKind: 'parameter_confirmation';
+      reason: string;
+      payload: ParameterConfirmationGatePayload;
+      continuation: {
+        resume: (
+          fields: Partial<Record<ProtectedParameterName, string>>,
+          signal?: AbortSignal
+        ) => Promise<ToolExecutionEnvelope | ToolPauseOutcome>;
         reject: () => ToolExecutionEnvelope;
       };
     };

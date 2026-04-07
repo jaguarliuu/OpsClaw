@@ -69,8 +69,12 @@ function createBaseLoopOptions() {
     task: '检查磁盘空间',
     sessionId: 'session-1',
     sessionLabel: 'ubuntu@10.0.0.8:22',
+    sessionGroupName: null,
     approvalMode: 'auto-readonly' as const,
     maxCommandOutputChars: 4000,
+    effectiveRules: {
+      intents: {},
+    },
     hardMaxSteps: 4,
     initialStepBudget: 4,
     context: createBaseContext(),

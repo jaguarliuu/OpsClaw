@@ -20,6 +20,7 @@ import type { FileMemoryStore } from './fileMemoryStore.js';
 import type { HumanGateRecord } from './humanGateTypes.js';
 import { logAgent } from './logger.js';
 import type { StoredNodeDetail } from '../nodeStore.js';
+import { loadOpsClawRules, resolveEffectiveOpsClawRules } from './opsclawRules.js';
 import { buildAgentSystemPrompt } from './agentPrompt.js';
 import { ToolExecutor } from './toolExecutor.js';
 import type { ToolPauseOutcome, ToolRegistry } from './toolTypes.js';
@@ -58,7 +59,9 @@ type AgentRuntimeDependencies = {
 type PendingRunAction =
   | { kind: 'resume_waiting' }
   | { kind: 'resolve_approval' }
-  | { kind: 'reject_approval' };
+  | { kind: 'reject_approval' }
+  | { kind: 'resolve_parameter_confirmation'; fields: Record<string, string> }
+  | { kind: 'reject_parameter_confirmation' };
 
 type PausedRunHandle = {
   pause: ToolPauseOutcome;
@@ -71,9 +74,17 @@ type PausedRunHandle = {
 };
 
 type PauseResolution =
-  | { kind: 'paused' }
+  | { kind: 'paused'; pause: ToolPauseOutcome }
   | { kind: 'failed' }
   | { kind: 'completed'; envelope: ToolExecutionEnvelope };
+
+const OPSCLAW_RULES_URL = new URL('../../opsclaw.rules.yaml', import.meta.url);
+
+function isPauseOutcome(
+  value: ToolExecutionEnvelope | ToolPauseOutcome
+): value is ToolPauseOutcome {
+  return typeof value === 'object' && value !== null && 'kind' in value && value.kind === 'pause';
+}
 
 function formatAutoMemoryEntry(task: string, finalAnswer: string, observations: StableObservation[]) {
   const timestamp = new Date().toISOString();
@@ -245,13 +256,20 @@ export class OpsAgentRuntime {
     return this.agentRunRegistry.getRun(runId);
   }
 
-  resolveGate(runId: string, gateId: string) {
+  resolveGate(
+    runId: string,
+    gateId: string,
+    input?: { fields?: Record<string, string> }
+  ) {
     const snapshot = this.agentRunRegistry.getRun(runId);
     if (!snapshot?.openGate || snapshot.openGate.id !== gateId) {
       throw new Error('指定的 human gate 不存在。');
     }
-    if (snapshot.openGate.kind !== 'approval') {
-      throw new Error('只有 approval gate 支持批准。');
+    if (
+      snapshot.openGate.kind !== 'approval' &&
+      snapshot.openGate.kind !== 'parameter_confirmation'
+    ) {
+      throw new Error('只有 approval 或 parameter_confirmation gate 支持批准。');
     }
 
     const pausedRun = this.pausedRuns.get(runId);
@@ -260,7 +278,13 @@ export class OpsAgentRuntime {
     }
 
     this.agentRunRegistry.resolveGate({ runId, gateId });
-    pausedRun.pendingAction = { kind: 'resolve_approval' };
+    pausedRun.pendingAction =
+      snapshot.openGate.kind === 'approval'
+        ? { kind: 'resolve_approval' }
+        : {
+            kind: 'resolve_parameter_confirmation',
+            fields: input?.fields ?? {},
+          };
     return this.agentRunRegistry.getRun(runId);
   }
 
@@ -269,8 +293,11 @@ export class OpsAgentRuntime {
     if (!snapshot?.openGate || snapshot.openGate.id !== gateId) {
       throw new Error('指定的 human gate 不存在。');
     }
-    if (snapshot.openGate.kind !== 'approval') {
-      throw new Error('只有 approval gate 支持拒绝。');
+    if (
+      snapshot.openGate.kind !== 'approval' &&
+      snapshot.openGate.kind !== 'parameter_confirmation'
+    ) {
+      throw new Error('只有 approval 或 parameter_confirmation gate 支持拒绝。');
     }
 
     const pausedRun = this.pausedRuns.get(runId);
@@ -279,7 +306,10 @@ export class OpsAgentRuntime {
     }
 
     this.agentRunRegistry.rejectGate({ runId, gateId });
-    pausedRun.pendingAction = { kind: 'reject_approval' };
+    pausedRun.pendingAction =
+      snapshot.openGate.kind === 'approval'
+        ? { kind: 'reject_approval' }
+        : { kind: 'reject_parameter_confirmation' };
     return this.agentRunRegistry.getRun(runId);
   }
 
@@ -340,6 +370,12 @@ export class OpsAgentRuntime {
       });
       return;
     }
+    const node = session.nodeId ? this.dependencies.getNodeById(session.nodeId) : null;
+    const effectiveRules = resolveEffectiveOpsClawRules(
+      await loadOpsClawRules(OPSCLAW_RULES_URL),
+      node?.groupName ?? null
+    );
+    const sessionGroupName = node?.groupName ?? null;
 
     const context: Context = {
       systemPrompt: buildAgentSystemPrompt({
@@ -410,8 +446,10 @@ export class OpsAgentRuntime {
       task: input.task.trim(),
       sessionId: input.sessionId,
       sessionLabel,
+      sessionGroupName,
       approvalMode: input.approvalMode ?? 'auto-readonly',
       maxCommandOutputChars,
+      effectiveRules,
       hardMaxSteps,
       initialStepBudget,
       context,
@@ -546,6 +584,7 @@ export class OpsAgentRuntime {
         return;
       }
 
+      let activePause = outcome.pause;
       let continueRun: PausedRunHandle['continueRun'];
       continueRun = async ({ emit: resumedEmit, signal: resumedSignal, action }) => {
         const resumed = await this.resumePausedToolCall({
@@ -553,12 +592,13 @@ export class OpsAgentRuntime {
           emit: resumedEmit,
           signal: resumedSignal,
           action,
-          pause: outcome.pause,
+          pause: activePause,
         });
 
         if (resumed.kind === 'paused') {
+          activePause = resumed.pause;
           this.pausedRuns.set(runId, {
-            pause: outcome.pause,
+            pause: resumed.pause,
             pendingAction: null,
             continueRun,
           });
@@ -574,7 +614,12 @@ export class OpsAgentRuntime {
           resumedSignal,
           resumedEmit
         );
-        if (action.kind === 'resolve_approval' || action.kind === 'reject_approval') {
+        if (
+          action.kind === 'resolve_approval' ||
+          action.kind === 'reject_approval' ||
+          action.kind === 'resolve_parameter_confirmation' ||
+          action.kind === 'reject_parameter_confirmation'
+        ) {
           this.agentRunRegistry.markRunRunning({
             runId,
             clearGate: true,
@@ -585,16 +630,16 @@ export class OpsAgentRuntime {
 
       const pauseOutcome = await this.handlePauseOutcome({
         runId,
-        input,
-        step: outcome.step,
+        sessionId: input.sessionId,
         emit: activeEmit,
         signal: activeSignal,
         pause: outcome.pause,
       });
 
       if (pauseOutcome.kind === 'paused') {
+        activePause = pauseOutcome.pause;
         this.pausedRuns.set(runId, {
-          pause: outcome.pause,
+          pause: pauseOutcome.pause,
           pendingAction: null,
           continueRun,
         });
@@ -619,8 +664,7 @@ export class OpsAgentRuntime {
 
   private async handlePauseOutcome(options: {
     runId: string;
-    input: CreateAgentRunInput;
-    step: number;
+    sessionId: string;
     emit: (event: AgentStreamEvent) => void;
     signal: AbortSignal;
     pause: ToolPauseOutcome;
@@ -632,7 +676,7 @@ export class OpsAgentRuntime {
 
     const gate = this.agentRunRegistry.openGate({
       runId: options.runId,
-      sessionId: options.input.sessionId,
+      sessionId: options.sessionId,
       kind: options.pause.gateKind,
       reason: options.pause.reason,
       deadlineAt,
@@ -652,16 +696,20 @@ export class OpsAgentRuntime {
       timestamp: Date.now(),
     });
 
-    if (options.pause.gateKind === 'approval') {
-      return { kind: 'paused' };
+    if (
+      options.pause.gateKind === 'approval' ||
+      options.pause.gateKind === 'parameter_confirmation'
+    ) {
+      return { kind: 'paused', pause: options.pause };
     }
 
     const terminalPause = options.pause as Extract<ToolPauseOutcome, { gateKind: 'terminal_input' }>;
     return this.waitForTerminalInputGate({
       runId: options.runId,
-      sessionId: options.input.sessionId,
+      sessionId: options.sessionId,
       gate,
       emit: options.emit,
+      pause: terminalPause,
       waitForCompletion: () => terminalPause.continuation.waitForCompletion(),
       command: terminalPause.payload.command,
     });
@@ -672,6 +720,7 @@ export class OpsAgentRuntime {
     sessionId: string;
     gate: HumanGateRecord;
     emit: (event: AgentStreamEvent) => void;
+    pause: Extract<ToolPauseOutcome, { gateKind: 'terminal_input' }>;
     waitForCompletion: () => Promise<ToolExecutionEnvelope>;
     command: string;
   }): Promise<PauseResolution> {
@@ -760,7 +809,7 @@ export class OpsAgentRuntime {
         state: 'suspended',
         timestamp: Date.now(),
       });
-      return { kind: 'paused' };
+      return { kind: 'paused', pause: options.pause };
     }
   }
 
@@ -801,9 +850,20 @@ export class OpsAgentRuntime {
           state: 'running',
           timestamp: Date.now(),
         });
+        const resumed = await options.pause.continuation.resume(options.signal);
+        if (isPauseOutcome(resumed)) {
+          return this.handlePauseOutcome({
+            runId: options.runId,
+            sessionId: snapshot.sessionId,
+            emit: options.emit,
+            signal: options.signal,
+            pause: resumed,
+          });
+        }
+
         return {
           kind: 'completed',
-          envelope: await options.pause.continuation.resume(options.signal),
+          envelope: resumed,
         };
       }
 
@@ -836,6 +896,81 @@ export class OpsAgentRuntime {
       throw new Error('approval gate 只能执行批准或拒绝操作。');
     }
 
+    if (options.pause.gateKind === 'parameter_confirmation') {
+      if (snapshot.openGate.kind !== 'parameter_confirmation') {
+        throw new Error('当前 gate 与待恢复的 parameter_confirmation 操作不匹配。');
+      }
+
+      if (options.action.kind === 'resolve_parameter_confirmation') {
+        if (snapshot.openGate.status !== 'resolved') {
+          throw new Error('parameter_confirmation gate 尚未被确认。');
+        }
+
+        options.emit({
+          type: 'human_gate_resolved',
+          runId: options.runId,
+          gate: snapshot.openGate,
+          timestamp: Date.now(),
+        });
+        this.agentRunRegistry.markRunRunning({
+          runId: options.runId,
+        });
+        options.emit({
+          type: 'run_state_changed',
+          runId: options.runId,
+          state: 'running',
+          timestamp: Date.now(),
+        });
+
+        const resumed = await options.pause.continuation.resume(
+          options.action.fields,
+          options.signal
+        );
+        if (isPauseOutcome(resumed)) {
+          return this.handlePauseOutcome({
+            runId: options.runId,
+            sessionId: snapshot.sessionId,
+            emit: options.emit,
+            signal: options.signal,
+            pause: resumed,
+          });
+        }
+
+        return {
+          kind: 'completed',
+          envelope: resumed,
+        };
+      }
+
+      if (options.action.kind === 'reject_parameter_confirmation') {
+        if (snapshot.openGate.status !== 'rejected') {
+          throw new Error('parameter_confirmation gate 尚未被拒绝。');
+        }
+
+        options.emit({
+          type: 'human_gate_rejected',
+          runId: options.runId,
+          gate: snapshot.openGate,
+          timestamp: Date.now(),
+        });
+        this.agentRunRegistry.markRunRunning({
+          runId: options.runId,
+        });
+        options.emit({
+          type: 'run_state_changed',
+          runId: options.runId,
+          state: 'running',
+          timestamp: Date.now(),
+        });
+        return {
+          kind: 'completed',
+          envelope: options.pause.continuation.reject(),
+        };
+      }
+
+      throw new Error('parameter_confirmation gate 只能执行确认或拒绝操作。');
+    }
+
     if (options.action.kind !== 'resume_waiting') {
       throw new Error('terminal_input gate 只能继续等待。');
     }
@@ -852,6 +987,7 @@ export class OpsAgentRuntime {
       sessionId: snapshot.sessionId,
       gate: snapshot.openGate,
       emit: options.emit,
+      pause: terminalPause,
       waitForCompletion: () => terminalPause.continuation.waitForCompletion(options.signal),
       command: terminalPause.payload.command,
     });

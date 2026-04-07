@@ -1680,6 +1680,483 @@ test('resumeWaiting 会继续等待同一个 terminal_input gate 并让原始 ru
   assert.equal(runtime.getRunSnapshot(runId)?.state, 'completed');
 });
 
+test('resolveGate 会用确认后的字段恢复 parameter_confirmation gate，并在需要时继续进入 approval gate', async () => {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  const initialEvents: unknown[] = [];
+  const resumedEvents: unknown[] = [];
+  let completionCalls = 0;
+  let executeCalls = 0;
+  let executedCommand: string | null = null;
+
+  const runtime = new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      async executeCommand(_sessionId: string, command: string) {
+        executeCalls += 1;
+        executedCommand = command;
+        return {
+          sessionId: 'session-1',
+          command,
+          exitCode: 0,
+          output: 'user created',
+          truncated: false,
+          startedAt: Date.now(),
+          completedAt: Date.now(),
+          durationMs: 5,
+        };
+      },
+    } as never,
+    completeAgentContext: async () => {
+      completionCalls += 1;
+      if (completionCalls === 1) {
+        return createAssistantMessage({
+          stopReason: 'toolUse',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'call-1',
+              name: 'session.run_command',
+              arguments: {
+                sessionId: 'session-1',
+                command: 'sudo adduser adminuser',
+              },
+            },
+          ],
+        });
+      }
+
+      return createAssistantMessage({
+        stopReason: 'stop',
+        content: [{ type: 'text', text: '用户已创建。' }],
+      });
+    },
+  });
+
+  await runtime.run(
+    {
+      providerId: 'provider-1',
+      provider: createProvider(),
+      model: 'qwen-plus',
+      task: '创建一个 root 权限用户',
+      sessionId: 'session-1',
+      approvalMode: 'manual-sensitive',
+    },
+    event => {
+      initialEvents.push(event);
+    },
+    new AbortController().signal
+  );
+
+  const openedGateEvent = initialEvents.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'human_gate_opened'
+  ) as
+    | {
+        runId?: unknown;
+        gate?: {
+          id?: unknown;
+          kind?: unknown;
+          payload?: {
+            command?: unknown;
+            fields?: Array<{
+              name?: unknown;
+              value?: unknown;
+              source?: unknown;
+            }>;
+          };
+        };
+      }
+    | undefined;
+
+  const runId = typeof openedGateEvent?.runId === 'string' ? openedGateEvent.runId : null;
+  const gateId =
+    openedGateEvent?.gate && typeof openedGateEvent.gate.id === 'string'
+      ? openedGateEvent.gate.id
+      : null;
+
+  assert.ok(runId);
+  assert.ok(gateId);
+  assert.equal(openedGateEvent?.gate?.kind, 'parameter_confirmation');
+  assert.equal(openedGateEvent?.gate?.payload?.command, 'sudo adduser adminuser');
+  assert.deepEqual(openedGateEvent?.gate?.payload?.fields, [
+    {
+      name: 'username',
+      label: '用户名',
+      value: 'adminuser',
+      required: true,
+      source: 'agent_inferred',
+    },
+  ]);
+  assert.equal(executeCalls, 0);
+  assert.equal(executedCommand, null);
+
+  const snapshot = runtime.resolveGate(runId, gateId, {
+    fields: {
+      username: 'ops-admin',
+    },
+  });
+  assert.equal(snapshot?.openGate?.status, 'resolved');
+  assert.equal(snapshot?.state, 'suspended');
+
+  await runtime.streamContinuation(
+    runId,
+    event => {
+      resumedEvents.push(event);
+    },
+    new AbortController().signal
+  );
+
+  const approvalGateEvent = resumedEvents.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'human_gate_opened' &&
+      (event as { gate?: { kind?: unknown } }).gate?.kind === 'approval'
+  ) as
+    | {
+        gate?: {
+          reason?: unknown;
+          payload?: {
+            arguments?: {
+              command?: unknown;
+            };
+          };
+        };
+      }
+    | undefined;
+
+  assert.equal(approvalGateEvent?.gate?.reason, '该操作需要用户审批后执行。');
+  assert.equal(
+    approvalGateEvent?.gate?.payload?.arguments?.command,
+    'sudo adduser ops-admin'
+  );
+  assert.equal(executeCalls, 0);
+  assert.equal(executedCommand, null);
+  assert.equal(runtime.getRunSnapshot(runId)?.state, 'waiting_for_human');
+});
+
+test('显式提供用户名的 user_management 命令会先打开 approval gate 而不是直接执行', async () => {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  const events: unknown[] = [];
+  let executeCalls = 0;
+  let executedCommand: string | null = null;
+
+  const runtime = new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      async executeCommand(_sessionId: string, command: string) {
+        executeCalls += 1;
+        executedCommand = command;
+        return {
+          sessionId: 'session-1',
+          command,
+          exitCode: 0,
+          output: 'user created',
+          truncated: false,
+          startedAt: Date.now(),
+          completedAt: Date.now(),
+          durationMs: 5,
+        };
+      },
+    } as never,
+    completeAgentContext: async () =>
+      createAssistantMessage({
+        stopReason: 'toolUse',
+        content: [
+          {
+            type: 'toolCall',
+            id: 'call-1',
+            name: 'session.run_command',
+            arguments: {
+              sessionId: 'session-1',
+              command: 'sudo adduser ops-admin',
+            },
+          },
+        ],
+      }),
+  });
+
+  await runtime.run(
+    {
+      providerId: 'provider-1',
+      provider: createProvider(),
+      model: 'qwen-plus',
+      task: '创建一个 root 权限用户，用户名叫 ops-admin',
+      sessionId: 'session-1',
+      approvalMode: 'manual-sensitive',
+    },
+    event => {
+      events.push(event);
+    },
+    new AbortController().signal
+  );
+
+  const openedGateEvent = events.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'human_gate_opened'
+  ) as { gate?: { kind?: unknown; reason?: unknown } } | undefined;
+
+  assert.equal(openedGateEvent?.gate?.kind, 'approval');
+  assert.equal(openedGateEvent?.gate?.reason, '该操作需要用户审批后执行。');
+  assert.equal(executeCalls, 0);
+  assert.equal(executedCommand, null);
+});
+
+test('parameter_confirmation 确认后若仍需审批，会先转成 approval gate 再执行', async () => {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  const initialEvents: unknown[] = [];
+  const approvalEvents: unknown[] = [];
+  const resumedEvents: unknown[] = [];
+  let completionCalls = 0;
+  let executeCalls = 0;
+  let executedCommand: string | null = null;
+
+  const runtime = new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      async executeCommand(_sessionId: string, command: string) {
+        executeCalls += 1;
+        executedCommand = command;
+        return {
+          sessionId: 'session-1',
+          command,
+          exitCode: 0,
+          output: 'user created',
+          truncated: false,
+          startedAt: Date.now(),
+          completedAt: Date.now(),
+          durationMs: 5,
+        };
+      },
+    } as never,
+    completeAgentContext: async () => {
+      completionCalls += 1;
+      if (completionCalls === 1) {
+        return createAssistantMessage({
+          stopReason: 'toolUse',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'call-1',
+              name: 'session.run_command',
+              arguments: {
+                sessionId: 'session-1',
+                command: 'sudo adduser adminuser',
+              },
+            },
+          ],
+        });
+      }
+
+      return createAssistantMessage({
+        stopReason: 'stop',
+        content: [{ type: 'text', text: '用户已创建。' }],
+      });
+    },
+  });
+
+  await runtime.run(
+    {
+      providerId: 'provider-1',
+      provider: createProvider(),
+      model: 'qwen-plus',
+      task: '创建一个 root 权限用户',
+      sessionId: 'session-1',
+      approvalMode: 'manual-sensitive',
+    },
+    event => {
+      initialEvents.push(event);
+    },
+    new AbortController().signal
+  );
+
+  const parameterGateEvent = initialEvents.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'human_gate_opened'
+  ) as { runId?: unknown; gate?: { id?: unknown; kind?: unknown } } | undefined;
+
+  const runId = typeof parameterGateEvent?.runId === 'string' ? parameterGateEvent.runId : null;
+  const gateId =
+    parameterGateEvent?.gate && typeof parameterGateEvent.gate.id === 'string'
+      ? parameterGateEvent.gate.id
+      : null;
+
+  assert.ok(runId);
+  assert.ok(gateId);
+  assert.equal(parameterGateEvent?.gate?.kind, 'parameter_confirmation');
+  assert.equal(executeCalls, 0);
+
+  runtime.resolveGate(runId, gateId, {
+    fields: {
+      username: 'ops-admin',
+    },
+  });
+
+  await runtime.streamContinuation(
+    runId,
+    event => {
+      approvalEvents.push(event);
+    },
+    new AbortController().signal
+  );
+
+  const approvalGateEvent = approvalEvents.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'human_gate_opened' &&
+      (event as { gate?: { kind?: unknown } }).gate?.kind === 'approval'
+  ) as { gate?: { id?: unknown; reason?: unknown } } | undefined;
+
+  const approvalGateId =
+    approvalGateEvent?.gate && typeof approvalGateEvent.gate.id === 'string'
+      ? approvalGateEvent.gate.id
+      : null;
+
+  assert.equal(approvalGateEvent?.gate?.reason, '该操作需要用户审批后执行。');
+  assert.ok(approvalGateId);
+  assert.equal(executeCalls, 0);
+  assert.equal(runtime.getRunSnapshot(runId)?.state, 'waiting_for_human');
+
+  runtime.resolveGate(runId, approvalGateId);
+
+  await runtime.streamContinuation(
+    runId,
+    event => {
+      resumedEvents.push(event);
+    },
+    new AbortController().signal
+  );
+
+  const toolFinishedEvent = resumedEvents.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'tool_execution_finished'
+  ) as { result?: { ok?: unknown } } | undefined;
+
+  assert.equal(toolFinishedEvent?.result?.ok, true);
+  assert.equal(executeCalls, 1);
+  assert.equal(executedCommand, 'sudo adduser ops-admin');
+});
+
 test('resolveGate 会让 approval gate 回到运行态并继续执行原始工具调用', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
