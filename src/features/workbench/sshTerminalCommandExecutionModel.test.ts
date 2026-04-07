@@ -24,10 +24,20 @@ void test('buildExecuteCommandPayload wraps a command with start and end markers
       startMarker: '__OPSCLAW_CMD_START_abc123__',
       endMarkerPrefix: '__OPSCLAW_CMD_END_abc123__:',
     }),
-    "printf '\\n__OPSCLAW_CMD_START_abc123__\\n'\n" +
-      'pwd\n' +
-      "__opsclaw_agent_status=$?\n" +
-      "printf '\\n__OPSCLAW_CMD_END_abc123__:%s\\n' \"$__opsclaw_agent_status\"\n"
+    "printf '\\n__OPSCLAW_CMD_START_abc123__\\n'; pwd; printf '\\n__OPSCLAW_CMD_END_abc123__:%s\\n' \"$?\"\n"
+  );
+});
+
+void test('buildExecuteCommandPayload keeps interactive commands on a single shell line so the trailer is not queued as later tty input', () => {
+  const payload = buildExecuteCommandPayload('sudo adduser adminuser', {
+    startMarker: '__OPSCLAW_CMD_START_interactive__',
+    endMarkerPrefix: '__OPSCLAW_CMD_END_interactive__:',
+  });
+
+  assert.equal(payload.includes('sudo adduser adminuser\nprintf'), false);
+  assert.equal(
+    payload,
+    "printf '\\n__OPSCLAW_CMD_START_interactive__\\n'; sudo adduser adminuser; printf '\\n__OPSCLAW_CMD_END_interactive__:%s\\n' \"$?\"\n"
   );
 });
 
@@ -109,22 +119,16 @@ void test('consumePendingExecutionBuffer strips ansi codes before reading the en
 void test('filterTerminalProtocolOutput removes visible marker protocol fragments while preserving normal shell output', () => {
   const filtered = filterTerminalProtocolOutput(
     createTerminalProtocolOutputFilterState(),
-    "ubuntu@host:~$ printf '\\n__OPSCLAW_CMD_START_abc123__\\n'\r\n" +
+    `ubuntu@host:~$ printf '\\n__OPSCLAW_CMD_START_abc123__\\n'; which docker; printf '\\n__OPSCLAW_CMD_END_abc123__:%s\\n' "$?"\r\n` +
       '\r\n__OPSCLAW_CMD_START_abc123__\r\n' +
-      'ubuntu@host:~$ which docker\r\n' +
-      'ubuntu@host:~$ __opsclaw_agent_status=$?\r\n' +
-      `ubuntu@host:~$ printf '\\n__OPSCLAW_CMD_END_abc123__:%s\\n' "$__opsclaw_agent_status"\r\n` +
       '\r\n__OPSCLAW_CMD_END_abc123__:1\r\n'
   );
 
   assert.equal(filtered.nextState.pendingFragment, '');
   assert.equal(
     filtered.visibleChunk,
-    'ubuntu@host:~$ \r\n' +
+    'ubuntu@host:~$ which docker\r\n' +
       '\r\n\r\n' +
-      'ubuntu@host:~$ which docker\r\n' +
-      'ubuntu@host:~$ \r\n' +
-      'ubuntu@host:~$ \r\n' +
       '\r\n\r\n'
   );
 });
@@ -140,9 +144,9 @@ void test('filterTerminalProtocolOutput buffers split marker fragments until the
 
   const secondPass = filterTerminalProtocolOutput(
     firstPass.nextState,
-    "RT_abc123__\\n'\r\n__OPSCLAW_CMD_START_abc123__\r\nprompt$ echo ok\r\n"
+    "RT_abc123__\\n'; echo ok; printf '\\n__OPSCLAW_CMD_END_abc123__:%s\\n' \"$?\"\r\n__OPSCLAW_CMD_START_abc123__\r\n__OPSCLAW_CMD_END_abc123__:0\r\n"
   );
 
   assert.equal(secondPass.nextState.pendingFragment, '');
-  assert.equal(secondPass.visibleChunk, '\r\n\r\nprompt$ echo ok\r\n');
+  assert.equal(secondPass.visibleChunk, 'echo ok\r\n\r\n\r\n');
 });

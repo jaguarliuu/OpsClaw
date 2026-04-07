@@ -1,6 +1,23 @@
 import type { LiveSession, LlmProvider } from './types';
 
 export type AiAssistantMode = 'agent' | 'chat';
+export type AiAssistantInputImeState = {
+  isComposing: boolean;
+  suppressEnterUntil: number;
+};
+
+type AiAssistantInputEnterEvent = {
+  isComposing?: boolean;
+  key: string;
+  keyCode?: number;
+  shiftKey: boolean;
+};
+
+type ShouldSubmitAiAssistantOnEnterInput = {
+  event: AiAssistantInputEnterEvent;
+  imeState: AiAssistantInputImeState;
+  now: number;
+};
 
 export type AiAssistantModelOption = {
   value: string;
@@ -14,6 +31,7 @@ export type AiAssistantThemeMode = 'dark' | 'light';
 export const AI_ASSISTANT_PANEL_MIN_WIDTH = 300;
 export const AI_ASSISTANT_PANEL_MAX_WIDTH = 800;
 export const AI_ASSISTANT_PANEL_DEFAULT_WIDTH = 420;
+export const AI_ASSISTANT_INPUT_IME_CONFIRM_SUPPRESSION_MS = 64;
 
 export function buildAiAssistantModelOptions(
   providers: LlmProvider[]
@@ -87,6 +105,49 @@ export function clampAiAssistantPanelWidth(width: number) {
   return Math.min(
     AI_ASSISTANT_PANEL_MAX_WIDTH,
     Math.max(AI_ASSISTANT_PANEL_MIN_WIDTH, width)
+  );
+}
+
+export function createAiAssistantInputImeState(): AiAssistantInputImeState {
+  return {
+    isComposing: false,
+    suppressEnterUntil: 0,
+  };
+}
+
+export function markAiAssistantInputCompositionStart(
+  state: AiAssistantInputImeState
+): AiAssistantInputImeState {
+  return {
+    ...state,
+    isComposing: true,
+    suppressEnterUntil: 0,
+  };
+}
+
+export function markAiAssistantInputCompositionEnd(
+  state: AiAssistantInputImeState,
+  now: number
+): AiAssistantInputImeState {
+  return {
+    ...state,
+    isComposing: false,
+    suppressEnterUntil: now + AI_ASSISTANT_INPUT_IME_CONFIRM_SUPPRESSION_MS,
+  };
+}
+
+export function shouldSubmitAiAssistantOnEnter({
+  event,
+  imeState,
+  now,
+}: ShouldSubmitAiAssistantOnEnterInput) {
+  return (
+    event.key === 'Enter' &&
+    !event.shiftKey &&
+    event.isComposing !== true &&
+    event.keyCode !== 229 &&
+    !imeState.isComposing &&
+    now >= imeState.suppressEnterUntil
   );
 }
 

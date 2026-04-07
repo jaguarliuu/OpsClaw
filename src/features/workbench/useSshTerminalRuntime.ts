@@ -9,7 +9,11 @@ import {
   SSH_TERMINAL_COPY_FEEDBACK_DURATION_MS,
 } from '@/features/workbench/sshTerminalCopyFeedbackModel';
 import {
+  createSshTerminalImeState,
+  markSshTerminalImeCompositionEnd,
+  markSshTerminalImeCompositionStart,
   resolveSshTerminalClipboardShortcut,
+  shouldBlockSshTerminalCompositionConfirm,
   shouldConfirmSshTerminalPaste,
   shouldToggleSshTerminalSearchShortcut,
   resolveSshTerminalInput,
@@ -75,6 +79,7 @@ export function useSshTerminalRuntime({
   const [suggestion, setSuggestion] = useState<string | null>(null);
   const copyFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isAgentLockedRef = useRef(false);
+  const imeStateRef = useRef(createSshTerminalImeState());
   const suggestionRef = useRef<string | null>(null);
   const suggestionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -272,7 +277,31 @@ export function useSshTerminalRuntime({
         fitAddon.fit();
         terminal.focus();
 
+        const terminalTextarea = terminal.textarea;
+
+        const handleCompositionStart = () => {
+          imeStateRef.current = markSshTerminalImeCompositionStart(imeStateRef.current);
+        };
+
+        const handleCompositionEnd = () => {
+          imeStateRef.current = markSshTerminalImeCompositionEnd(imeStateRef.current, Date.now());
+        };
+
+        terminalTextarea?.addEventListener('compositionstart', handleCompositionStart);
+        terminalTextarea?.addEventListener('compositionend', handleCompositionEnd);
+
         terminal.attachCustomKeyEventHandler((event) => {
+          if (
+            shouldBlockSshTerminalCompositionConfirm({
+              ...event,
+              imeState: imeStateRef.current,
+              now: Date.now(),
+            })
+          ) {
+            event.preventDefault();
+            return false;
+          }
+
           const clipboardShortcut = resolveSshTerminalClipboardShortcut({
             event,
             hasSelection: terminal.hasSelection(),
@@ -357,6 +386,8 @@ export function useSshTerminalRuntime({
           logSshTerminalRuntime('cleanup:start', {
             initialized: initializedRef.current,
           });
+          terminalTextarea?.removeEventListener('compositionstart', handleCompositionStart);
+          terminalTextarea?.removeEventListener('compositionend', handleCompositionEnd);
           container.removeEventListener('paste', handlePaste, { capture: true });
           dataDisposable.dispose();
           resizeObserver.disconnect();
@@ -370,6 +401,7 @@ export function useSshTerminalRuntime({
             copyFeedbackTimerRef.current = null;
           }
           setCopyFeedbackVisible(false);
+          imeStateRef.current = createSshTerminalImeState();
           inputBufferRef.current = '';
           setSuggestion(null);
           setPendingPaste(null);

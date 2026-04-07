@@ -69,6 +69,24 @@ const MAX_TRANSCRIPT_LENGTH = 120_000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 120_000;
 const DEFAULT_HUMAN_INPUT_TIMEOUT_MS = 300_000;
 
+function buildAgentExecuteCommandPayload(
+  command: string,
+  startMarker: string,
+  endMarkerPrefix: string
+) {
+  const inlineCommand = command
+    .split(/\r?\n/g)
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .join('; ');
+
+  return (
+    `printf '\\n${startMarker}\\n'; ` +
+    `${inlineCommand}; ` +
+    `printf '\\n${endMarkerPrefix}%s\\n' "$?"\n`
+  );
+}
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -572,10 +590,7 @@ export class SessionRegistry {
       );
 
       session.sendInput(
-        `printf '\\n${startMarker}\\n'\n` +
-          `${trimmedCommand}\n` +
-          `__opsclaw_agent_status=$?\n` +
-          `printf '\\n${endMarkerPrefix}%s\\n' "$__opsclaw_agent_status"\n`
+        buildAgentExecuteCommandPayload(trimmedCommand, startMarker, endMarkerPrefix)
       );
       logSession('execute_command_payload_sent', {
         sessionId,

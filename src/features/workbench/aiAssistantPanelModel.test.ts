@@ -3,16 +3,20 @@ import test from 'node:test';
 
 import type { LiveSession, LlmProvider } from './types.js';
 import {
+  createAiAssistantInputImeState,
   buildAiAssistantModelOptions,
   clampAiAssistantPanelWidth,
   getDefaultAiAssistantSessionId,
   getAgentStepBudgetHint,
   getAiAssistantThemeClasses,
   getPreferredAiAssistantModelValue,
+  markAiAssistantInputCompositionEnd,
+  markAiAssistantInputCompositionStart,
   shouldAutoScrollAiAssistantTimeline,
   getValidAiAssistantModelValue,
   getValidAiAssistantSessionId,
   shouldEnableAiAssistantSend,
+  shouldSubmitAiAssistantOnEnter,
 } from './aiAssistantPanelModel.js';
 
 const providers: LlmProvider[] = [
@@ -195,6 +199,81 @@ void test('shouldEnableAiAssistantSend requires model, trimmed input, idle state
       selectedSessionId: null,
     }),
     false
+  );
+});
+
+void test('shouldSubmitAiAssistantOnEnter ignores Shift+Enter and IME confirmation Enter', () => {
+  assert.equal(
+    shouldSubmitAiAssistantOnEnter({
+      event: {
+        isComposing: false,
+        key: 'Enter',
+        keyCode: 13,
+        shiftKey: false,
+      },
+      imeState: createAiAssistantInputImeState(),
+      now: 0,
+    }),
+    true
+  );
+
+  assert.equal(
+    shouldSubmitAiAssistantOnEnter({
+      event: {
+        isComposing: false,
+        key: 'Enter',
+        keyCode: 13,
+        shiftKey: true,
+      },
+      imeState: createAiAssistantInputImeState(),
+      now: 0,
+    }),
+    false
+  );
+
+  assert.equal(
+    shouldSubmitAiAssistantOnEnter({
+      event: {
+        isComposing: true,
+        key: 'Enter',
+        keyCode: 13,
+        shiftKey: false,
+      },
+      imeState: createAiAssistantInputImeState(),
+      now: 0,
+    }),
+    false
+  );
+
+  const composingState = markAiAssistantInputCompositionStart(createAiAssistantInputImeState());
+  const endedState = markAiAssistantInputCompositionEnd(composingState, 100);
+
+  assert.equal(
+    shouldSubmitAiAssistantOnEnter({
+      event: {
+        isComposing: false,
+        key: 'Enter',
+        keyCode: 13,
+        shiftKey: false,
+      },
+      imeState: endedState,
+      now: 110,
+    }),
+    false
+  );
+
+  assert.equal(
+    shouldSubmitAiAssistantOnEnter({
+      event: {
+        isComposing: false,
+        key: 'Enter',
+        keyCode: 13,
+        shiftKey: false,
+      },
+      imeState: endedState,
+      now: 500,
+    }),
+    true
   );
 });
 

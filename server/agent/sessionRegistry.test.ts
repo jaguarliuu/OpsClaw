@@ -90,6 +90,43 @@ test('中断执行中的命令后会释放会话锁并允许再次执行', async
   });
 });
 
+test('交互命令会以单行 payload 发送，避免结束 marker 残留为后续 tty 输入', async () => {
+  const registry = new SessionRegistry();
+  const sentPayloads: string[] = [];
+
+  registry.registerSession({
+    sessionId: 'session-1',
+    host: '10.0.0.8',
+    port: 22,
+    username: 'ubuntu',
+    sendInput(payload) {
+      sentPayloads.push(payload);
+    },
+  });
+  registry.updateSessionStatus('session-1', 'connected');
+
+  const execution = registry.executeCommand('session-1', 'sudo adduser adminuser', {
+    timeoutMs: 200,
+  } as never);
+
+  await waitForMicrotask();
+
+  const payload = sentPayloads[0] ?? '';
+  assert.equal(payload.includes('sudo adduser adminuser\nprintf'), false);
+  assert.match(
+    payload,
+    /printf '\\n__OPSCLAW_CMD_START_[a-f0-9]+__\\n'; sudo adduser adminuser; printf '\\n__OPSCLAW_CMD_END_[a-f0-9]+__:%s\\n' "\$\?"\n/
+  );
+
+  const markers = extractMarkers(payload);
+  registry.appendTerminalData(
+    'session-1',
+    `\n${markers.startMarker}\nAdding user...\r\n${markers.endMarkerPrefix}0\r\n`
+  );
+
+  await execution;
+});
+
 test('交互命令的人类输入超时会挂起等待而不是永久拒绝', async () => {
   const registry = new SessionRegistry();
   const internals = getRegistryInternals(registry);

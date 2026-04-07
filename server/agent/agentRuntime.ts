@@ -422,15 +422,6 @@ export class OpsAgentRuntime {
       completeAgentContext: completeContext,
       streamAgentContext: stepStreamContext,
     });
-    const emitLoopEvents = (
-      events: AgentStreamEvent[],
-      activeEmit: (event: AgentStreamEvent) => void
-    ) => {
-      for (const event of events) {
-        activeEmit(event);
-      }
-    };
-
     const processLoopOutcome = async (
       outcome: AgentLoopOutcome,
       currentLoopState: AgentLoopState,
@@ -580,7 +571,8 @@ export class OpsAgentRuntime {
         const nextResult = await resumeAgentLoop(
           currentLoopState,
           resumed.envelope,
-          resumedSignal
+          resumedSignal,
+          resumedEmit
         );
         if (action.kind === 'resolve_approval' || action.kind === 'reject_approval') {
           this.agentRunRegistry.markRunRunning({
@@ -588,7 +580,6 @@ export class OpsAgentRuntime {
             clearGate: true,
           });
         }
-        emitLoopEvents(nextResult.events, resumedEmit);
         await processLoopOutcome(nextResult.outcome, currentLoopState, resumedEmit, resumedSignal);
       };
 
@@ -616,14 +607,13 @@ export class OpsAgentRuntime {
       const nextResult = await resumeAgentLoop(
         currentLoopState,
         pauseOutcome.envelope,
-        activeSignal
+        activeSignal,
+        activeEmit
       );
-      emitLoopEvents(nextResult.events, activeEmit);
       await processLoopOutcome(nextResult.outcome, currentLoopState, activeEmit, activeSignal);
     };
 
-    const initialResult = await runAgentLoop(loopState, signal);
-    emitLoopEvents(initialResult.events, emit);
+    const initialResult = await runAgentLoop(loopState, signal, emit);
     await processLoopOutcome(initialResult.outcome, loopState, emit, signal);
   }
 

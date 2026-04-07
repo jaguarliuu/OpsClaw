@@ -1,9 +1,23 @@
 type TerminalShortcutEvent = {
   ctrlKey: boolean;
+  isComposing?: boolean;
   key: string;
+  keyCode?: number;
   metaKey: boolean;
   type: string;
 };
+
+export type SshTerminalImeState = {
+  isComposing: boolean;
+  suppressEnterUntil: number;
+};
+
+type ShouldBlockSshTerminalCompositionConfirmOptions = TerminalShortcutEvent & {
+  imeState: SshTerminalImeState;
+  now: number;
+};
+
+export const SSH_TERMINAL_IME_CONFIRM_SUPPRESSION_MS = 64;
 
 type ResolveSshTerminalInputOptions = {
   currentSuggestion: string | null;
@@ -52,6 +66,51 @@ export function resolveSshTerminalClipboardShortcut(input: {
 
 export function shouldConfirmSshTerminalPaste(text: string) {
   return text.includes('\n');
+}
+
+export function createSshTerminalImeState(): SshTerminalImeState {
+  return {
+    isComposing: false,
+    suppressEnterUntil: 0,
+  };
+}
+
+export function markSshTerminalImeCompositionStart(
+  state: SshTerminalImeState
+): SshTerminalImeState {
+  return {
+    ...state,
+    isComposing: true,
+    suppressEnterUntil: 0,
+  };
+}
+
+export function markSshTerminalImeCompositionEnd(
+  state: SshTerminalImeState,
+  now: number
+): SshTerminalImeState {
+  return {
+    ...state,
+    isComposing: false,
+    suppressEnterUntil: now + SSH_TERMINAL_IME_CONFIRM_SUPPRESSION_MS,
+  };
+}
+
+export function shouldBlockSshTerminalCompositionConfirm({
+  imeState,
+  now,
+  ...event
+}: ShouldBlockSshTerminalCompositionConfirmOptions) {
+  return (
+    event.type === 'keydown' &&
+    event.key === 'Enter' &&
+    (
+      event.isComposing === true ||
+      event.keyCode === 229 ||
+      imeState.isComposing ||
+      now < imeState.suppressEnterUntil
+    )
+  );
 }
 
 export function resolveSshTerminalInput({

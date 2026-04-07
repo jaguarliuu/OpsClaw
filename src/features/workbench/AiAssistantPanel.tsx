@@ -14,11 +14,15 @@ import { useAiAssistantPanelState } from './useAiAssistantPanelState';
 import { useStreamingChat } from './useStreamingChat';
 import type { UseAgentRunResult } from './useAgentRun';
 import {
+  createAiAssistantInputImeState,
   getAgentStepBudgetHint,
   getAiAssistantThemeClasses,
   getValidAiAssistantModelValue,
   getValidAiAssistantSessionId,
+  markAiAssistantInputCompositionEnd,
+  markAiAssistantInputCompositionStart,
   shouldAutoScrollAiAssistantTimeline,
+  shouldSubmitAiAssistantOnEnter,
 } from './aiAssistantPanelModel';
 import {
   getHumanGateDescription,
@@ -508,6 +512,7 @@ export function AiAssistantPanel({
     clearItems: clearAgentItems,
   } = agentRun;
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputImeStateRef = useRef(createAiAssistantInputImeState());
   const agentSessionModel = createAgentSessionModel({
     activeGate: agentRun.activeGate,
     pendingContinuationRunId: agentRun.pendingContinuationRunId,
@@ -838,15 +843,37 @@ export function AiAssistantPanel({
         </div>
 
         <div className="border border-neutral-700/60 rounded-xl bg-[var(--app-bg-base)] overflow-hidden focus-within:border-neutral-500 focus-within:ring-1 focus-within:ring-neutral-500/30 transition-all relative flex flex-col">
-          <textarea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
+	          <textarea
+	            value={input}
+	            onChange={e => setInput(e.target.value)}
+	            onCompositionStart={() => {
+	              inputImeStateRef.current = markAiAssistantInputCompositionStart(
+	                inputImeStateRef.current
+	              );
+	            }}
+	            onCompositionEnd={() => {
+	              inputImeStateRef.current = markAiAssistantInputCompositionEnd(
+	                inputImeStateRef.current,
+	                Date.now()
+	              );
+	            }}
+	            onKeyDown={e => {
+	              if (
+	                shouldSubmitAiAssistantOnEnter({
+	                  event: {
+	                    isComposing: e.nativeEvent.isComposing,
+	                    key: e.key,
+	                    keyCode: e.nativeEvent.keyCode,
+	                    shiftKey: e.shiftKey,
+	                  },
+	                  imeState: inputImeStateRef.current,
+	                  now: Date.now(),
+	                })
+	              ) {
+	                e.preventDefault();
+	                handleSend();
+	              }
+	            }}
             placeholder={
               mode === 'agent'
                 ? isAgentInputLocked

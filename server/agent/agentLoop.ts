@@ -88,6 +88,16 @@ export type AgentLoopExecutionResult = {
   outcome: AgentLoopOutcome;
 };
 
+type AgentLoopEventSink = {
+  events: AgentStreamEvent[];
+  onEvent?: (event: AgentStreamEvent) => void;
+};
+
+function recordAgentLoopEvent(sink: AgentLoopEventSink, event: AgentStreamEvent) {
+  sink.events.push(event);
+  sink.onEvent?.(event);
+}
+
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') {
     if (typeof value === 'string') {
@@ -215,13 +225,13 @@ function buildToolResultMessage(
 
 async function consumeAssistantMessageStream(options: {
   stream: ReturnType<typeof streamAgentContext>;
-  events: AgentStreamEvent[];
+  eventSink: AgentLoopEventSink;
   runId: string;
   step: number;
 }) {
   for await (const event of options.stream) {
     if (event.type === 'text_delta' && event.delta) {
-      options.events.push({
+      recordAgentLoopEvent(options.eventSink, {
         type: 'assistant_message_delta',
         runId: options.runId,
         delta: event.delta,
@@ -264,7 +274,7 @@ function finalizeToolEnvelope(options: {
   toolCall: ToolCall;
   envelope: ToolExecutionEnvelope;
   step: number;
-  events: AgentStreamEvent[];
+  eventSink: AgentLoopEventSink;
   stepContext: {
     stepMadeProgress: boolean;
     stepHadSuccessfulToolExecution: boolean;
@@ -298,7 +308,7 @@ function finalizeToolEnvelope(options: {
     buildToolResultMessage(options.envelope, options.toolCall.id, options.toolCall.name)
   );
 
-  options.events.push({
+  recordAgentLoopEvent(options.eventSink, {
     type: 'tool_execution_finished',
     runId: options.state.runId,
     step: options.step,
@@ -317,7 +327,7 @@ function finalizeStep(options: {
     stepHadSuccessfulToolExecution: boolean;
     stepHasNewToolCallSignature: boolean;
   };
-  events: AgentStreamEvent[];
+  eventSink: AgentLoopEventSink;
 }): AgentLoopStepResult {
   if (
     !options.stepContext.stepMadeProgress &&
@@ -349,7 +359,7 @@ function finalizeStep(options: {
       nextBudget: options.state.currentStepBudget,
       hardMaxSteps: options.state.hardMaxSteps,
     });
-    options.events.push({
+    recordAgentLoopEvent(options.eventSink, {
       type: 'warning',
       runId: options.state.runId,
       message: `已达到当前步数预算 ${options.step}，检测到仍有进展，自动续期 +${grant} 步（当前上限 ${options.state.currentStepBudget} / ${options.state.hardMaxSteps}）。`,
@@ -360,7 +370,7 @@ function finalizeStep(options: {
   }
 
   const madeRecentProgress = hasRecentProgress(options.state.stepProgressHistory);
-  options.events.push({
+  recordAgentLoopEvent(options.eventSink, {
     type: 'warning',
     runId: options.state.runId,
     message: madeRecentProgress
@@ -386,7 +396,7 @@ async function executeToolCallsFromIndex(options: {
   startIndex: number;
   availableTools: Tool[];
   signal: AbortSignal;
-  events: AgentStreamEvent[];
+  eventSink: AgentLoopEventSink;
   stepContext: {
     stepMadeProgress: boolean;
     stepHadSuccessfulToolExecution: boolean;
@@ -400,7 +410,7 @@ async function executeToolCallsFromIndex(options: {
       return { kind: 'cancelled', step: options.step };
     }
 
-    options.events.push({
+    recordAgentLoopEvent(options.eventSink, {
       type: 'tool_call',
       runId: options.state.runId,
       step: options.step,
@@ -452,7 +462,7 @@ async function executeToolCallsFromIndex(options: {
           },
         },
         step: options.step,
-        events: options.events,
+        eventSink: options.eventSink,
         stepContext: options.stepContext,
       });
       continue;
@@ -472,7 +482,7 @@ async function executeToolCallsFromIndex(options: {
         fileMemory: options.state.fileMemory,
       },
       emit: (event) => {
-        options.events.push(event);
+        recordAgentLoopEvent(options.eventSink, event);
       },
     });
 
@@ -498,7 +508,7 @@ async function executeToolCallsFromIndex(options: {
       toolCall,
       envelope: executionResult.envelope,
       step: options.step,
-      events: options.events,
+      eventSink: options.eventSink,
       stepContext: options.stepContext,
     });
   }
@@ -507,7 +517,7 @@ async function executeToolCallsFromIndex(options: {
     state: options.state,
     step: options.step,
     stepContext: options.stepContext,
-    events: options.events,
+    eventSink: options.eventSink,
   });
 }
 
@@ -515,7 +525,7 @@ async function runStep(
   state: AgentLoopState,
   step: number,
   signal: AbortSignal,
-  events: AgentStreamEvent[]
+  eventSink: AgentLoopEventSink
 ): Promise<AgentLoopOutcome> {
   if (signal.aborted) {
     return { kind: 'cancelled', step };
@@ -528,7 +538,7 @@ async function runStep(
   const assistantMessage = state.streamAgentContext
     ? await consumeAssistantMessageStream({
         stream: state.streamAgentContext(state.provider, state.model, state.context, signal),
-        events,
+        eventSink,
         runId: state.runId,
         step,
       })
@@ -549,7 +559,7 @@ async function runStep(
 
   const assistantText = extractAssistantText(assistantMessage);
   if (assistantText) {
-    events.push({
+    recordAgentLoopEvent(eventSink, {
       type: 'assistant_message',
       runId: state.runId,
       text: assistantText,
@@ -627,7 +637,7 @@ async function runStep(
     startIndex: 0,
     availableTools,
     signal,
-    events,
+    eventSink,
     stepContext: {
       stepMadeProgress: false,
       stepHadSuccessfulToolExecution: false,
@@ -636,7 +646,7 @@ async function runStep(
   });
 
   if (stepResult.kind === 'completed_step') {
-    return runStep(state, step + 1, signal, events);
+    return runStep(state, step + 1, signal, eventSink);
   }
 
   return finalizeOutcome(
@@ -664,14 +674,15 @@ export function createAgentLoopState(options: CreateAgentLoopOptions): AgentLoop
 
 export async function runAgentLoop(
   state: AgentLoopState,
-  signal: AbortSignal
+  signal: AbortSignal,
+  onEvent?: (event: AgentStreamEvent) => void
 ): Promise<AgentLoopExecutionResult> {
   if (state.pendingToolExecution) {
     throw new Error('当前 loop 已暂停，不能重复启动。');
   }
 
   const events: AgentStreamEvent[] = [];
-  const outcome = await runStep(state, 1, signal, events);
+  const outcome = await runStep(state, 1, signal, { events, onEvent });
   return {
     events,
     outcome,
@@ -681,7 +692,8 @@ export async function runAgentLoop(
 export async function resumeAgentLoop(
   state: AgentLoopState,
   envelope: ToolExecutionEnvelope,
-  signal: AbortSignal
+  signal: AbortSignal,
+  onEvent?: (event: AgentStreamEvent) => void
 ): Promise<AgentLoopExecutionResult> {
   const pending = state.pendingToolExecution;
   if (!pending) {
@@ -689,6 +701,7 @@ export async function resumeAgentLoop(
   }
 
   const events: AgentStreamEvent[] = [];
+  const eventSink = { events, onEvent };
   const stepContext = {
     stepMadeProgress: pending.stepMadeProgress,
     stepHadSuccessfulToolExecution: pending.stepHadSuccessfulToolExecution,
@@ -700,7 +713,7 @@ export async function resumeAgentLoop(
     toolCall: pending.pausedToolCall,
     envelope,
     step: pending.step,
-    events,
+    eventSink,
     stepContext,
   });
 
@@ -714,13 +727,13 @@ export async function resumeAgentLoop(
     startIndex: pending.nextToolIndex,
     availableTools,
     signal,
-    events,
+    eventSink,
     stepContext,
   });
 
   const outcome =
     resumedResult.kind === 'completed_step'
-      ? await runStep(state, pending.step + 1, signal, events)
+      ? await runStep(state, pending.step + 1, signal, eventSink)
       : finalizeOutcome(
           state,
           resumedResult as Exclude<AgentLoopStepResult, { kind: 'completed_step' }>

@@ -2,8 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  createSshTerminalImeState,
+  markSshTerminalImeCompositionEnd,
+  markSshTerminalImeCompositionStart,
   resolveSshTerminalClipboardShortcut,
   resolveSshTerminalInput,
+  shouldBlockSshTerminalCompositionConfirm,
   shouldConfirmSshTerminalPaste,
   shouldToggleSshTerminalSearchShortcut,
 } from './sshTerminalRuntimeModel.js';
@@ -41,6 +45,83 @@ void test('shouldToggleSshTerminalSearchShortcut matches Cmd/Ctrl+F keydown only
 void test('shouldConfirmSshTerminalPaste only intercepts multiline paste', () => {
   assert.equal(shouldConfirmSshTerminalPaste('single line'), false);
   assert.equal(shouldConfirmSshTerminalPaste('line-1\nline-2'), true);
+});
+
+void test('shouldBlockSshTerminalCompositionConfirm blocks Enter while IME composition is active', () => {
+  assert.equal(
+    shouldBlockSshTerminalCompositionConfirm({
+      imeState: createSshTerminalImeState(),
+      now: 0,
+      ctrlKey: false,
+      isComposing: true,
+      key: 'Enter',
+      keyCode: 13,
+      metaKey: false,
+      type: 'keydown',
+    }),
+    true
+  );
+
+  assert.equal(
+    shouldBlockSshTerminalCompositionConfirm({
+      imeState: createSshTerminalImeState(),
+      now: 0,
+      ctrlKey: false,
+      isComposing: false,
+      key: 'Enter',
+      keyCode: 229,
+      metaKey: false,
+      type: 'keydown',
+    }),
+    true
+  );
+
+  assert.equal(
+    shouldBlockSshTerminalCompositionConfirm({
+      imeState: createSshTerminalImeState(),
+      now: 0,
+      ctrlKey: false,
+      isComposing: false,
+      key: 'Enter',
+      keyCode: 13,
+      metaKey: false,
+      type: 'keydown',
+    }),
+    false
+  );
+});
+
+void test('shouldBlockSshTerminalCompositionConfirm blocks the immediate Enter after compositionend', () => {
+  const composingState = markSshTerminalImeCompositionStart(createSshTerminalImeState());
+  const endedState = markSshTerminalImeCompositionEnd(composingState, 100);
+
+  assert.equal(
+    shouldBlockSshTerminalCompositionConfirm({
+      imeState: endedState,
+      now: 110,
+      ctrlKey: false,
+      isComposing: false,
+      key: 'Enter',
+      keyCode: 13,
+      metaKey: false,
+      type: 'keydown',
+    }),
+    true
+  );
+
+  assert.equal(
+    shouldBlockSshTerminalCompositionConfirm({
+      imeState: endedState,
+      now: 500,
+      ctrlKey: false,
+      isComposing: false,
+      key: 'Enter',
+      keyCode: 13,
+      metaKey: false,
+      type: 'keydown',
+    }),
+    false
+  );
 });
 
 void test('resolveSshTerminalClipboardShortcut copies the current selection on Cmd/Ctrl+C only', () => {

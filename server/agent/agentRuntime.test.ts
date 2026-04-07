@@ -355,6 +355,129 @@ test('streamAgentContext 可将 assistant 文本按 delta 流式发出，同时�
   assert.deepEqual(deltas, ['正在', '检查磁盘']);
 });
 
+test('长时间运行的工具调用会在完成前先把中间事件发给 runtime emit', async () => {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  let resolveCommand!: (value: {
+    command: string;
+    exitCode: number;
+    output: string;
+    durationMs: number;
+  }) => void;
+  let notifyCommandStarted: (() => void) | null = null;
+  const started = new Promise<void>((resolve) => {
+    notifyCommandStarted = resolve;
+  });
+
+  const runtime = new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      async executeCommand() {
+        notifyCommandStarted?.();
+        return new Promise((resolve) => {
+          resolveCommand = resolve;
+        });
+      },
+    } as never,
+    completeAgentContext: async (_provider, _model, context) => {
+      if (context.messages.some((message) => message.role === 'toolResult')) {
+        return createAssistantMessage({
+          stopReason: 'stop',
+          content: [{ type: 'text', text: '检查完成。' }],
+        });
+      }
+
+      return createAssistantMessage({
+        stopReason: 'toolUse',
+        content: [
+          {
+            type: 'toolCall',
+            id: 'call-1',
+            name: 'session.run_command',
+            arguments: {
+              sessionId: 'session-1',
+              command: 'sleep 5 && echo done',
+            },
+          },
+        ],
+      });
+    },
+  });
+
+  const events: string[] = [];
+  const runPromise = runtime.run(
+    {
+      providerId: 'provider-1',
+      provider: createProvider(),
+      model: 'qwen-plus',
+      task: '等待命令完成',
+      sessionId: 'session-1',
+    },
+    (event) => {
+      events.push(event.type);
+    },
+    new AbortController().signal
+  );
+
+  let assertionError: unknown = null;
+
+  try {
+    await started;
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.ok(events.includes('tool_call'));
+    assert.ok(events.includes('tool_execution_started'));
+    assert.ok(!events.includes('tool_execution_finished'));
+  } catch (error) {
+    assertionError = error;
+  } finally {
+    resolveCommand({
+      command: 'sleep 5 && echo done',
+      exitCode: 0,
+      output: 'done',
+      durationMs: 5000,
+    });
+    await runPromise;
+  }
+
+  if (assertionError) {
+    throw assertionError;
+  }
+});
+
 test('getSessionReattachableRun returns the latest suspended or waiting snapshot for a session', () => {
   const agentRunRegistry = createAgentRunRegistry();
   agentRunRegistry.registerRun({

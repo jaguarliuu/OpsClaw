@@ -27,20 +27,20 @@ const TERMINAL_PROTOCOL_FRAGMENT_STARTS = [
   "printf '\\n__OPSCLAW_CMD_END_",
   '__OPSCLAW_CMD_START_',
   '__OPSCLAW_CMD_END_',
-  '__opsclaw_agent_status',
 ] as const;
 
 const COMPLETE_TERMINAL_PROTOCOL_FRAGMENT_PATTERN =
   // eslint-disable-next-line no-control-regex
-  /^(?:printf '\\n__OPSCLAW_CMD_START_[a-f0-9]+__\\n'|printf '\\n__OPSCLAW_CMD_END_[a-f0-9]+__:%s\\n' "\$__opsclaw_agent_status"|__OPSCLAW_CMD_START_[a-f0-9]+__|__OPSCLAW_CMD_END_[a-f0-9]+__:(?:\u001b\[[0-9;]*m)*-?\d+(?:\u001b\[[0-9;]*m)*|__opsclaw_agent_status=\$\?)/;
+  /^(?:printf '\\n__OPSCLAW_CMD_START_[a-f0-9]+__\\n'(?:;\s*)?|(?:\s*;\s*)?printf '\\n__OPSCLAW_CMD_END_[a-f0-9]+__:%s\\n' "\$\?"|__OPSCLAW_CMD_START_[a-f0-9]+__|__OPSCLAW_CMD_END_[a-f0-9]+__:(?:\u001b\[[0-9;]*m)*-?\d+(?:\u001b\[[0-9;]*m)*)/;
 
 const TERMINAL_PROTOCOL_FRAGMENT_PATTERNS = [
+  /printf '\\n__OPSCLAW_CMD_START_[a-f0-9]+__\\n';\s*/g,
+  /\s*;\s*printf '\\n__OPSCLAW_CMD_END_[a-f0-9]+__:%s\\n' "\$\?"/g,
   /printf '\\n__OPSCLAW_CMD_START_[a-f0-9]+__\\n'/g,
-  /printf '\\n__OPSCLAW_CMD_END_[a-f0-9]+__:%s\\n' "\$__opsclaw_agent_status"/g,
+  /printf '\\n__OPSCLAW_CMD_END_[a-f0-9]+__:%s\\n' "\$\?"/g,
   /__OPSCLAW_CMD_START_[a-f0-9]+__/g,
   // eslint-disable-next-line no-control-regex
   /__OPSCLAW_CMD_END_[a-f0-9]+__:(?:\u001b\[[0-9;]*m)*-?\d+(?:\u001b\[[0-9;]*m)*/g,
-  /__opsclaw_agent_status=\$\?/g,
 ] as const;
 
 function findCompletedEndMarker(buffer: string, endMarkerPrefix: string) {
@@ -146,11 +146,16 @@ export function buildExecuteCommandPayload(
   command: string,
   markers: TerminalCommandMarkers
 ) {
+  const inlineCommand = command
+    .split(/\r?\n/g)
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .join('; ');
+
   return (
-    `printf '\\n${markers.startMarker}\\n'\n` +
-    `${command}\n` +
-    `__opsclaw_agent_status=$?\n` +
-    `printf '\\n${markers.endMarkerPrefix}%s\\n' "$__opsclaw_agent_status"\n`
+    `printf '\\n${markers.startMarker}\\n'; ` +
+    `${inlineCommand}; ` +
+    `printf '\\n${markers.endMarkerPrefix}%s\\n' "$?"\n`
   );
 }
 
