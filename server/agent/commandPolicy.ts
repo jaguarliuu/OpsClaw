@@ -67,6 +67,25 @@ export function evaluateSessionCommandPolicy({
   approvalMode,
   command,
 }: EvaluateSessionCommandPolicyInput): ToolPolicyDecision {
+  const fallbackDecision = evaluateSessionCommandPolicyFallback({
+    approvalMode,
+    command,
+  });
+
+  if (
+    fallbackDecision.kind === 'deny' ||
+    fallbackDecision.kind === 'require_approval'
+  ) {
+    return fallbackDecision;
+  }
+
+  return fallbackDecision;
+}
+
+function evaluateSessionCommandPolicyFallback({
+  approvalMode,
+  command,
+}: EvaluateSessionCommandPolicyInput): ToolPolicyDecision {
   const matches = evaluateRuleMatches(command);
   if (matches.length === 0) {
     return { kind: 'allow', matches: [] };
