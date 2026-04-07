@@ -174,8 +174,16 @@ function applyConfirmedParameters(
   return nextCommand;
 }
 
-function shouldDeferPlannerApprovalToTerminalInput(command: string, extractedParameterCount: number) {
-  return extractedParameterCount === 0 && /\bpasswd\b/i.test(command);
+function shouldDeferPlannerApprovalToTerminalInput(input: {
+  approvalMode: ToolExecutionContext['approvalMode'];
+  command: string;
+  extractedParameterCount: number;
+}) {
+  return (
+    input.approvalMode === 'auto-readonly' &&
+    input.extractedParameterCount === 0 &&
+    /\bpasswd\b/i.test(input.command)
+  );
 }
 
 type SessionCommandExecutionState = {
@@ -439,7 +447,11 @@ export class ToolExecutor {
 
     if (sessionPlan.decision.kind === 'require_approval' && !state.plannerApprovalGranted) {
       if (
-        shouldDeferPlannerApprovalToTerminalInput(confirmedCommand, sessionPlan.parameters.length)
+        shouldDeferPlannerApprovalToTerminalInput({
+          approvalMode: ctx.approvalMode,
+          command: confirmedCommand,
+          extractedParameterCount: sessionPlan.parameters.length,
+        })
       ) {
         return this.executeSessionCommandWithPause(
           handler,

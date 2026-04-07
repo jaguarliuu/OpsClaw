@@ -1483,6 +1483,96 @@ test('命中敏感命令策略时 approval gate 会打开并等待而不是产�
   );
 });
 
+test('manual-sensitive 下交互式 passwd 命令会先打开 approval gate', async () => {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  const events: unknown[] = [];
+
+  const runtime = new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      async executeCommand() {
+        throw new Error('should not execute before approval');
+      },
+    } as never,
+    completeAgentContext: async () =>
+      createAssistantMessage({
+        stopReason: 'toolUse',
+        content: [
+          {
+            type: 'toolCall',
+            id: 'call-1',
+            name: 'session.run_command',
+            arguments: {
+              sessionId: 'session-1',
+              command: 'sudo passwd root',
+            },
+          },
+        ],
+      }),
+  });
+
+  await runtime.run(
+    {
+      providerId: 'provider-1',
+      provider: createProvider(),
+      model: 'qwen-plus',
+      task: '设置 root 密码',
+      sessionId: 'session-1',
+      approvalMode: 'manual-sensitive',
+    },
+    event => {
+      events.push(event);
+    },
+    new AbortController().signal
+  );
+
+  const approvalEvent = events.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'human_gate_opened'
+  ) as { gate?: { kind?: unknown; reason?: unknown } } | undefined;
+
+  assert.equal(approvalEvent?.gate?.kind, 'approval');
+  assert.equal(approvalEvent?.gate?.reason, '该操作需要用户审批后执行。');
+});
+
 test('resumeWaiting 会继续等待同一个 terminal_input gate 并让原始 run 自然完成', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
