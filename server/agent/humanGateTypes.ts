@@ -13,8 +13,20 @@ export type AgentRunState =
   | 'failed'
   | 'cancelled';
 
+export type AgentRunExecutionState =
+  | 'running'
+  | 'blocked_by_ui_gate'
+  | 'blocked_by_terminal'
+  | 'suspended'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export type AgentRunBlockingMode = 'none' | 'ui_gate' | 'terminal_input';
+
 export type HumanGateKind = 'terminal_input' | 'approval' | 'parameter_confirmation';
 export type HumanGateStatus = 'open' | 'resolved' | 'rejected' | 'expired';
+export type HumanGatePresentationMode = 'inline_ui_action' | 'terminal_wait';
 
 export type TerminalInputGatePayload = {
   toolCallId: string;
@@ -58,7 +70,8 @@ type HumanGateRecordBase = {
   status: HumanGateStatus;
   reason: string;
   openedAt: number;
-  deadlineAt: number;
+  deadlineAt: number | null;
+  presentationMode: HumanGatePresentationMode;
 };
 
 export type TerminalInputGateRecord = HumanGateRecordBase & {

@@ -208,6 +208,22 @@ export class OpsAgentRuntime {
     this.agentRunRegistry = dependencies.agentRunRegistry ?? createAgentRunRegistry();
   }
 
+  private emitRunStateChanged(runId: string, emit: (event: AgentStreamEvent) => void) {
+    const snapshot = this.agentRunRegistry.getRun(runId);
+    if (!snapshot) {
+      return;
+    }
+
+    emit({
+      type: 'run_state_changed',
+      runId,
+      state: snapshot.state,
+      executionState: snapshot.executionState,
+      blockingMode: snapshot.blockingMode,
+      timestamp: Date.now(),
+    });
+  }
+
   getRunSnapshot(runId: string) {
     return this.agentRunRegistry.getRun(runId);
   }
@@ -425,12 +441,7 @@ export class OpsAgentRuntime {
       sessionId: input.sessionId,
       task: input.task.trim(),
     });
-    emit({
-      type: 'run_state_changed',
-      runId,
-      state: 'running',
-      timestamp: Date.now(),
-    });
+    this.emitRunStateChanged(runId, emit);
     logAgent('run_started', {
       runId,
       sessionId: input.sessionId,
@@ -672,7 +683,7 @@ export class OpsAgentRuntime {
     const deadlineAt =
       options.pause.gateKind === 'terminal_input'
         ? Date.now() + options.pause.payload.timeoutMs
-        : Date.now() + 300_000;
+        : null;
 
     const gate = this.agentRunRegistry.openGate({
       runId: options.runId,
@@ -689,12 +700,7 @@ export class OpsAgentRuntime {
       gate,
       timestamp: Date.now(),
     });
-    options.emit({
-      type: 'run_state_changed',
-      runId: options.runId,
-      state: 'waiting_for_human',
-      timestamp: Date.now(),
-    });
+    this.emitRunStateChanged(options.runId, options.emit);
 
     if (
       options.pause.gateKind === 'approval' ||
@@ -772,12 +778,7 @@ export class OpsAgentRuntime {
         runId: options.runId,
         clearGate: true,
       });
-      options.emit({
-        type: 'run_state_changed',
-        runId: options.runId,
-          state: 'running',
-          timestamp: Date.now(),
-        });
+      this.emitRunStateChanged(options.runId, options.emit);
         return result;
       }
 
@@ -803,12 +804,7 @@ export class OpsAgentRuntime {
           timestamp: Date.now(),
         });
       }
-      options.emit({
-        type: 'run_state_changed',
-        runId: options.runId,
-        state: 'suspended',
-        timestamp: Date.now(),
-      });
+      this.emitRunStateChanged(options.runId, options.emit);
       return { kind: 'paused', pause: options.pause };
     }
   }
@@ -844,12 +840,7 @@ export class OpsAgentRuntime {
         this.agentRunRegistry.markRunRunning({
           runId: options.runId,
         });
-        options.emit({
-          type: 'run_state_changed',
-          runId: options.runId,
-          state: 'running',
-          timestamp: Date.now(),
-        });
+        this.emitRunStateChanged(options.runId, options.emit);
         const resumed = await options.pause.continuation.resume(options.signal);
         if (isPauseOutcome(resumed)) {
           return this.handlePauseOutcome({
@@ -881,12 +872,7 @@ export class OpsAgentRuntime {
         this.agentRunRegistry.markRunRunning({
           runId: options.runId,
         });
-        options.emit({
-          type: 'run_state_changed',
-          runId: options.runId,
-          state: 'running',
-          timestamp: Date.now(),
-        });
+        this.emitRunStateChanged(options.runId, options.emit);
         return {
           kind: 'completed',
           envelope: options.pause.continuation.reject(),
@@ -915,12 +901,7 @@ export class OpsAgentRuntime {
         this.agentRunRegistry.markRunRunning({
           runId: options.runId,
         });
-        options.emit({
-          type: 'run_state_changed',
-          runId: options.runId,
-          state: 'running',
-          timestamp: Date.now(),
-        });
+        this.emitRunStateChanged(options.runId, options.emit);
 
         const resumed = await options.pause.continuation.resume(
           options.action.fields,
@@ -956,12 +937,7 @@ export class OpsAgentRuntime {
         this.agentRunRegistry.markRunRunning({
           runId: options.runId,
         });
-        options.emit({
-          type: 'run_state_changed',
-          runId: options.runId,
-          state: 'running',
-          timestamp: Date.now(),
-        });
+        this.emitRunStateChanged(options.runId, options.emit);
         return {
           kind: 'completed',
           envelope: options.pause.continuation.reject(),

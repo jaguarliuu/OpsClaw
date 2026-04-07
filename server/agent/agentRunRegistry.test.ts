@@ -27,8 +27,41 @@ void test('opens a terminal_input gate and moves the run to waiting_for_human', 
 
   const snapshot = registry.getRun('run-1');
   assert.equal(snapshot?.state, 'waiting_for_human');
+  assert.equal(snapshot?.executionState, 'blocked_by_terminal');
+  assert.equal(snapshot?.blockingMode, 'terminal_input');
+  assert.equal(snapshot?.openGate?.presentationMode, 'terminal_wait');
   assert.equal(gate.kind, 'terminal_input');
   assert.equal(gate.status, 'open');
+});
+
+void test('approval gates mark the run as blocked_by_ui_gate instead of terminal waiting', () => {
+  const registry = createAgentRunRegistry();
+  registry.registerRun({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    task: '重启 nginx 服务',
+  });
+
+  registry.openGate({
+    kind: 'approval',
+    runId: 'run-1',
+    sessionId: 'session-1',
+    reason: '该操作需要用户审批后执行。',
+    deadlineAt: Number.MAX_SAFE_INTEGER,
+    payload: {
+      toolCallId: 'call-1',
+      toolName: 'session.run_command',
+      arguments: { command: 'systemctl restart nginx' },
+      policy: { action: 'require_approval', matches: [] },
+    },
+  });
+
+  const snapshot = registry.getRun('run-1');
+
+  assert.equal(snapshot?.executionState, 'blocked_by_ui_gate');
+  assert.equal(snapshot?.blockingMode, 'ui_gate');
+  assert.equal(snapshot?.openGate?.presentationMode, 'inline_ui_action');
+  assert.equal(snapshot?.state, 'waiting_for_human');
 });
 
 void test('expiring a gate suspends the run instead of failing it', () => {

@@ -1198,11 +1198,26 @@ test('交互式 session 输入会打开 terminal_input gate 并在超时后挂�
         (event as { type?: unknown }).type === 'run_state_changed'
     )
     .map(event => (event as { state?: unknown }).state);
+  const waitingStateEvent = events.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'run_state_changed' &&
+      (event as { state?: unknown }).state === 'waiting_for_human'
+  ) as
+    | {
+        executionState?: unknown;
+        blockingMode?: unknown;
+      }
+    | undefined;
 
   assert.equal(gateOpened?.gate?.kind, 'terminal_input');
   assert.equal(gateOpened?.gate?.payload?.command, 'sudo passwd root');
   assert.equal(gateOpened?.gate?.payload?.sessionLabel, 'ubuntu@10.0.0.8:22');
   assert.equal(gateExpired?.gate?.status, 'expired');
+  assert.equal(waitingStateEvent?.executionState, 'blocked_by_terminal');
+  assert.equal(waitingStateEvent?.blockingMode, 'terminal_input');
   assert.deepEqual(runStates, ['running', 'waiting_for_human', 'suspended']);
   assert.equal(
     events.some(
@@ -1422,6 +1437,7 @@ test('命中敏感命令策略时 approval gate 会打开并等待而不是产�
         gate?: {
           kind?: unknown;
           reason?: unknown;
+          deadlineAt?: unknown;
           payload?: {
             policy?: {
               action?: unknown;
@@ -1459,15 +1475,23 @@ test('命中敏感命令策略时 approval gate 会打开并等待而不是产�
       'type' in event &&
       (event as { type?: unknown }).type === 'run_state_changed' &&
       (event as { state?: unknown }).state === 'waiting_for_human'
-  );
+  ) as
+    | {
+        executionState?: unknown;
+        blockingMode?: unknown;
+      }
+    | undefined;
 
   assert.ok(approvalEvent);
   assert.equal(approvalEvent.gate?.kind, 'approval');
   assert.equal(approvalEvent.gate?.reason, '命令命中敏感操作策略，需要用户审批后执行。');
+  assert.equal(approvalEvent.gate?.deadlineAt, null);
   assert.equal(approvalEvent.gate?.payload?.policy?.action, 'require_approval');
   assert.equal(approvalEvent.gate?.payload?.policy?.matches?.[0]?.ruleId, 'service.restart');
   assert.equal(approvalEvent.gate?.payload?.policy?.matches?.[0]?.title, '服务重启');
   assert.equal(waitingStateEvent !== undefined, true);
+  assert.equal(waitingStateEvent?.executionState, 'blocked_by_ui_gate');
+  assert.equal(waitingStateEvent?.blockingMode, 'ui_gate');
   assert.equal(approvalRequiredEvent === undefined, true);
   assert.equal(toolStartedEvent === undefined, true);
   assert.equal(toolResultEvent === undefined, true);
@@ -1481,6 +1505,119 @@ test('命中敏感命令策略时 approval gate 会打开并等待而不是产�
     ),
     false
   );
+});
+
+test('open approval gate keeps mutation blocked until resolveGate is called', async () => {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  const events: unknown[] = [];
+  let executeCalls = 0;
+
+  const runtime = new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      async executeCommand() {
+        executeCalls += 1;
+        return {
+          sessionId: 'session-1',
+          command: 'systemctl restart nginx',
+          exitCode: 0,
+          output: '',
+          truncated: false,
+          startedAt: 1,
+          completedAt: 2,
+          durationMs: 1,
+        };
+      },
+    } as never,
+    completeAgentContext: async () =>
+      createAssistantMessage({
+        stopReason: 'toolUse',
+        content: [
+          {
+            type: 'toolCall',
+            id: 'call-1',
+            name: 'session.run_command',
+            arguments: {
+              sessionId: 'session-1',
+              command: 'systemctl restart nginx',
+            },
+          },
+        ],
+      }),
+  });
+
+  await runtime.run(
+    {
+      providerId: 'provider-1',
+      provider: createProvider(),
+      model: 'qwen-plus',
+      task: '重启 nginx 服务',
+      sessionId: 'session-1',
+      approvalMode: 'manual-sensitive',
+    },
+    event => {
+      events.push(event);
+    },
+    new AbortController().signal
+  );
+
+  const openedGateEvent = events.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'human_gate_opened'
+  ) as { runId?: unknown; gate?: { id?: unknown } } | undefined;
+  const runId = typeof openedGateEvent?.runId === 'string' ? openedGateEvent.runId : null;
+
+  assert.ok(runId);
+  assert.equal(runtime.getRunSnapshot(runId)?.executionState, 'blocked_by_ui_gate');
+  assert.equal(runtime.getRunSnapshot(runId)?.blockingMode, 'ui_gate');
+  assert.equal(executeCalls, 0);
+  await assert.rejects(
+    runtime.streamContinuation(
+      runId,
+      () => {},
+      new AbortController().signal
+    ),
+    /gate 动作/
+  );
+  assert.equal(executeCalls, 0);
 });
 
 test('manual-sensitive 下交互式 passwd 命令会先打开 approval gate', async () => {

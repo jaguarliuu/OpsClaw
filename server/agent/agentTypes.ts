@@ -1,6 +1,11 @@
 import type { StoredLlmProvider } from '../llmProviderStore.js';
 
-import type { AgentRunState, HumanGateRecord } from './humanGateTypes.js';
+import type {
+  AgentRunBlockingMode,
+  AgentRunExecutionState,
+  AgentRunState,
+  HumanGateRecord,
+} from './humanGateTypes.js';
 
 export type AgentApprovalMode = 'auto-readonly' | 'manual-sensitive';
 
@@ -58,6 +63,8 @@ export type AgentStreamEvent =
       type: 'run_state_changed';
       runId: string;
       state: AgentRunState;
+      executionState?: AgentRunExecutionState;
+      blockingMode?: AgentRunBlockingMode;
       timestamp: number;
     }
   | {
