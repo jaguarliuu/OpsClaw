@@ -33,10 +33,12 @@ type TerminalWorkspaceProps = {
   agentSessionLock: AgentSessionLock | null;
   isUtilityDrawerOpen: boolean;
   isMacShortcutPlatform: boolean;
+  pendingUiGateCount: number;
   sessions: LiveSession[];
   sidebarCollapsed: boolean;
   onCloseSession: (sessionId: string) => void;
   onOpenNewConnection: () => void;
+  onOpenPendingGates: () => void;
   onToggleUtilityDrawer: () => void;
   onToggleSidebar: () => void;
   onSelectSession: (sessionId: string) => void;
@@ -51,10 +53,12 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
   agentSessionLock,
   isUtilityDrawerOpen,
   isMacShortcutPlatform,
+  pendingUiGateCount,
   sessions,
   sidebarCollapsed,
   onCloseSession,
   onOpenNewConnection,
+  onOpenPendingGates,
   onToggleUtilityDrawer,
   onToggleSidebar,
   onSelectSession,
@@ -205,6 +209,7 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
         desktopWindowControlsInsetStyle={desktopWindowChrome.windowControlsInsetStyle}
         isUtilityDrawerOpen={isUtilityDrawerOpen}
         isMacShortcutPlatform={isMacShortcutPlatform}
+        pendingUiGateCount={pendingUiGateCount}
         sessions={sessions}
         sidebarCollapsed={sidebarCollapsed}
         splitLayout={splitLayout}
@@ -213,6 +218,7 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
         onExitSplitMode={exitSplitMode}
         onOpenAiAssistant={onOpenAiAssistant}
         onOpenHelpDialog={onOpenHelpDialog}
+        onOpenPendingGates={onOpenPendingGates}
         onOpenNewConnection={onOpenNewConnection}
         onToggleUtilityDrawer={onToggleUtilityDrawer}
         onSelectSession={onSelectSession}

@@ -582,6 +582,10 @@ type Props = {
   sessions: LiveSession[];
   activeSessionId: string | null;
   agentRun: UseAgentRunResult;
+  requestedMode?: 'agent' | 'chat' | null;
+  requestedRunId?: string | null;
+  onRequestedModeApplied?: () => void;
+  onRequestedRunApplied?: () => void;
 };
 
 export function AiAssistantPanel({
@@ -590,6 +594,10 @@ export function AiAssistantPanel({
   sessions,
   activeSessionId,
   agentRun,
+  requestedMode = null,
+  requestedRunId = null,
+  onRequestedModeApplied,
+  onRequestedRunApplied,
 }: Props) {
   const { appTheme } = useTerminalSettings();
   const {
@@ -613,6 +621,7 @@ export function AiAssistantPanel({
     clearItems: clearAgentItems,
   } = agentRun;
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const gateItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const inputImeStateRef = useRef(createAiAssistantInputImeState());
   const agentSessionModel = createAgentSessionModel({
     activeGate: agentRun.activeGate,
@@ -681,6 +690,37 @@ export function AiAssistantPanel({
   const previousModeRef = useRef(mode);
   const previousVisibleItemCountRef = useRef(visibleItemCount);
   const previousVisibleContentSignatureRef = useRef(visibleContentSignature);
+
+  useEffect(() => {
+    if (!open || !requestedMode) {
+      return;
+    }
+
+    setMode(requestedMode);
+    onRequestedModeApplied?.();
+  }, [onRequestedModeApplied, open, requestedMode, setMode]);
+
+  useEffect(() => {
+    if (!open || !requestedRunId) {
+      return;
+    }
+
+    setMode('agent');
+    const requestedGateItem = agentItems.find(
+      (item) => item.kind === 'human_gate' && item.runId === requestedRunId
+    );
+    if (requestedGateItem?.kind === 'human_gate') {
+      setSelectedSessionId(requestedGateItem.gate.sessionId);
+    }
+
+    requestAnimationFrame(() => {
+      gateItemRefs.current[requestedRunId]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+      onRequestedRunApplied?.();
+    });
+  }, [agentItems, onRequestedRunApplied, open, requestedRunId, setMode, setSelectedSessionId]);
 
   useEffect(() => {
     const shouldScroll = shouldAutoScrollAiAssistantTimeline({
@@ -871,21 +911,37 @@ export function AiAssistantPanel({
                     : '未指定会话';
 
               return (
-                <AgentTimelineCard
+                <div
                   key={item.id}
-                  isBusy={isBusy}
-                  isContinuationPending={
-                    item.kind === 'human_gate' &&
-                    agentRun.pendingContinuationRunId === item.runId
-                  }
-                  item={item}
-                  onResolve={approveGate}
-                  onContinue={continuePendingRun}
-                  onReject={rejectGate}
-                  onResume={resumeGate}
-                  sessionLabel={sessionLabel}
-                  themeMode={appTheme.mode}
-                />
+                  ref={(node) => {
+                    if (item.kind !== 'human_gate') {
+                      return;
+                    }
+
+                    if (node) {
+                      gateItemRefs.current[item.runId] = node;
+                      return;
+                    }
+
+                    delete gateItemRefs.current[item.runId];
+                  }}
+                  data-agent-run-id={item.kind === 'human_gate' ? item.runId : undefined}
+                >
+                  <AgentTimelineCard
+                    isBusy={isBusy}
+                    isContinuationPending={
+                      item.kind === 'human_gate' &&
+                      agentRun.pendingContinuationRunId === item.runId
+                    }
+                    item={item}
+                    onResolve={approveGate}
+                    onContinue={continuePendingRun}
+                    onReject={rejectGate}
+                    onResume={resumeGate}
+                    sessionLabel={sessionLabel}
+                    themeMode={appTheme.mode}
+                  />
+                </div>
               );
             })
           : chatMessages.map((msg, i) => (

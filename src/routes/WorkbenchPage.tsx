@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import { PendingGatePanel } from '@/features/workbench/PendingGatePanel';
 import { buildSettingsPath } from '@/features/workbench/settingsNavigation';
 import {
   buildGroupTree,
@@ -44,7 +45,10 @@ import type {
 
 export function WorkbenchPage() {
   const navigate = useNavigate();
+  const [aiAssistantRequestedMode, setAiAssistantRequestedMode] = useState<'agent' | 'chat' | null>(null);
+  const [aiAssistantRequestedRunId, setAiAssistantRequestedRunId] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isPendingGatePanelOpen, setIsPendingGatePanelOpen] = useState(false);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const terminalWorkspaceRef = useRef<TerminalWorkspaceHandle | null>(null);
   const {
@@ -76,6 +80,7 @@ export function WorkbenchPage() {
   const shouldRenderHelpDialog = useDeferredMount(isHelpDialogOpen);
   const shouldRenderCsvImport = useDeferredMount(isCsvImportOpen);
   const shouldRenderSettingsPanel = useDeferredMount(isSettingsPanelOpen);
+  const shouldRenderPendingGatePanel = useDeferredMount(isPendingGatePanelOpen);
   const {
     isLoadingNodes,
     nodeOnlineStatus,
@@ -189,6 +194,16 @@ export function WorkbenchPage() {
     closeConnectionPanel();
   };
 
+  const handleOpenAiAssistant = (requestedMode: 'agent' | 'chat' | null = null) => {
+    if (requestedMode) {
+      setAiAssistantRequestedMode(requestedMode);
+    }
+
+    if (!isAiAssistantOpen) {
+      toggleAiAssistant();
+    }
+  };
+
   useKeyboardShortcuts({
     onToggleQuickConnect: toggleQuickConnect,
     onToggleCommandHistory: toggleHistoryPanel,
@@ -259,13 +274,15 @@ export function WorkbenchPage() {
           agentSessionLock={agentSessionLock}
           isUtilityDrawerOpen={isUtilityDrawerOpen}
           isMacShortcutPlatform={typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)}
+          pendingUiGateCount={agentRun.pendingUiGates.length}
           onCloseSession={handleCloseSession}
+          onOpenPendingGates={() => setIsPendingGatePanelOpen(true)}
           onOpenNewConnection={openNewConnection}
           onToggleUtilityDrawer={toggleUtilityDrawer}
           onSelectSession={setActiveSessionId}
           onSessionStatusChange={handleSessionStatusChange}
           onToggleSidebar={() => setIsSidebarCollapsed((current) => !current)}
-          onOpenAiAssistant={toggleAiAssistant}
+          onOpenAiAssistant={handleOpenAiAssistant}
           onOpenHelpDialog={openHelpDialog}
           sidebarCollapsed={isSidebarCollapsed}
           sessions={sessions}
@@ -282,6 +299,21 @@ export function WorkbenchPage() {
           }}
         />
       </div>
+
+      {shouldRenderPendingGatePanel ? (
+        <PendingGatePanel
+          items={agentRun.pendingUiGates}
+          open={isPendingGatePanelOpen}
+          onClose={() => setIsPendingGatePanelOpen(false)}
+          onSelectRun={(runId) => {
+            setIsPendingGatePanelOpen(false);
+            setAiAssistantRequestedRunId(runId);
+            handleOpenAiAssistant('agent');
+          }}
+          onResolve={agentRun.approveGate}
+          onReject={agentRun.rejectGate}
+        />
+      ) : null}
 
       {shouldRenderConnectionPanel ? (
         <Suspense fallback={null}>
@@ -422,6 +454,10 @@ export function WorkbenchPage() {
             sessions={sessions}
             activeSessionId={activeSessionId}
             agentRun={agentRun}
+            requestedMode={aiAssistantRequestedMode}
+            onRequestedModeApplied={() => setAiAssistantRequestedMode(null)}
+            requestedRunId={aiAssistantRequestedRunId}
+            onRequestedRunApplied={() => setAiAssistantRequestedRunId(null)}
           />
         </Suspense>
       ) : null}

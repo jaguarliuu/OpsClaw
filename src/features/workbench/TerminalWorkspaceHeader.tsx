@@ -1,6 +1,7 @@
 import { Sparkles } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { PendingGateIndicator } from '@/features/workbench/PendingGateIndicator';
 import type { LiveSession } from '@/features/workbench/types';
 import {
   buildWorkbenchLayoutActions,
@@ -23,11 +24,13 @@ type TerminalWorkspaceHeaderProps = {
   sessions: LiveSession[];
   sidebarCollapsed: boolean;
   splitLayout: SplitLayout;
+  pendingUiGateCount: number;
   onCloseSession: (sessionId: string) => void;
   onEnterSplitMode: (layout: 'horizontal' | 'vertical') => void;
   onExitSplitMode: () => void;
   onOpenAiAssistant: () => void;
   onOpenHelpDialog: () => void;
+  onOpenPendingGates: () => void;
   onOpenNewConnection: () => void;
   onToggleUtilityDrawer: () => void;
   onSelectSession: (sessionId: string) => void;
@@ -82,6 +85,7 @@ export function TerminalWorkspaceHeader({
   desktopWindowControlsInsetStyle,
   isUtilityDrawerOpen,
   isMacShortcutPlatform,
+  pendingUiGateCount,
   sessions,
   sidebarCollapsed,
   splitLayout,
@@ -90,6 +94,7 @@ export function TerminalWorkspaceHeader({
   onExitSplitMode,
   onOpenAiAssistant,
   onOpenHelpDialog,
+  onOpenPendingGates,
   onOpenNewConnection,
   onToggleUtilityDrawer,
   onSelectSession,
@@ -191,25 +196,61 @@ export function TerminalWorkspaceHeader({
             })}
           </div>
 
-          {[helpDialogAction, utilityDrawerAction, aiAssistantAction].map((action) => (
-            <Button
-              key={action.id}
-              className={cn('transition-colors', getWorkbenchActionClassName(action.tone))}
-              onClick={() => {
-                performWorkbenchToolAction(action, {
-                  onOpenAiAssistant,
-                  onOpenHelpDialog,
-                  onToggleUtilityDrawer,
-                });
-              }}
-              size="sm"
-              type="button"
-              variant={action.variant}
-              title={action.title}
-            >
-              {renderToolActionContent(action)}
-            </Button>
-          ))}
+          <Button
+            key={helpDialogAction.id}
+            className={cn('transition-colors', getWorkbenchActionClassName(helpDialogAction.tone))}
+            onClick={() => {
+              performWorkbenchToolAction(helpDialogAction, {
+                onOpenAiAssistant,
+                onOpenHelpDialog,
+                onToggleUtilityDrawer,
+              });
+            }}
+            size="sm"
+            type="button"
+            variant={helpDialogAction.variant}
+            title={helpDialogAction.title}
+          >
+            {renderToolActionContent(helpDialogAction)}
+          </Button>
+
+          <Button
+            key={utilityDrawerAction.id}
+            className={cn('transition-colors', getWorkbenchActionClassName(utilityDrawerAction.tone))}
+            onClick={() => {
+              performWorkbenchToolAction(utilityDrawerAction, {
+                onOpenAiAssistant,
+                onOpenHelpDialog,
+                onToggleUtilityDrawer,
+              });
+            }}
+            size="sm"
+            type="button"
+            variant={utilityDrawerAction.variant}
+            title={utilityDrawerAction.title}
+          >
+            {renderToolActionContent(utilityDrawerAction)}
+          </Button>
+
+          <PendingGateIndicator count={pendingUiGateCount} onClick={onOpenPendingGates} />
+
+          <Button
+            key={aiAssistantAction.id}
+            className={cn('transition-colors', getWorkbenchActionClassName(aiAssistantAction.tone))}
+            onClick={() => {
+              performWorkbenchToolAction(aiAssistantAction, {
+                onOpenAiAssistant,
+                onOpenHelpDialog,
+                onToggleUtilityDrawer,
+              });
+            }}
+            size="sm"
+            type="button"
+            variant={aiAssistantAction.variant}
+            title={aiAssistantAction.title}
+          >
+            {renderToolActionContent(aiAssistantAction)}
+          </Button>
         </div>
       </header>
 
