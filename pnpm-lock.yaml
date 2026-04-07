@@ -74,6 +74,9 @@ dependencies:
   ws:
     specifier: ^8.18.3
     version: 8.20.0
+  yaml:
+    specifier: ^2.8.3
+    version: 2.8.3
 
 devDependencies:
   '@eslint/js':
@@ -138,7 +141,7 @@ devDependencies:
     version: 8.57.1(eslint@9.39.4)(typescript@5.8.3)
   vite:
     specifier: ^6.3.5
-    version: 6.4.1(@types/node@22.19.15)(tsx@4.21.0)
+    version: 6.4.1(@types/node@22.19.15)(tsx@4.21.0)(yaml@2.8.3)
   wait-on:
     specifier: ^9.0.4
     version: 9.0.4
@@ -3945,7 +3948,7 @@ packages:
       '@tailwindcss/node': 4.2.2
       '@tailwindcss/oxide': 4.2.2
       tailwindcss: 4.2.2
-      vite: 6.4.1(@types/node@22.19.15)(tsx@4.21.0)
+      vite: 6.4.1(@types/node@22.19.15)(tsx@4.21.0)(yaml@2.8.3)
     dev: true
 
   /@tootallnate/quickjs-emscripten@0.23.0:
@@ -4309,7 +4312,7 @@ packages:
     dependencies:
       '@rolldown/pluginutils': 1.0.0-beta.27
       '@swc/core': 1.15.21
-      vite: 6.4.1(@types/node@22.19.15)(tsx@4.21.0)
+      vite: 6.4.1(@types/node@22.19.15)(tsx@4.21.0)(yaml@2.8.3)
     transitivePeerDependencies:
       - '@swc/helpers'
     dev: true
@@ -8745,7 +8748,7 @@ packages:
       vfile-message: 4.0.3
     dev: false
 
-  /vite@6.4.1(@types/node@22.19.15)(tsx@4.21.0):
+  /vite@6.4.1(@types/node@22.19.15)(tsx@4.21.0)(yaml@2.8.3):
     resolution: {integrity: sha512-+Oxm7q9hDoLMyJOYfUYBuHQo+dkAloi33apOPP56pzj+vsdJDzr+j1NISE5pyaAuKL4A3UD34qd0lx5+kfKp2g==}
     engines: {node: ^18.0.0 || ^20.0.0 || >=22.0.0}
     hasBin: true
@@ -8793,6 +8796,7 @@ packages:
       rollup: 4.60.0
       tinyglobby: 0.2.15
       tsx: 4.21.0
+      yaml: 2.8.3
     optionalDependencies:
       fsevents: 2.3.3
     dev: true
@@ -8895,6 +8899,11 @@ packages:
     resolution: {integrity: sha512-YgvUTfwqyc7UXVMrB+SImsVYSmTS8X/tSrtdNZMImM+n7+QTriRXyXim0mBrTXNeqzVF0KWGgHPeiyViFFrNDw==}
     engines: {node: '>=18'}
     dev: true
+
+  /yaml@2.8.3:
+    resolution: {integrity: sha512-AvbaCLOO2Otw/lW5bmh9d/WEdcDFdQp2Z2ZUH3pX9U2ihyUY0nvLv7J6TrWowklRGPYbB/IuIMfYgxaCPg5Bpg==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
 
   /yargs-parser@21.1.1:
     resolution: {integrity: sha512-tVpsJW7DdjecAiFpbIB1e3qxIQsE6NoPc5/eTdrbbIC4h0LVsWhnoa3g+m2HclBIujHzsxZ4VJVA+GUuc2/LBw==}

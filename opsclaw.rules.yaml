@@ -1,0 +1,30 @@
+version: 1
+global:
+  intents:
+    diagnostic.readonly:
+      defaultRisk: low
+      requireApproval: false
+      protectedParameters: []
+    package_management:
+      defaultRisk: medium
+      requireApproval: false
+      protectedParameters:
+        - package_name
+    user_management:
+      defaultRisk: high
+      requireApproval: true
+      protectedParameters:
+        - username
+        - password
+        - sudo_policy
+    permission_change:
+      defaultRisk: high
+      requireApproval: true
+      protectedParameters:
+        - target_path
+        - sudo_policy
+groups:
+  production:
+    intents:
+      package_management:
+        requireApproval: true
