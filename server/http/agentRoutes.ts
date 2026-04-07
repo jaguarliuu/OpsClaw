@@ -56,6 +56,9 @@ export function registerAgentRoutes(
       }
 
       const stream = createAgentEventStream(request, response);
+      const emitEvent = (event: unknown) => {
+        stream.emit(event);
+      };
 
       try {
         await agentRuntime.run(
@@ -69,7 +72,7 @@ export function registerAgentRoutes(
             maxSteps,
             maxCommandOutputChars,
           },
-          stream.emit,
+          emitEvent,
           stream.signal
         );
       } finally {
@@ -106,7 +109,17 @@ export function registerAgentRoutes(
 
   app.post('/api/agent/runs/:runId/gates/:gateId/resolve', (request, response) => {
     try {
-      const snapshot = agentRuntime.resolveGate(request.params.runId, request.params.gateId);
+      const body = isRecord(request.body) ? request.body : {};
+      const fields = isRecord(body.fields)
+        ? Object.fromEntries(
+            Object.entries(body.fields).filter(
+              (entry): entry is [string, string] => typeof entry[1] === 'string'
+            )
+          )
+        : undefined;
+      const snapshot = agentRuntime.resolveGate(request.params.runId, request.params.gateId, {
+        fields,
+      });
       response.json(snapshot);
     } catch (error) {
       console.error('[Agent] resolve gate error:', error);
@@ -127,11 +140,14 @@ export function registerAgentRoutes(
   app.post('/api/agent/runs/:runId/stream', async (request, response) => {
     try {
       const stream = createAgentEventStream(request, response);
+      const emitEvent = (event: unknown) => {
+        stream.emit(event);
+      };
 
       try {
         await agentRuntime.streamContinuation(
           request.params.runId,
-          stream.emit,
+          emitEvent,
           stream.signal
         );
       } finally {

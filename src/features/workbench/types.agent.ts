@@ -19,7 +19,24 @@ export type AgentRunState =
   | 'failed'
   | 'cancelled';
 
-export type HumanGateKind = 'terminal_input' | 'approval';
+export type OpsClawIntentKind =
+  | 'diagnostic.readonly'
+  | 'routine.safe_change'
+  | 'service.lifecycle_change'
+  | 'filesystem.write'
+  | 'filesystem.delete'
+  | 'package_management'
+  | 'user_management'
+  | 'permission_change'
+  | 'credential_change';
+
+export type ParameterSource =
+  | 'user_explicit'
+  | 'user_confirmed'
+  | 'system_observed'
+  | 'agent_inferred';
+
+export type HumanGateKind = 'terminal_input' | 'approval' | 'parameter_confirmation';
 export type HumanGateStatus = 'open' | 'resolved' | 'rejected' | 'expired';
 
 export type TerminalInputGatePayload = {
@@ -37,7 +54,26 @@ export type ApprovalGatePayload = {
   policy: AgentPolicySummary;
 };
 
-export type HumanGatePayload = TerminalInputGatePayload | ApprovalGatePayload;
+export type ParameterConfirmationField = {
+  name: string;
+  label: string;
+  value: string;
+  required: boolean;
+  source: ParameterSource;
+};
+
+export type ParameterConfirmationGatePayload = {
+  toolCallId: string;
+  toolName: 'session.run_command';
+  command: string;
+  intentKind: OpsClawIntentKind;
+  fields: ParameterConfirmationField[];
+};
+
+export type HumanGatePayload =
+  | TerminalInputGatePayload
+  | ApprovalGatePayload
+  | ParameterConfirmationGatePayload;
 type HumanGateRecordBase = {
   id: string;
   runId: string;
@@ -58,7 +94,15 @@ export type ApprovalGateRecord = HumanGateRecordBase & {
   payload: ApprovalGatePayload;
 };
 
-export type HumanGateRecord = TerminalInputGateRecord | ApprovalGateRecord;
+export type ParameterConfirmationGateRecord = HumanGateRecordBase & {
+  kind: 'parameter_confirmation';
+  payload: ParameterConfirmationGatePayload;
+};
+
+export type HumanGateRecord =
+  | TerminalInputGateRecord
+  | ApprovalGateRecord
+  | ParameterConfirmationGateRecord;
 
 export type AgentRunSnapshot = {
   runId: string;
@@ -227,9 +271,9 @@ export type AgentTimelineItem =
   | { id: string; kind: 'status'; text: string };
 
 export function parseAgentStreamEvent(payload: unknown): AgentStreamEvent {
-  const value =
+  const value: unknown =
     typeof payload === 'string'
-      ? JSON.parse(payload)
+      ? (JSON.parse(payload) as unknown)
       : payload;
 
   if (

@@ -67,11 +67,17 @@ export async function getReattachableAgentRun(sessionId: string) {
   return payload.item;
 }
 
-export async function resolveAgentGate(runId: string, gateId: string) {
+export async function resolveAgentGate(
+  runId: string,
+  gateId: string,
+  input?: { fields?: Record<string, string> }
+) {
   const response = await fetch(
     `${buildServerHttpBaseUrl()}/api/agent/runs/${runId}/gates/${gateId}/resolve`,
     {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input ?? {}),
     }
   );
 

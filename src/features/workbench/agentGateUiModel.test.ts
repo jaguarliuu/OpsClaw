@@ -87,3 +87,36 @@ void test('open terminal_input gates do not expose action buttons', () => {
   assert.equal(getHumanGateTitle(gate), '等待终端输入');
   assert.equal(getHumanGateDescription(gate), '请在对应终端中完成交互输入。');
 });
+
+void test('parameter_confirmation gates expose confirm and reject actions with dedicated copy', () => {
+  const gate = {
+    id: 'gate-4',
+    runId: 'run-1',
+    sessionId: 'session-1',
+    kind: 'parameter_confirmation' as const,
+    status: 'open' as const,
+    reason: '该操作依赖受保护参数，请确认参数后继续。',
+    openedAt: 1,
+    deadlineAt: 2,
+    payload: {
+      toolCallId: 'call-4',
+      toolName: 'session.run_command' as const,
+      command: 'sudo adduser ops-admin',
+      intentKind: 'user_management' as const,
+      fields: [
+        {
+          name: 'username',
+          label: '用户名',
+          value: '',
+          required: true,
+          source: 'agent_inferred' as const,
+        },
+      ],
+    },
+  };
+
+  assert.equal(getHumanGatePrimaryActionLabel(gate), '确认参数');
+  assert.equal(getHumanGateSecondaryActionLabel(gate), '拒绝');
+  assert.equal(getHumanGateTitle(gate), '等待参数确认');
+  assert.equal(getHumanGateDescription(gate), '请确认或补全关键参数，确认后才会继续执行命令。');
+});

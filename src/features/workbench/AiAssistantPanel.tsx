@@ -30,6 +30,12 @@ import {
   getHumanGateSecondaryActionLabel,
   getHumanGateTitle,
 } from './agentGateUiModel';
+import {
+  buildParameterGateFormState,
+  buildParameterGateResolveInput,
+  updateParameterGateFormValue,
+  validateParameterGateSubmission,
+} from './agentParameterGateModel';
 import { createAgentSessionModel } from './agentSessionModel';
 import { formatAgentPolicySummary } from './agentPolicyUiModel';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -250,7 +256,7 @@ function HumanGateCard({
   item,
   isBusy,
   isContinuationPending,
-  onApprove,
+  onResolve,
   onContinue,
   onReject,
   onResume,
@@ -260,7 +266,11 @@ function HumanGateCard({
   item: Extract<AgentTimelineItem, { kind: 'human_gate' }>;
   isBusy: boolean;
   isContinuationPending: boolean;
-  onApprove: (runId: string, gateId: string) => Promise<void>;
+  onResolve: (
+    runId: string,
+    gateId: string,
+    input?: { fields?: Record<string, string> }
+  ) => Promise<void>;
   onContinue: (runId: string) => Promise<void>;
   onReject: (runId: string, gateId: string) => Promise<void>;
   onResume: (runId: string, gateId: string) => Promise<void>;
@@ -271,6 +281,24 @@ function HumanGateCard({
   const primaryActionLabel = isContinuationPending ? '继续运行' : getHumanGatePrimaryActionLabel(gate);
   const secondaryActionLabel = isContinuationPending ? null : getHumanGateSecondaryActionLabel(gate);
   const policySummary = gate.kind === 'approval' ? formatAgentPolicySummary(gate.payload.policy) : null;
+  const showParameterForm = gate.kind === 'parameter_confirmation' && !isContinuationPending;
+  const [parameterFormState, setParameterFormState] = useState(() =>
+    gate.kind === 'parameter_confirmation'
+      ? buildParameterGateFormState({ fields: gate.payload.fields })
+      : null
+  );
+  const [parameterError, setParameterError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (gate.kind !== 'parameter_confirmation') {
+      setParameterFormState(null);
+      setParameterError(null);
+      return;
+    }
+
+    setParameterFormState(buildParameterGateFormState({ fields: gate.payload.fields }));
+    setParameterError(null);
+  }, [gate.id, gate.kind, gate.payload]);
 
   return (
     <div className="overflow-hidden rounded-xl border border-amber-500/20 bg-[linear-gradient(180deg,rgba(245,158,11,0.12),rgba(245,158,11,0.04))] shadow-[0_16px_38px_rgba(245,158,11,0.08)]">
@@ -281,7 +309,11 @@ function HumanGateCard({
               Human Gate
             </span>
             <span className="text-[11px] text-[var(--app-text-secondary)]">
-              {gate.kind === 'approval' ? '审批' : '终端交互'}
+              {gate.kind === 'approval'
+                ? '审批'
+                : gate.kind === 'parameter_confirmation'
+                  ? '参数确认'
+                  : '终端交互'}
             </span>
           </div>
           <div className="text-sm font-medium text-[var(--app-text-primary)]">{getHumanGateTitle(gate)}</div>
@@ -312,7 +344,67 @@ function HumanGateCard({
             className="rounded-lg border border-white/8 bg-[var(--app-bg-base)] px-3 py-3 text-xs"
           />
         ) : null}
-        {primaryActionLabel || secondaryActionLabel ? (
+        {showParameterForm && parameterFormState ? (
+          <form
+            className="space-y-2 rounded-lg border border-white/8 bg-[var(--app-bg-base)] p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const validation = validateParameterGateSubmission(parameterFormState);
+              if (!validation.ok) {
+                setParameterError('请先填写所有必填参数。');
+                return;
+              }
+
+              setParameterError(null);
+              void onResolve(item.runId, gate.id, buildParameterGateResolveInput(parameterFormState));
+            }}
+          >
+            {gate.payload.fields.map((field) => (
+              <label key={field.name} className="flex flex-col gap-1 text-xs text-[var(--app-text-secondary)]">
+                <span className="flex items-center gap-1">
+                  <span>{field.label}</span>
+                  {field.required ? <span className="text-red-400">*</span> : null}
+                </span>
+                <input
+                  type={field.name.includes('password') ? 'password' : 'text'}
+                  value={parameterFormState.values[field.name] ?? ''}
+                  disabled={isBusy}
+                  onChange={(event) => {
+                    setParameterFormState((current) =>
+                      current ? updateParameterGateFormValue(current, field.name, event.target.value) : current
+                    );
+                    setParameterError(null);
+                  }}
+                  className="h-8 rounded-md border border-white/10 bg-white/[0.02] px-2 text-xs text-[var(--app-text-primary)] outline-none transition-colors focus:border-amber-400/40"
+                />
+              </label>
+            ))}
+            {parameterError ? (
+              <div className="text-xs text-red-300">{parameterError}</div>
+            ) : null}
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                type="submit"
+                disabled={isBusy}
+                className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-medium text-black transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {primaryActionLabel ?? '确认参数'}
+              </button>
+              {secondaryActionLabel ? (
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => {
+                    void onReject(item.runId, gate.id);
+                  }}
+                  className="rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-[var(--app-text-primary)] transition-colors hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {secondaryActionLabel}
+                </button>
+              ) : null}
+            </div>
+          </form>
+        ) : primaryActionLabel || secondaryActionLabel ? (
           <div className="flex flex-wrap gap-2">
             {primaryActionLabel ? (
               <button
@@ -325,7 +417,12 @@ function HumanGateCard({
                   }
 
                   if (gate.kind === 'approval') {
-                    void onApprove(item.runId, gate.id);
+                    void onResolve(item.runId, gate.id);
+                    return;
+                  }
+
+                  if (gate.kind === 'parameter_confirmation') {
+                    void onResolve(item.runId, gate.id);
                     return;
                   }
 
@@ -359,7 +456,7 @@ function AgentTimelineCard({
   item,
   isBusy,
   isContinuationPending,
-  onApprove,
+  onResolve,
   onContinue,
   onReject,
   onResume,
@@ -369,7 +466,11 @@ function AgentTimelineCard({
   item: AgentTimelineItem;
   isBusy: boolean;
   isContinuationPending: boolean;
-  onApprove: (runId: string, gateId: string) => Promise<void>;
+  onResolve: (
+    runId: string,
+    gateId: string,
+    input?: { fields?: Record<string, string> }
+  ) => Promise<void>;
   onContinue: (runId: string) => Promise<void>;
   onReject: (runId: string, gateId: string) => Promise<void>;
   onResume: (runId: string, gateId: string) => Promise<void>;
@@ -423,7 +524,7 @@ function AgentTimelineCard({
         isBusy={isBusy}
         isContinuationPending={isContinuationPending}
         item={item}
-        onApprove={onApprove}
+        onResolve={onResolve}
         onContinue={onContinue}
         onReject={onReject}
         onResume={onResume}
@@ -778,7 +879,7 @@ export function AiAssistantPanel({
                     agentRun.pendingContinuationRunId === item.runId
                   }
                   item={item}
-                  onApprove={approveGate}
+                  onResolve={approveGate}
                   onContinue={continuePendingRun}
                   onReject={rejectGate}
                   onResume={resumeGate}

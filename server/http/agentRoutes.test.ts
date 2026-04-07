@@ -148,13 +148,18 @@ void test('resume-waiting returns 200 and resumes a suspended terminal_input gat
 void test('resolve and reject return 200 with the updated gate snapshot', async () => {
   const routes: RegisteredRoute[] = [];
   const app = createFakeApp(routes);
-  const calls: Array<{ action: string; runId: string; gateId: string }> = [];
+  const calls: Array<{
+    action: string;
+    runId: string;
+    gateId: string;
+    input?: { fields?: Record<string, string> };
+  }> = [];
 
   registerAgentRoutes(app as never, {
     llmProviderStore: {} as never,
     agentRuntime: {
-      resolveGate(runId: string, gateId: string) {
-        calls.push({ action: 'resolve', runId, gateId });
+      resolveGate(runId: string, gateId: string, input?: { fields?: Record<string, string> }) {
+        calls.push({ action: 'resolve', runId, gateId, input });
         return {
           runId,
           sessionId: 'session-1',
@@ -210,7 +215,18 @@ void test('resolve and reject return 200 with the updated gate snapshot', async 
   const rejectHandler = getRequiredRoute(routes, '/api/agent/runs/:runId/gates/:gateId/reject');
 
   const resolveResponse = createFakeResponse();
-  await resolveHandler(createFakeRequest({ runId: 'run-1', gateId: 'gate-1' }), resolveResponse);
+  await resolveHandler(
+    createFakeRequest(
+      { runId: 'run-1', gateId: 'gate-1' },
+      {
+        fields: {
+          username: 'ops-admin',
+          password: 'masked-secret',
+        },
+      }
+    ),
+    resolveResponse
+  );
   assert.equal((resolveResponse.body as { openGate?: { status?: string } }).openGate?.status, 'resolved');
 
   const rejectResponse = createFakeResponse();
@@ -218,7 +234,17 @@ void test('resolve and reject return 200 with the updated gate snapshot', async 
   assert.equal((rejectResponse.body as { openGate?: { status?: string } }).openGate?.status, 'rejected');
 
   assert.deepEqual(calls, [
-    { action: 'resolve', runId: 'run-1', gateId: 'gate-1' },
+    {
+      action: 'resolve',
+      runId: 'run-1',
+      gateId: 'gate-1',
+      input: {
+        fields: {
+          username: 'ops-admin',
+          password: 'masked-secret',
+        },
+      },
+    },
     { action: 'reject', runId: 'run-1', gateId: 'gate-2' },
   ]);
 });

@@ -1,6 +1,10 @@
 import type { HumanGateRecord } from './types.agent';
 
 export function getHumanGatePrimaryActionLabel(gate: HumanGateRecord) {
+  if (gate.kind === 'parameter_confirmation') {
+    return '确认参数';
+  }
+
   if (gate.kind === 'approval') {
     return '批准';
   }
@@ -13,6 +17,10 @@ export function getHumanGatePrimaryActionLabel(gate: HumanGateRecord) {
 }
 
 export function getHumanGateTitle(gate: HumanGateRecord) {
+  if (gate.kind === 'parameter_confirmation') {
+    return gate.status === 'rejected' ? '已拒绝参数确认' : '等待参数确认';
+  }
+
   if (gate.kind === 'approval') {
     return gate.status === 'rejected' ? '已拒绝敏感操作' : '等待人工审批';
   }
@@ -25,6 +33,10 @@ export function getHumanGateTitle(gate: HumanGateRecord) {
 }
 
 export function getHumanGateDescription(gate: HumanGateRecord) {
+  if (gate.kind === 'parameter_confirmation') {
+    return '请确认或补全关键参数，确认后才会继续执行命令。';
+  }
+
   if (gate.kind === 'approval') {
     return '该操作需要你的批准后才会继续执行。';
   }
@@ -37,7 +49,7 @@ export function getHumanGateDescription(gate: HumanGateRecord) {
 }
 
 export function getHumanGateSecondaryActionLabel(gate: HumanGateRecord) {
-  if (gate.kind === 'approval') {
+  if (gate.kind === 'approval' || gate.kind === 'parameter_confirmation') {
     return '拒绝';
   }
 

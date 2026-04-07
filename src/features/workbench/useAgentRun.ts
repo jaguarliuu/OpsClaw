@@ -278,8 +278,12 @@ export function useAgentRun() {
   );
 
   const approveGate = useCallback(
-    async (runIdToContinue: string, gateId: string) => {
-      await continueRun(runIdToContinue, () => resolveAgentGate(runIdToContinue, gateId));
+    async (
+      runIdToContinue: string,
+      gateId: string,
+      input?: { fields?: Record<string, string> }
+    ) => {
+      await continueRun(runIdToContinue, () => resolveAgentGate(runIdToContinue, gateId, input));
     },
     [continueRun]
   );
