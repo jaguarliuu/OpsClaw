@@ -56,3 +56,15 @@ void test('requires parameter confirmation when user management command invents 
     ]
   );
 });
+
+void test('treats explicit usernames as user-provided and still requires approval for user management', () => {
+  const plan = buildSessionCommandPlan({
+    command: 'sudo adduser ops-admin',
+    effectiveRules,
+    sessionGroupName: null,
+    userTask: '创建一个 root 权限用户，用户名叫 ops-admin',
+  });
+
+  assert.equal(plan.parameters[0]?.source, 'user_explicit');
+  assert.equal(plan.decision.kind, 'require_approval');
+});
