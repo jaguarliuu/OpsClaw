@@ -9,12 +9,21 @@ import {
   streamAgentRunContinuation,
 } from './agentApi';
 import type {
+  AgentRunBlockingMode,
+  AgentRunExecutionState,
   AgentRunState,
+  AgentRunSnapshot,
   AgentStreamEvent,
   AgentTimelineItem,
   HumanGateRecord,
 } from './types.agent';
-import { applyAgentEventToTimeline, reduceAgentEventState } from './useAgentRunModel';
+import { buildPendingUiGateItems } from './agentPendingGateModel';
+import { isTerminalWaitGate } from './agentGatePresentationModel';
+import {
+  applyAgentEventToTimeline,
+  projectAgentSnapshotToEventState,
+  reduceAgentEventState,
+} from './useAgentRunModel';
 
 type RunAgentOptions = {
   providerId: string;
@@ -36,15 +45,53 @@ export function useAgentRun() {
   const [error, setError] = useState<string | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [runState, setRunState] = useState<AgentRunState | null>(null);
+  const [executionState, setExecutionState] = useState<AgentRunExecutionState | null>(null);
+  const [blockingMode, setBlockingMode] = useState<AgentRunBlockingMode | null>(null);
   const [activeGate, setActiveGate] = useState<HumanGateRecord | null>(null);
+  const [pendingUiGates, setPendingUiGates] = useState(buildPendingUiGateItems([]));
   const [pendingContinuationRunId, setPendingContinuationRunId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const eventStateRef = useRef({
     runId: null as string | null,
     runState: null as AgentRunState | null,
+    executionState: null as AgentRunExecutionState | null,
+    blockingMode: null as AgentRunBlockingMode | null,
     activeGate: null as HumanGateRecord | null,
+    pendingUiGates: buildPendingUiGateItems([]),
     error: null as string | null,
   });
+
+  function getPendingContinuationRunIdFromSnapshot(snapshot: {
+    runId: string;
+    state: AgentRunState;
+    openGate: HumanGateRecord | null;
+  }) {
+    if (isTerminalWaitGate(snapshot.openGate)) {
+      return snapshot.runId;
+    }
+
+    if (snapshot.state === 'suspended' && snapshot.openGate?.kind === 'terminal_input') {
+      return snapshot.runId;
+    }
+
+    return null;
+  }
+
+  function syncEventState(nextEventState: typeof eventStateRef.current) {
+    setRunId(nextEventState.runId);
+    setRunState(nextEventState.runState);
+    setExecutionState(nextEventState.executionState);
+    setBlockingMode(nextEventState.blockingMode);
+    setActiveGate(nextEventState.activeGate);
+    setPendingUiGates(nextEventState.pendingUiGates);
+    setError(nextEventState.error);
+  }
+
+  function applySnapshotToEventState(snapshot: AgentRunSnapshot) {
+    const nextEventState = projectAgentSnapshotToEventState(eventStateRef.current, snapshot);
+    eventStateRef.current = nextEventState;
+    syncEventState(nextEventState);
+  }
 
   const appendItem = useCallback((item: AgentTimelineItem) => {
     setItems((current) => [...current, item]);
@@ -54,16 +101,36 @@ export function useAgentRun() {
     (event: AgentStreamEvent) => {
       const nextEventState = reduceAgentEventState(eventStateRef.current, event);
       eventStateRef.current = nextEventState;
-      setRunId(nextEventState.runId);
-      setRunState(nextEventState.runState);
-      setActiveGate(nextEventState.activeGate);
-      setError(nextEventState.error);
+      syncEventState(nextEventState);
 
       setItems((current): AgentTimelineItem[] =>
         applyAgentEventToTimeline(current, event, createItemId)
       );
 
       if (event.type === 'run_started') {
+        setPendingContinuationRunId(null);
+        return;
+      }
+
+      if (event.type === 'run_state_changed') {
+        setPendingContinuationRunId(
+          nextEventState.runId && isTerminalWaitGate(nextEventState.activeGate)
+            ? nextEventState.runId
+            : null
+        );
+        return;
+      }
+
+      if (event.type === 'human_gate_opened' || event.type === 'human_gate_expired') {
+        setPendingContinuationRunId(
+          nextEventState.runId && isTerminalWaitGate(nextEventState.activeGate)
+            ? nextEventState.runId
+            : null
+        );
+        return;
+      }
+
+      if (event.type === 'human_gate_resolved' || event.type === 'human_gate_rejected') {
         setPendingContinuationRunId(null);
         return;
       }
@@ -93,10 +160,7 @@ export function useAgentRun() {
   const continueRun = useCallback(
     async (
       runIdToContinue: string,
-      action: () => Promise<{
-        state: AgentRunState;
-        openGate: HumanGateRecord | null;
-      }>
+      action: () => Promise<AgentRunSnapshot>
     ) => {
       const controller = new AbortController();
       let actionApplied = false;
@@ -111,15 +175,14 @@ export function useAgentRun() {
       try {
         const snapshot = await action();
         actionApplied = true;
-        eventStateRef.current = {
-          ...eventStateRef.current,
-          runId: runIdToContinue,
-          runState: snapshot.state,
-          activeGate: snapshot.openGate,
-        };
-        setRunState(snapshot.state);
-        setActiveGate(snapshot.openGate);
-        setPendingContinuationRunId(runIdToContinue);
+        applySnapshotToEventState(snapshot);
+        setPendingContinuationRunId(
+          getPendingContinuationRunIdFromSnapshot({
+            runId: snapshot.runId,
+            state: snapshot.state,
+            openGate: snapshot.openGate,
+          })
+        );
 
         await streamAgentRunContinuation({
           runId: runIdToContinue,
@@ -134,9 +197,6 @@ export function useAgentRun() {
             kind: 'status',
             text: 'Agent 已停止。',
           });
-          if (!actionApplied) {
-            setPendingContinuationRunId(null);
-          }
           return;
         }
 
@@ -149,9 +209,6 @@ export function useAgentRun() {
             ? `继续执行失败：${message}。可点击“继续运行”重试。`
             : `执行失败：${message}`,
         });
-        if (!actionApplied) {
-          setPendingContinuationRunId(null);
-        }
       } finally {
         abortControllerRef.current = null;
         setIsRunning(false);
@@ -173,13 +230,19 @@ export function useAgentRun() {
       eventStateRef.current = {
         runId: null,
         runState: 'running',
+        executionState: 'running',
+        blockingMode: 'none',
         activeGate: null,
+        pendingUiGates: [],
         error: null,
       };
       setIsRunning(true);
       setRunId(null);
       setRunState('running');
+      setExecutionState('running');
+      setBlockingMode('none');
       setActiveGate(null);
+      setPendingUiGates([]);
       setPendingContinuationRunId(null);
       appendItem({
         id: createItemId(),
@@ -299,14 +362,20 @@ export function useAgentRun() {
     eventStateRef.current = {
       runId: null,
       runState: null,
+      executionState: null,
+      blockingMode: null,
       activeGate: null,
+      pendingUiGates: [],
       error: null,
     };
     setItems([]);
     setError(null);
     setRunId(null);
     setRunState(null);
+    setExecutionState(null);
+    setBlockingMode(null);
     setActiveGate(null);
+    setPendingUiGates([]);
     setPendingContinuationRunId(null);
   }, []);
 
@@ -316,21 +385,8 @@ export function useAgentRun() {
       return null;
     }
 
-    eventStateRef.current = {
-      runId: snapshot.runId,
-      runState: snapshot.state,
-      activeGate: snapshot.openGate,
-      error: null,
-    };
-    setError(null);
-    setRunId(snapshot.runId);
-    setRunState(snapshot.state);
-    setActiveGate(snapshot.openGate);
-    setPendingContinuationRunId(
-      snapshot.state === 'waiting_for_human' || snapshot.state === 'suspended'
-        ? snapshot.runId
-        : null
-    );
+    applySnapshotToEventState(snapshot);
+    setPendingContinuationRunId(getPendingContinuationRunIdFromSnapshot(snapshot));
     return snapshot;
   }, []);
 
@@ -340,7 +396,10 @@ export function useAgentRun() {
     error,
     runId,
     runState,
+    executionState,
+    blockingMode,
     activeGate,
+    pendingUiGates,
     pendingContinuationRunId,
     runAgent,
     stopAgent,

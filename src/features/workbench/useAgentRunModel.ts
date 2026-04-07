@@ -1,14 +1,22 @@
 import type {
+  AgentRunBlockingMode,
+  AgentRunExecutionState,
+  AgentRunSnapshot,
   AgentRunState,
   AgentStreamEvent,
   AgentTimelineItem,
   HumanGateRecord,
 } from './types.agent';
+import type { PendingUiGateItem } from './agentPendingGateModel';
+import { buildPendingUiGateItems, reducePendingUiGates } from './agentPendingGateModel';
 
 export type AgentEventState = {
   runId: string | null;
   runState: AgentRunState | null;
+  executionState: AgentRunExecutionState | null;
+  blockingMode: AgentRunBlockingMode | null;
   activeGate: HumanGateRecord | null;
+  pendingUiGates: PendingUiGateItem[];
   error: string | null;
 };
 
@@ -200,7 +208,10 @@ export function reduceAgentEventState(
   if (event.type === 'run_state_changed') {
     return {
       ...state,
+      runId: event.runId,
       runState: event.state,
+      executionState: event.executionState ?? state.executionState,
+      blockingMode: event.blockingMode ?? state.blockingMode,
     };
   }
 
@@ -209,6 +220,7 @@ export function reduceAgentEventState(
       ...state,
       runId: event.runId,
       activeGate: event.gate,
+      pendingUiGates: reducePendingUiGates(state.pendingUiGates, event),
     };
   }
 
@@ -217,6 +229,7 @@ export function reduceAgentEventState(
       ...state,
       runId: event.runId,
       activeGate: null,
+      pendingUiGates: reducePendingUiGates(state.pendingUiGates, event),
     };
   }
 
@@ -225,7 +238,10 @@ export function reduceAgentEventState(
       ...state,
       runId: event.runId,
       runState: 'completed',
+      executionState: 'completed',
+      blockingMode: 'none',
       activeGate: null,
+      pendingUiGates: [],
       error: null,
     };
   }
@@ -235,7 +251,10 @@ export function reduceAgentEventState(
       ...state,
       runId: event.runId,
       runState: 'failed',
+      executionState: 'failed',
+      blockingMode: 'none',
       activeGate: null,
+      pendingUiGates: [],
       error: event.error,
     };
   }
@@ -245,9 +264,28 @@ export function reduceAgentEventState(
       ...state,
       runId: event.runId,
       runState: 'cancelled',
+      executionState: 'cancelled',
+      blockingMode: 'none',
       activeGate: null,
+      pendingUiGates: [],
     };
   }
 
   return state;
+}
+
+export function projectAgentSnapshotToEventState(
+  state: AgentEventState,
+  snapshot: AgentRunSnapshot
+): AgentEventState {
+  return {
+    ...state,
+    runId: snapshot.runId,
+    runState: snapshot.state,
+    executionState: snapshot.executionState,
+    blockingMode: snapshot.blockingMode,
+    activeGate: snapshot.openGate,
+    pendingUiGates: snapshot.openGate ? buildPendingUiGateItems([snapshot.openGate]) : [],
+    error: null,
+  };
 }
