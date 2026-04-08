@@ -11,7 +11,7 @@ export function detectTerminalQuickScriptQuery(input: string) {
   return input.slice(TERMINAL_QUICK_SCRIPT_PREFIX.length);
 }
 
-export function rankQuickScriptCandidates(items: ScriptLibraryItem[], query: string) {
+export function rankQuickScriptCandidates(items: readonly ScriptLibraryItem[], query: string) {
   const normalized = query.trim().toLowerCase();
   const ranked = items.filter((item) => {
     if (!normalized) {
@@ -35,7 +35,7 @@ export function rankQuickScriptCandidates(items: ScriptLibraryItem[], query: str
   });
 }
 
-export function findExactQuickScriptMatch(items: ScriptLibraryItem[], query: string) {
+export function findExactQuickScriptMatch(items: readonly ScriptLibraryItem[], query: string) {
   const normalized = query.trim().toLowerCase();
   return rankQuickScriptCandidates(items, normalized).find(
     (item) => item.alias.toLowerCase() === normalized
