@@ -1,11 +1,21 @@
 import type { StoredLlmProvider } from '../llmProviderStore.js';
 
 import type {
-  AgentRunBlockingMode,
-  AgentRunExecutionState,
   AgentRunState,
   HumanGateRecord,
 } from './humanGateTypes.js';
+import type { InteractionRequest } from './interactionTypes.js';
+
+export type AgentRunExecutionState =
+  | 'running'
+  | 'blocked_by_interaction'
+  | 'blocked_by_terminal'
+  | 'suspended'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export type AgentRunBlockingMode = 'none' | 'interaction' | 'terminal_wait';
 
 export type AgentApprovalMode = 'auto-readonly' | 'manual-sensitive';
 
@@ -139,6 +149,36 @@ export type AgentStreamEvent =
       type: 'human_gate_expired';
       runId: string;
       gate: HumanGateRecord;
+      timestamp: number;
+    }
+  | {
+      type: 'interaction_requested';
+      runId: string;
+      request: InteractionRequest;
+      timestamp: number;
+    }
+  | {
+      type: 'interaction_updated';
+      runId: string;
+      request: InteractionRequest;
+      timestamp: number;
+    }
+  | {
+      type: 'interaction_resolved';
+      runId: string;
+      request: InteractionRequest;
+      timestamp: number;
+    }
+  | {
+      type: 'interaction_rejected';
+      runId: string;
+      request: InteractionRequest;
+      timestamp: number;
+    }
+  | {
+      type: 'interaction_expired';
+      runId: string;
+      request: InteractionRequest;
       timestamp: number;
     }
   | {
