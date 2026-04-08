@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { LiveSession, LlmProvider } from './types.js';
+import type { InteractionRequest } from './types.agent.js';
 import {
   createAiAssistantInputImeState,
   buildAiAssistantModelOptions,
@@ -16,6 +17,7 @@ import {
   getValidAiAssistantModelValue,
   getValidAiAssistantSessionId,
   shouldEnableAiAssistantSend,
+  shouldPresentAiAssistantInteractionDialog,
   shouldSubmitAiAssistantOnEnter,
 } from './aiAssistantPanelModel.js';
 
@@ -74,6 +76,29 @@ const sessions: LiveSession[] = [
     status: 'connected',
   },
 ];
+
+function makeInteractionRequest(
+  overrides: Partial<InteractionRequest> = {}
+): InteractionRequest {
+  return {
+    id: 'interaction-1',
+    runId: 'run-1',
+    sessionId: 'session-1',
+    status: 'open',
+    interactionKind: 'collect_input',
+    riskLevel: 'medium',
+    blockingMode: 'soft_block',
+    title: '补充参数',
+    message: '请输入用户名。',
+    schemaVersion: 'v1',
+    fields: [],
+    actions: [],
+    openedAt: 1,
+    deadlineAt: null,
+    metadata: {},
+    ...overrides,
+  };
+}
 
 void test('buildAiAssistantModelOptions flattens enabled provider models into selectable values', () => {
   assert.deepEqual(buildAiAssistantModelOptions(providers), [
@@ -200,6 +225,36 @@ void test('shouldEnableAiAssistantSend requires model, trimmed input, idle state
     }),
     false
   );
+});
+
+void test('shouldPresentAiAssistantInteractionDialog only opens native cards for open non-terminal interactions', () => {
+  assert.equal(
+    shouldPresentAiAssistantInteractionDialog(makeInteractionRequest()),
+    true
+  );
+
+  assert.equal(
+    shouldPresentAiAssistantInteractionDialog(
+      makeInteractionRequest({ interactionKind: 'approval', riskLevel: 'high' })
+    ),
+    true
+  );
+
+  assert.equal(
+    shouldPresentAiAssistantInteractionDialog(
+      makeInteractionRequest({ interactionKind: 'terminal_wait' })
+    ),
+    false
+  );
+
+  assert.equal(
+    shouldPresentAiAssistantInteractionDialog(
+      makeInteractionRequest({ status: 'resolved' })
+    ),
+    false
+  );
+
+  assert.equal(shouldPresentAiAssistantInteractionDialog(null), false);
 });
 
 void test('shouldSubmitAiAssistantOnEnter ignores Shift+Enter and IME confirmation Enter', () => {

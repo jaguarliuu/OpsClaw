@@ -5,6 +5,7 @@ import {
 import { FileMemoryStore } from './fileMemoryStore.js';
 import { SessionRegistry } from './sessionRegistry.js';
 import { createFileMemoryToolProvider } from './tools/fileMemoryProvider.js';
+import { interactionToolProvider } from './tools/interactionProvider.js';
 import { sessionToolProvider } from './tools/sessionProvider.js';
 import { ToolExecutor } from './toolExecutor.js';
 import { createToolRegistry } from './toolRegistry.js';
@@ -30,6 +31,7 @@ export function createAgentRuntimeBundle(
   const toolRegistry = createToolRegistry();
 
   toolRegistry.registerProvider(sessionToolProvider);
+  toolRegistry.registerProvider(interactionToolProvider);
   toolRegistry.registerProvider(
     createFileMemoryToolProvider({
       getNodeById: options.getNodeById,

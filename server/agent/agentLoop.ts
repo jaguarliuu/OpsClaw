@@ -206,6 +206,47 @@ function extractToolCalls(message: AssistantMessage) {
   );
 }
 
+function requestsUserInteractionViaPlainText(text: string) {
+  const normalized = text.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  return [
+    /请提供.+(用户名|密码|参数|信息|方案)/,
+    /请确认.+(方案|是否|参数|信息)/,
+    /请选择.+(方案|选项)/,
+    /等待[你您]的确认/,
+    /需要[你您].+(确认|提供|填写)/,
+    /(用户名|密码|方案).*(是什么|多少|为何)/,
+    /please provide.+(username|password|parameter|option)/i,
+    /please confirm/i,
+    /which option/i,
+    /what (is|should be).+(username|password)/i,
+  ].some((pattern) => pattern.test(normalized));
+}
+
+function buildInteractionProtocolCorrectionMessage() {
+  return {
+    role: 'user' as const,
+    content: [
+      {
+        type: 'text' as const,
+        text: [
+          '系统纠偏：你刚才试图通过 assistant 普通文本向用户索取参数或确认方案。',
+          '这类交互必须调用 interaction.request 工具发起结构化请求，不能直接用普通文本提问。',
+          '请立即改用 interaction.request；如果当前其实不需要用户输入，就继续调用工具或直接给出结论。',
+        ].join('\n'),
+      },
+    ],
+    timestamp: Date.now(),
+  };
+}
+
+function resolveCanonicalToolCallName(toolRegistry: ToolRegistry, toolCall: ToolCall) {
+  return toolRegistry.resolveCanonicalToolName(toolCall.name) ?? toolCall.name;
+}
+
 function buildToolResultMessage(
   envelope: ToolExecutionEnvelope,
   toolCallId: string,
@@ -287,7 +328,7 @@ function finalizeToolEnvelope(options: {
     runId: options.state.runId,
     step: options.step,
     toolCallId: options.toolCall.id,
-    toolName: options.toolCall.name,
+    toolName: options.envelope.toolName,
     ok: options.envelope.ok,
     durationMs: options.envelope.meta.durationMs,
     error: options.envelope.error?.message,
@@ -316,7 +357,7 @@ function finalizeToolEnvelope(options: {
     runId: options.state.runId,
     step: options.step,
     toolCallId: options.toolCall.id,
-    toolName: options.toolCall.name,
+    toolName: options.envelope.toolName,
     result: options.envelope,
     timestamp: Date.now(),
   });
@@ -408,6 +449,7 @@ async function executeToolCallsFromIndex(options: {
 }): Promise<AgentLoopStepResult> {
   for (let index = options.startIndex; index < options.toolCalls.length; index += 1) {
     const toolCall = options.toolCalls[index]!;
+    const canonicalToolName = resolveCanonicalToolCallName(options.state.toolRegistry, toolCall);
 
     if (options.signal.aborted) {
       return { kind: 'cancelled', step: options.step };
@@ -418,7 +460,7 @@ async function executeToolCallsFromIndex(options: {
       runId: options.state.runId,
       step: options.step,
       toolCallId: toolCall.id,
-      toolName: toolCall.name,
+      toolName: canonicalToolName,
       arguments: toolCall.arguments,
       timestamp: Date.now(),
     });
@@ -426,7 +468,7 @@ async function executeToolCallsFromIndex(options: {
       runId: options.state.runId,
       step: options.step,
       toolCallId: toolCall.id,
-      toolName: toolCall.name,
+      toolName: canonicalToolName,
     });
 
     let validatedArgs: unknown;
@@ -436,21 +478,21 @@ async function executeToolCallsFromIndex(options: {
         runId: options.state.runId,
         step: options.step,
         toolCallId: toolCall.id,
-        toolName: toolCall.name,
+        toolName: canonicalToolName,
       });
     } catch (error) {
       logAgent('tool_call_validation_failed', {
         runId: options.state.runId,
         step: options.step,
         toolCallId: toolCall.id,
-        toolName: toolCall.name,
+        toolName: canonicalToolName,
         error: error instanceof Error ? error.message : '工具参数校验失败。',
       });
       finalizeToolEnvelope({
         state: options.state,
         toolCall,
         envelope: {
-          toolName: toolCall.name,
+          toolName: canonicalToolName,
           toolCallId: toolCall.id,
           ok: false,
           error: {
@@ -563,6 +605,42 @@ async function runStep(
   });
 
   const assistantText = extractAssistantText(assistantMessage);
+  const toolCalls = extractToolCalls(assistantMessage);
+  const includesInteractionRequestToolCall = toolCalls.some(
+    (toolCall) => resolveCanonicalToolCallName(state.toolRegistry, toolCall) === 'interaction.request'
+  );
+  if (
+    assistantText &&
+    requestsUserInteractionViaPlainText(assistantText) &&
+    !includesInteractionRequestToolCall
+  ) {
+    logAgent('assistant_plain_text_interaction_rejected', {
+      runId: state.runId,
+      step,
+      preview: assistantText.slice(0, 200),
+    });
+    state.context.messages.push(buildInteractionProtocolCorrectionMessage());
+    const correctionResult = finalizeStep({
+      state,
+      step,
+      stepContext: {
+        stepMadeProgress: false,
+        stepHadSuccessfulToolExecution: false,
+        stepHasNewToolCallSignature: false,
+      },
+      eventSink,
+    });
+
+    if (correctionResult.kind === 'completed_step') {
+      return runStep(state, step + 1, signal, eventSink);
+    }
+
+    return finalizeOutcome(
+      state,
+      correctionResult as Exclude<AgentLoopStepResult, { kind: 'completed_step' }>
+    );
+  }
+
   if (assistantText) {
     recordAgentLoopEvent(eventSink, {
       type: 'assistant_message',
@@ -610,10 +688,18 @@ async function runStep(
     };
   }
 
-  const availableTools = await state.toolRegistry.listPiTools({
+  const toolAvailabilityContext = {
     sessionId: state.sessionId,
-  });
-  const toolCalls = extractToolCalls(assistantMessage);
+  };
+  const availableTools = await state.toolRegistry.listPiTools(toolAvailabilityContext);
+  const validationTools = [
+    ...availableTools,
+    ...(await state.toolRegistry.listAvailable(toolAvailabilityContext)).map((handler) => ({
+      name: handler.definition.name,
+      description: handler.definition.description,
+      parameters: handler.definition.parameters,
+    })),
+  ];
   logAgent('step_tool_calls_detected', {
     runId: state.runId,
     step,
@@ -629,7 +715,10 @@ async function runStep(
   }
 
   const stepHasNewToolCallSignature = toolCalls.some((toolCall) => {
-    const signature = buildToolCallSignature(toolCall);
+    const signature = buildToolCallSignature({
+      ...toolCall,
+      name: resolveCanonicalToolCallName(state.toolRegistry, toolCall),
+    });
     const isNew = !state.seenToolCallSignatures.has(signature);
     state.seenToolCallSignatures.add(signature);
     return isNew;
@@ -640,7 +729,7 @@ async function runStep(
     step,
     toolCalls,
     startIndex: 0,
-    availableTools,
+    availableTools: validationTools,
     signal,
     eventSink,
     stepContext: {

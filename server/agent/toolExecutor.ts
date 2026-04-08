@@ -1,6 +1,13 @@
 import type { ToolCall } from '@mariozechner/pi-ai';
 
 import type { AgentPolicySummary, ToolExecutionEnvelope } from './agentTypes.js';
+import type {
+  InteractionAction,
+  InteractionBlockingMode,
+  InteractionField,
+  InteractionKind,
+  InteractionRiskLevel,
+} from './interactionTypes.js';
 import type { ParameterConfirmationField } from './interactionPayloadTypes.js';
 import { logAgent } from './logger.js';
 import { buildSessionCommandPlan } from './sessionCommandPlanner.js';
@@ -197,13 +204,14 @@ export class ToolExecutor {
     args: unknown,
     ctx: ToolExecutionContext
   ): Promise<ToolExecutionResult> {
-    const handler = this.registry.get(toolCall.name);
+    const canonicalToolName = this.registry.resolveCanonicalToolName(toolCall.name);
+    const handler = canonicalToolName ? this.registry.get(canonicalToolName) : undefined;
     const startedAt = Date.now();
     logAgent('tool_execution_requested', {
       runId: ctx.runId,
       step: ctx.step,
       toolCallId: toolCall.id,
-      toolName: toolCall.name,
+      toolName: canonicalToolName ?? toolCall.name,
     });
 
     if (!handler) {
@@ -211,14 +219,14 @@ export class ToolExecutor {
         runId: ctx.runId,
         step: ctx.step,
         toolCallId: toolCall.id,
-        toolName: toolCall.name,
+        toolName: canonicalToolName ?? toolCall.name,
       });
       return {
         kind: 'failure',
         envelope: buildErrorEnvelope(
-          toolCall.name,
+          canonicalToolName ?? toolCall.name,
           toolCall.id,
-          `未找到工具：${toolCall.name}`,
+          `未找到工具：${canonicalToolName ?? toolCall.name}`,
           startedAt,
           'tool_not_found'
         ),
@@ -239,6 +247,10 @@ export class ToolExecutor {
       return this.wrapExecutionResult(
         await this.executePlannedSessionCommand(handler, toolCallId, args, ctx, startedAt)
       );
+    }
+
+    if (handler.definition.name === 'interaction.request') {
+      return this.createUserInteractionPause(toolCallId, args, startedAt);
     }
 
     const decision = evaluateToolPolicy(handler, args, ctx);
@@ -357,6 +369,75 @@ export class ToolExecutor {
             Date.now(),
             'approval_rejected',
             { approvalRequired: true, policy: options.policy }
+          ),
+      },
+    };
+  }
+
+  private createUserInteractionPause(
+    toolCallId: string,
+    args: unknown,
+    startedAt: number
+  ): ToolPauseOutcome {
+    const normalized = normalizeInteractionRequestArgs(args);
+
+    return {
+      kind: 'pause',
+      interaction: {
+        source: 'user_interaction',
+        context: {
+          toolCallId,
+          toolName: 'interaction.request',
+          interactionKind: normalized.kind,
+          riskLevel: normalized.riskLevel,
+          blockingMode: normalized.blockingMode,
+          title: normalized.title,
+          message: normalized.message,
+          fields: normalized.fields,
+          actions: buildInteractionActions(normalized.kind),
+          metadata: normalized.metadata,
+        },
+      },
+      continuation: {
+        resume: async (submission) => {
+          const selectedAction =
+            typeof submission === 'object' &&
+            submission !== null &&
+            'selectedAction' in submission &&
+            typeof (submission as { selectedAction?: unknown }).selectedAction === 'string'
+              ? (submission as { selectedAction: string }).selectedAction
+              : normalized.kind === 'approval'
+                ? 'approve'
+                : normalized.kind === 'inform'
+                  ? 'acknowledge'
+                  : 'submit';
+          const payload =
+            typeof submission === 'object' &&
+            submission !== null &&
+            'payload' in submission &&
+            typeof (submission as { payload?: unknown }).payload === 'object' &&
+            (submission as { payload?: unknown }).payload !== null
+              ? ((submission as { payload: Record<string, unknown> }).payload ?? {})
+              : {};
+
+          return buildInteractionRequestEnvelope(
+            toolCallId,
+            startedAt,
+            normalized.kind,
+            {
+              selectedAction,
+              ...(Object.keys(payload).length > 0 ? payload : {}),
+            }
+          );
+        },
+        reject: () =>
+          buildErrorEnvelope(
+            'interaction.request',
+            toolCallId,
+            '用户取消了该交互请求。',
+            startedAt,
+            'interaction_rejected',
+            { retryable: false }
           ),
       },
     };
@@ -711,3 +792,235 @@ export class ToolExecutor {
 }
 
 export type ToolCallExecutor = Pick<ToolExecutor, 'executeToolCall'>;
+
+type NormalizedInteractionKind = Extract<InteractionKind, 'collect_input' | 'approval' | 'inform'>;
+
+type NormalizedInteractionRequest = {
+  kind: NormalizedInteractionKind;
+  title: string;
+  message: string;
+  riskLevel: InteractionRiskLevel;
+  blockingMode: InteractionBlockingMode;
+  fields: InteractionField[];
+  metadata: Record<string, unknown>;
+};
+
+function normalizeInteractionRequestArgs(args: unknown): NormalizedInteractionRequest {
+  const value = typeof args === 'object' && args !== null ? (args as Record<string, unknown>) : null;
+  if (!value) {
+    throw new Error('interaction.request 参数格式不正确。');
+  }
+
+  const kind = value.kind;
+  if (kind !== 'collect_input' && kind !== 'approval' && kind !== 'inform') {
+    throw new Error('interaction.request.kind 不合法。');
+  }
+
+  const title = typeof value.title === 'string' && value.title.trim() ? value.title.trim() : null;
+  const message =
+    typeof value.message === 'string' && value.message.trim() ? value.message.trim() : null;
+  if (!title || !message) {
+    throw new Error('interaction.request 必须提供 title 和 message。');
+  }
+
+  const fields = normalizeInteractionFields(value.fields);
+  if (kind === 'collect_input' && fields.length === 0) {
+    throw new Error('collect_input 交互至少需要一个字段。');
+  }
+
+  return {
+    kind,
+    title,
+    message,
+    riskLevel: normalizeInteractionRiskLevel(value.riskLevel, kind),
+    blockingMode: normalizeInteractionBlockingMode(value.blockingMode, kind),
+    fields,
+    metadata: {
+      sourceIntent: 'model_requested_interaction',
+      ...(typeof value.reason === 'string' && value.reason.trim()
+        ? { reason: value.reason.trim() }
+        : {}),
+    },
+  };
+}
+
+function normalizeInteractionFields(value: unknown): InteractionField[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((field, index) => normalizeInteractionField(field, index));
+}
+
+function normalizeInteractionField(value: unknown, index: number): InteractionField {
+  const field = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
+  if (!field || typeof field.type !== 'string' || typeof field.key !== 'string') {
+    throw new Error(`interaction.request.fields[${index}] 格式不正确。`);
+  }
+
+  const required = field.required === true;
+  const label =
+    typeof field.label === 'string' && field.label.trim()
+      ? field.label.trim()
+      : field.type === 'display'
+        ? undefined
+        : field.key;
+
+  if (field.type === 'display') {
+    if (typeof field.value !== 'string') {
+      throw new Error(`interaction.request.fields[${index}] display 字段必须提供 value。`);
+    }
+
+    return {
+      type: 'display',
+      key: field.key,
+      label,
+      value: field.value,
+    };
+  }
+
+  if (field.type === 'text' || field.type === 'password' || field.type === 'textarea') {
+    return {
+      type: field.type,
+      key: field.key,
+      label: label ?? field.key,
+      required,
+      value: typeof field.value === 'string' ? field.value : undefined,
+      placeholder: typeof field.placeholder === 'string' ? field.placeholder : undefined,
+    };
+  }
+
+  if (field.type === 'single_select' || field.type === 'multi_select') {
+    if (!Array.isArray(field.options) || field.options.length === 0) {
+      throw new Error(`interaction.request.fields[${index}] 选择字段必须提供 options。`);
+    }
+
+    const options = field.options.map((option, optionIndex) => {
+      const item =
+        typeof option === 'object' && option !== null ? (option as Record<string, unknown>) : null;
+      if (!item || typeof item.label !== 'string' || typeof item.value !== 'string') {
+        throw new Error(
+          `interaction.request.fields[${index}].options[${optionIndex}] 格式不正确。`
+        );
+      }
+
+      return {
+        label: item.label,
+        value: item.value,
+        description: typeof item.description === 'string' ? item.description : undefined,
+      };
+    });
+
+    if (field.type === 'single_select') {
+      return {
+        type: 'single_select',
+        key: field.key,
+        label: label ?? field.key,
+        required,
+        options,
+        value: typeof field.value === 'string' ? field.value : undefined,
+      };
+    }
+
+    return {
+      type: 'multi_select',
+      key: field.key,
+      label: label ?? field.key,
+      required,
+      options,
+      value: Array.isArray(field.values)
+        ? field.values.filter((item): item is string => typeof item === 'string')
+        : undefined,
+    };
+  }
+
+  if (field.type === 'confirm') {
+    return {
+      type: 'confirm',
+      key: field.key,
+      label: label ?? field.key,
+      required,
+      value: field.checked === true,
+    };
+  }
+
+  throw new Error(`interaction.request.fields[${index}] 类型不支持：${field.type}`);
+}
+
+function normalizeInteractionRiskLevel(
+  value: unknown,
+  kind: NormalizedInteractionKind
+): InteractionRiskLevel {
+  if (
+    value === 'none' ||
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'critical'
+  ) {
+    return value;
+  }
+
+  if (kind === 'approval') {
+    return 'high';
+  }
+
+  if (kind === 'inform') {
+    return 'low';
+  }
+
+  return 'medium';
+}
+
+function normalizeInteractionBlockingMode(
+  value: unknown,
+  kind: NormalizedInteractionKind
+): InteractionBlockingMode {
+  if (value === 'none' || value === 'soft_block' || value === 'hard_block') {
+    return value;
+  }
+
+  return kind === 'approval' ? 'hard_block' : 'soft_block';
+}
+
+function buildInteractionActions(kind: NormalizedInteractionKind): InteractionAction[] {
+  if (kind === 'approval') {
+    return [
+      { id: 'approve', label: '继续执行', kind: 'approve', style: 'danger' },
+      { id: 'reject', label: '取消', kind: 'reject', style: 'secondary' },
+    ];
+  }
+
+  if (kind === 'inform') {
+    return [{ id: 'acknowledge', label: '知道了', kind: 'acknowledge', style: 'primary' }];
+  }
+
+  return [
+    { id: 'submit', label: '提交并继续', kind: 'submit', style: 'primary' },
+    { id: 'reject', label: '取消', kind: 'reject', style: 'secondary' },
+  ];
+}
+
+function buildInteractionRequestEnvelope(
+  toolCallId: string,
+  startedAt: number,
+  kind: NormalizedInteractionKind,
+  data: Record<string, unknown>
+): ToolExecutionEnvelope {
+  const completedAt = Date.now();
+
+  return {
+    toolName: 'interaction.request',
+    toolCallId,
+    ok: true,
+    data: {
+      kind,
+      ...data,
+    },
+    meta: {
+      startedAt,
+      completedAt,
+      durationMs: completedAt - startedAt,
+    },
+  };
+}

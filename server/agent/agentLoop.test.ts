@@ -13,6 +13,7 @@ import { createToolRegistry } from './toolRegistry.js';
 import { ToolExecutor } from './toolExecutor.js';
 import type { ToolExecutionEnvelope } from './agentTypes.js';
 import type { ToolPauseOutcome } from './toolTypes.js';
+import { interactionToolProvider } from './tools/interactionProvider.js';
 import { sessionToolProvider } from './tools/sessionProvider.js';
 
 function createProvider(): StoredLlmProvider {
@@ -61,6 +62,7 @@ function createBaseContext(): Context {
 function createBaseLoopOptions() {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
+  registry.registerProvider(interactionToolProvider);
 
   return {
     provider: createProvider(),
@@ -121,6 +123,101 @@ function createBaseLoopOptions() {
   };
 }
 
+test('agentLoop suppresses plain-text parameter questions and retries until the model uses interaction.request', async () => {
+  const options = createBaseLoopOptions();
+  const toolExecutor = new ToolExecutor(options.toolRegistry);
+  let completionCalls = 0;
+
+  const loopState = createAgentLoopState({
+    ...options,
+    toolExecutor,
+    completeAgentContext: async () => {
+      completionCalls += 1;
+
+      if (completionCalls === 1) {
+        return createAssistantMessage({
+          stopReason: 'stop',
+          content: [
+            {
+              type: 'text',
+              text: '请提供新用户的用户名、密码，并确认授权方案后我再继续执行。',
+            },
+          ],
+        });
+      }
+
+      return createAssistantMessage({
+        stopReason: 'toolUse',
+        content: [
+          {
+            type: 'toolCall',
+            id: 'call-1',
+            name: 'interaction.request',
+            arguments: {
+              kind: 'collect_input',
+              title: '确认 root 用户参数',
+              message: '继续前需要你确认用户名、密码和授权方案。',
+              fields: [
+                {
+                  type: 'text',
+                  key: 'username',
+                  label: '用户名',
+                  required: true,
+                },
+                {
+                  type: 'password',
+                  key: 'password',
+                  label: '密码',
+                  required: true,
+                },
+              ],
+            },
+          },
+        ],
+      });
+    },
+  });
+
+  const { outcome, events } = await runAgentLoop(loopState, new AbortController().signal);
+
+  assert.equal(completionCalls, 2);
+  assert.equal(outcome.kind, 'paused');
+  assert.equal(outcome.pause.interaction.source, 'user_interaction');
+  assert.equal(
+    events.some(
+      (event) =>
+        event.type === 'assistant_message' &&
+        'text' in event &&
+        typeof event.text === 'string' &&
+        event.text.includes('请提供新用户的用户名')
+    ),
+    false
+  );
+  assert.equal(
+    events.some(
+      (event) =>
+        event.type === 'tool_call' &&
+        'toolName' in event &&
+        event.toolName === 'interaction.request'
+    ),
+    true
+  );
+});
+
+test('toolRegistry exposes model-facing tool names that satisfy OpenAI function naming rules', async () => {
+  const options = createBaseLoopOptions();
+  const tools = await options.toolRegistry.listPiTools({
+    sessionId: 'session-1',
+  });
+
+  assert.ok(tools.length > 0);
+  for (const tool of tools) {
+    assert.match(tool.name, /^[a-zA-Z0-9_-]+$/);
+  }
+
+  assert.equal(tools.some((tool) => tool.name === 'session.run_command'), false);
+});
+
 test('agentLoop completes a tool-use step sequence and records stable observations', async () => {
   const options = createBaseLoopOptions();
   const completionContexts: Context[] = [];
@@ -179,6 +276,83 @@ test('agentLoop completes a tool-use step sequence and records stable observatio
     'tool_execution_finished',
     'assistant_message',
   ]);
+});
+
+test('agentLoop accepts model-safe tool names and still executes the canonical session.run_command handler', async () => {
+  const options = createBaseLoopOptions();
+  options.context.tools = await options.toolRegistry.listPiTools({
+    sessionId: 'session-1',
+  });
+  const completionContexts: Context[] = [];
+  const toolExecutor = new ToolExecutor(options.toolRegistry);
+  const events: Array<{ type: string; toolName?: string }> = [];
+
+  const loopState = createAgentLoopState({
+    ...options,
+    toolExecutor,
+    completeAgentContext: async (_provider, _model, context) => {
+      completionContexts.push(context);
+      const modelToolName = context.tools?.find((tool) =>
+        tool.description.includes('执行一条 shell 命令')
+      )?.name;
+      assert.ok(modelToolName);
+      assert.match(modelToolName, /^[a-zA-Z0-9_-]+$/);
+
+      if (completionContexts.length === 1) {
+        return createAssistantMessage({
+          stopReason: 'toolUse',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'call-1',
+              name: modelToolName,
+              arguments: {
+                sessionId: 'session-1',
+                command: 'df -h',
+              },
+            },
+          ],
+        });
+      }
+
+      return createAssistantMessage({
+        stopReason: 'stop',
+        content: [{ type: 'text', text: '磁盘空间充足。' }],
+      });
+    },
+  });
+
+  const { outcome, events: runtimeEvents } = await runAgentLoop(
+    loopState,
+    new AbortController().signal
+  );
+
+  for (const event of runtimeEvents) {
+    events.push(
+      typeof event === 'object' && event !== null && 'type' in event
+        ? {
+            type: String((event as { type?: unknown }).type ?? ''),
+            toolName:
+              'toolName' in event && typeof (event as { toolName?: unknown }).toolName === 'string'
+                ? (event as { toolName: string }).toolName
+                : undefined,
+          }
+        : { type: 'unknown' }
+    );
+  }
+
+  assert.equal(outcome.kind, 'completed');
+  assert.equal(
+    events.some((event) => event.type === 'tool_call' && event.toolName === 'session.run_command'),
+    true
+  );
+  assert.equal(
+    events.some(
+      (event) =>
+        event.type === 'tool_execution_finished' && event.toolName === 'session.run_command'
+    ),
+    true
+  );
 });
 
 test('agentLoop returns a resumable pause when tool execution requires HITL', async () => {

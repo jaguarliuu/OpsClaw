@@ -37,6 +37,7 @@ test('createAgentRuntimeBundle wires the default agent runtime dependencies', ()
   assert.ok(runtimeDependencies.toolExecutor instanceof ToolExecutor);
   assert.ok(runtimeDependencies.toolRegistry.get('session.list'));
   assert.ok(runtimeDependencies.toolRegistry.get('session.read_transcript'));
+  assert.ok(runtimeDependencies.toolRegistry.get('interaction.request'));
   assert.ok(runtimeDependencies.toolRegistry.get('memory.read_session_context'));
   assert.ok(runtimeDependencies.toolRegistry.get('memory.write_group_memory'));
 });

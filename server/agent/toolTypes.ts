@@ -8,6 +8,13 @@ import type {
 import type { FileMemoryStore } from './fileMemoryStore.js';
 import type { AgentPolicySummary } from './agentTypes.js';
 import type { ParameterConfirmationField } from './interactionPayloadTypes.js';
+import type {
+  InteractionAction,
+  InteractionBlockingMode,
+  InteractionField,
+  InteractionKind,
+  InteractionRiskLevel,
+} from './interactionTypes.js';
 import type { SessionRegistry } from './sessionRegistry.js';
 
 export type ToolRiskLevel = 'safe' | 'caution' | 'dangerous';
@@ -92,6 +99,9 @@ export interface ToolRegistry {
   register(tool: ToolHandler<TSchema, any, unknown>): void;
   registerProvider(provider: ToolProvider): void;
   get(name: string): ToolHandler | undefined;
+  getByModelName(name: string): ToolHandler | undefined;
+  resolveCanonicalToolName(name: string): string | undefined;
+  getModelToolName(name: string): string;
   listAll(): ToolHandler[];
   listAvailable(ctx: ToolAvailabilityContext): Promise<ToolHandler[]>;
   listPiTools(ctx: ToolAvailabilityContext): Promise<Tool[]>;
@@ -148,6 +158,21 @@ export type InteractionSource =
       context: {
         title: string;
         message: string;
+      };
+    }
+  | {
+      source: 'user_interaction';
+      context: {
+        toolCallId: string;
+        toolName: 'interaction.request';
+        interactionKind: Extract<InteractionKind, 'collect_input' | 'approval' | 'inform'>;
+        riskLevel: InteractionRiskLevel;
+        blockingMode: InteractionBlockingMode;
+        title: string;
+        message: string;
+        fields: InteractionField[];
+        actions: InteractionAction[];
+        metadata?: Record<string, unknown>;
       };
     };
 

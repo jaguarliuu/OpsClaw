@@ -155,6 +155,29 @@ export function createInteractionRequest(input: {
     };
   }
 
+  if (input.source.source === 'user_interaction') {
+    return {
+      id: randomUUID(),
+      runId: input.runId,
+      sessionId: input.sessionId,
+      status: 'open',
+      interactionKind: input.source.context.interactionKind,
+      riskLevel: input.source.context.riskLevel,
+      blockingMode: input.source.context.blockingMode,
+      title: input.source.context.title,
+      message: input.source.context.message,
+      schemaVersion: 'v1',
+      fields: input.source.context.fields,
+      actions: input.source.context.actions,
+      openedAt,
+      deadlineAt: null,
+      metadata: {
+        source: input.source.source,
+        ...(input.source.context.metadata ?? {}),
+      },
+    };
+  }
+
   return {
     id: randomUUID(),
     runId: input.runId,

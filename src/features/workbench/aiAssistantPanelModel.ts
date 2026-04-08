@@ -1,3 +1,4 @@
+import type { InteractionRequest } from './types.agent';
 import type { LiveSession, LlmProvider } from './types';
 
 export type AiAssistantMode = 'agent' | 'chat';
@@ -211,4 +212,14 @@ export function shouldEnableAiAssistantSend(input: {
   }
 
   return input.mode === 'chat' || input.selectedSessionId !== null;
+}
+
+export function shouldPresentAiAssistantInteractionDialog(
+  interaction: InteractionRequest | null
+) {
+  return (
+    interaction !== null &&
+    interaction.status === 'open' &&
+    interaction.interactionKind !== 'terminal_wait'
+  );
 }

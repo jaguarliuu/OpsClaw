@@ -58,7 +58,7 @@ type AgentRuntimeDependencies = {
 };
 
 type PendingRunAction = {
-  selectedAction: 'approve' | 'reject' | 'submit' | 'continue_waiting';
+  selectedAction: 'approve' | 'reject' | 'submit' | 'continue_waiting' | 'acknowledge' | 'cancel';
   payload: Record<string, unknown>;
 };
 
@@ -287,13 +287,17 @@ export class OpsAgentRuntime {
       return this.agentRunRegistry.getRun(runId);
     }
 
-    if (submission.selectedAction === 'reject') {
+    if (submission.selectedAction === 'reject' || submission.selectedAction === 'cancel') {
       this.agentRunRegistry.rejectInteraction({ runId, interactionId: requestId });
       pausedRun.pendingAction = submission;
       return this.agentRunRegistry.getRun(runId);
     }
 
-    if (submission.selectedAction === 'approve' || submission.selectedAction === 'submit') {
+    if (
+      submission.selectedAction === 'approve' ||
+      submission.selectedAction === 'submit' ||
+      submission.selectedAction === 'acknowledge'
+    ) {
       this.agentRunRegistry.resolveInteraction({ runId, interactionId: requestId });
       pausedRun.pendingAction = submission;
       return this.agentRunRegistry.getRun(runId);
@@ -803,12 +807,13 @@ export class OpsAgentRuntime {
 
     if (
       options.pause.interaction.source !== 'policy_approval' &&
-      options.pause.interaction.source !== 'parameter_collection'
+      options.pause.interaction.source !== 'parameter_collection' &&
+      options.pause.interaction.source !== 'user_interaction'
     ) {
       throw new Error('当前 interaction 不支持恢复执行。');
     }
 
-    if (options.action.selectedAction === 'reject') {
+    if (options.action.selectedAction === 'reject' || options.action.selectedAction === 'cancel') {
       if (snapshot.activeInteraction.status !== 'rejected') {
         throw new Error('interaction 尚未被拒绝。');
       }
@@ -845,12 +850,21 @@ export class OpsAgentRuntime {
     this.emitRunStateChanged(options.runId, options.emit);
 
     const resumed =
+      options.pause.interaction.source === 'parameter_collection' &&
       options.action.selectedAction === 'submit'
         ? await options.pause.continuation.resume?.(
             (options.action.payload.fields ?? {}) as Record<string, string>,
             options.signal
           )
-        : await options.pause.continuation.resume?.(options.signal);
+        : options.pause.interaction.source === 'user_interaction'
+          ? await options.pause.continuation.resume?.(
+              {
+                selectedAction: options.action.selectedAction,
+                payload: options.action.payload,
+              },
+              options.signal
+            )
+          : await options.pause.continuation.resume?.(options.signal);
     if (isPauseOutcome(resumed as ToolExecutionEnvelope | ToolPauseOutcome)) {
       return this.handlePauseOutcome({
         runId: options.runId,

@@ -6,7 +6,14 @@ import {
 } from './support.js';
 import { createAgentEventStream, serializeSseEvent } from './agentEventStream.js';
 
-const VALID_INTERACTION_ACTIONS = ['approve', 'reject', 'submit', 'continue_waiting'] as const;
+const VALID_INTERACTION_ACTIONS = [
+  'approve',
+  'reject',
+  'submit',
+  'continue_waiting',
+  'acknowledge',
+  'cancel',
+] as const;
 type InteractionSubmitAction = (typeof VALID_INTERACTION_ACTIONS)[number];
 
 function isInteractionSubmitAction(value: string): value is InteractionSubmitAction {

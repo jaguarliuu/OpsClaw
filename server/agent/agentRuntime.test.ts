@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { AssistantMessage, AssistantMessageEventStream, Context } from '@mariozechner/pi-ai';
+import {
+  Type,
+  type AssistantMessage,
+  type AssistantMessageEventStream,
+  type Context,
+} from '@mariozechner/pi-ai';
 
 import type { StoredLlmProvider } from '../llmProviderStore.js';
 import type { AgentStreamEvent, CreateAgentRunInput } from './agentTypes.js';
@@ -10,6 +15,7 @@ import { createToolRegistry } from './toolRegistry.js';
 import { ToolExecutor } from './toolExecutor.js';
 import { OpsAgentRuntime } from './agentRuntime.js';
 import { sessionToolProvider } from './tools/sessionProvider.js';
+import type { ToolHandler, ToolPauseOutcome } from './toolTypes.js';
 
 function createProvider(): StoredLlmProvider {
   return {
@@ -133,6 +139,225 @@ function createRuntimeForParameterPause() {
   });
 }
 
+function createRuntimeForModelInteractionRequest() {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  const interactionRequestTool: ToolHandler = {
+    definition: {
+      name: 'interaction.request',
+      description: '向用户请求参数、选择或确认，并等待用户提交。',
+      parameters: Type.Object({
+        kind: Type.String(),
+        title: Type.String(),
+        message: Type.String(),
+        fields: Type.Array(
+          Type.Object({
+            type: Type.String(),
+            key: Type.String(),
+            label: Type.Optional(Type.String()),
+            required: Type.Optional(Type.Boolean()),
+            options: Type.Optional(
+              Type.Array(
+                Type.Object({
+                  label: Type.String(),
+                  value: Type.String(),
+                })
+              )
+            ),
+          })
+        ),
+      }),
+      category: 'orchestration',
+      riskLevel: 'safe',
+      concurrencyMode: 'serial',
+      version: '1.0.0',
+      tags: ['interaction'],
+    },
+    async execute() {
+      return {
+        kind: 'pause',
+        interaction: {
+          source: 'user_interaction',
+          context: {
+            toolCallId: 'call-1',
+            toolName: 'interaction.request',
+            interactionKind: 'collect_input',
+            riskLevel: 'medium',
+            blockingMode: 'soft_block',
+            title: '确认 root 用户参数',
+            message: '继续前需要你确认用户名、密码和授权方案。',
+            fields: [
+              {
+                type: 'text',
+                key: 'username',
+                label: '用户名',
+                required: true,
+              },
+              {
+                type: 'password',
+                key: 'password',
+                label: '密码',
+                required: true,
+              },
+              {
+                type: 'single_select',
+                key: 'grantMode',
+                label: '授权方案',
+                required: true,
+                options: [
+                  { label: 'sudo组', value: 'sudo-group' },
+                  { label: '无密码sudo', value: 'passwordless-sudo' },
+                ],
+              },
+            ],
+            actions: [
+              {
+                id: 'submit',
+                label: '提交并继续',
+                kind: 'submit',
+                style: 'primary',
+              },
+              {
+                id: 'reject',
+                label: '取消',
+                kind: 'reject',
+                style: 'secondary',
+              },
+            ],
+            metadata: {
+              sourceIntent: 'user_management',
+            },
+          },
+        },
+        continuation: {
+          resume: async () => ({
+            toolName: 'interaction.request',
+            toolCallId: 'call-1',
+            ok: true,
+            data: {
+              acknowledged: true,
+            },
+            meta: {
+              startedAt: Date.now(),
+              completedAt: Date.now(),
+              durationMs: 0,
+            },
+          }),
+          reject: () => ({
+            toolName: 'interaction.request',
+            toolCallId: 'call-1',
+            ok: false,
+            error: {
+              code: 'interaction_rejected',
+              message: '用户取消了交互请求。',
+              retryable: false,
+            },
+            meta: {
+              startedAt: Date.now(),
+              completedAt: Date.now(),
+              durationMs: 0,
+            },
+          }),
+        },
+      } as never as ToolPauseOutcome;
+    },
+  };
+
+  registry.register(interactionRequestTool);
+
+  return new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      async executeCommand(_sessionId: string, command: string) {
+        return {
+          sessionId: 'session-1',
+          command,
+          exitCode: 0,
+          output: 'ok',
+          truncated: false,
+          startedAt: Date.now(),
+          completedAt: Date.now(),
+          durationMs: 5,
+        };
+      },
+    } as never,
+    completeAgentContext: async () =>
+      createAssistantMessage({
+        stopReason: 'toolUse',
+        content: [
+          {
+            type: 'toolCall',
+            id: 'call-1',
+            name: 'interaction.request',
+            arguments: {
+              kind: 'collect_input',
+              title: '确认 root 用户参数',
+              message: '继续前需要你确认用户名、密码和授权方案。',
+              fields: [
+                {
+                  type: 'text',
+                  key: 'username',
+                  label: '用户名',
+                  required: true,
+                },
+                {
+                  type: 'password',
+                  key: 'password',
+                  label: '密码',
+                  required: true,
+                },
+                {
+                  type: 'single_select',
+                  key: 'grantMode',
+                  label: '授权方案',
+                  required: true,
+                  options: [
+                    { label: 'sudo组', value: 'sudo-group' },
+                    { label: '无密码sudo', value: 'passwordless-sudo' },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      }),
+  });
+}
+
 test('parameter collection pause opens a collect_input interaction', async () => {
   const runtime = createRuntimeForParameterPause();
   const events: AgentStreamEvent[] = [];
@@ -168,6 +393,24 @@ test('submitInteraction rejects actions that are not offered by the current inte
     /不支持|未提供|action/i
   );
   assert.equal(runtime.getRunSnapshot(opened.runId)?.activeInteraction?.status, 'open');
+});
+
+test('model-initiated interaction.request tool opens a native collect_input interaction card', async () => {
+  const runtime = createRuntimeForModelInteractionRequest();
+  const events: AgentStreamEvent[] = [];
+
+  await runtime.run(createRunInput(), event => {
+    events.push(event);
+  }, AbortSignal.timeout(5_000));
+
+  const opened = events.find((event) => event.type === 'interaction_requested');
+  assert.ok(opened && opened.type === 'interaction_requested');
+  assert.equal(opened.request.interactionKind, 'collect_input');
+  assert.equal(opened.request.title, '确认 root 用户参数');
+  assert.equal(opened.request.fields.length, 3);
+  assert.equal(opened.request.fields[0]?.type, 'text');
+  assert.equal(opened.request.fields[1]?.type, 'password');
+  assert.equal(opened.request.fields[2]?.type, 'single_select');
 });
 
 test('任务完成后会将稳定观察整理后自动沉淀到节点记忆', async () => {

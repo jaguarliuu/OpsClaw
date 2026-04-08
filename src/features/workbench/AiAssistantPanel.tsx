@@ -8,6 +8,13 @@ import {
   WandSparkles,
   X,
 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { MarkdownContent } from '@/components/ui/MarkdownContent';
 import { AGENT_MAX_STEP_OPTIONS } from './agentRunSettings';
 import { useAiAssistantPanelState } from './useAiAssistantPanelState';
@@ -22,6 +29,7 @@ import {
   markAiAssistantInputCompositionEnd,
   markAiAssistantInputCompositionStart,
   shouldAutoScrollAiAssistantTimeline,
+  shouldPresentAiAssistantInteractionDialog,
   shouldSubmitAiAssistantOnEnter,
 } from './aiAssistantPanelModel';
 import { createAgentSessionModel } from './agentSessionModel';
@@ -173,6 +181,7 @@ function SessionRunCommandResult({
         </div>
         <MarkdownContent content={['```bash', output, '```'].join('\n')} className="px-3 pb-3" />
       </div>
+
     </div>
   );
 }
@@ -407,6 +416,11 @@ export function AiAssistantPanel({
   const isAgentInputLocked = mode === 'agent' && agentSessionModel.isInteractionLocked;
   const canClearAgentItems = mode !== 'agent' || agentSessionModel.canClearAgentItems;
   const themeClasses = getAiAssistantThemeClasses(appTheme.mode);
+  const activeDialogInteraction = shouldPresentAiAssistantInteractionDialog(
+    agentRun.activeInteraction
+  )
+    ? agentRun.activeInteraction
+    : null;
   const resolvedSelectedModel = getValidAiAssistantModelValue(modelOptions, selectedModel);
   const resolvedSelectedSessionId = getValidAiAssistantSessionId(
     sessions,
@@ -667,15 +681,6 @@ export function AiAssistantPanel({
             </div>
           </div>
         )}
-        {mode === 'agent' && agentRun.activeInteraction ? (
-          <InteractionCard
-            request={agentRun.activeInteraction}
-            disabled={isBusy}
-            onSubmit={(actionId, payload) =>
-              submitInteraction(agentRun.activeInteraction!.runId, agentRun.activeInteraction!.id, actionId, payload)
-            }
-          />
-        ) : null}
         {mode === 'agent'
           ? agentItems.map((item) => (
               <div key={item.id}>
@@ -846,6 +851,41 @@ export function AiAssistantPanel({
           </div>
         )}
       </div>
+
+      <Dialog open={activeDialogInteraction !== null} onOpenChange={() => {}}>
+        {activeDialogInteraction ? (
+          <DialogContent
+            className="w-[min(680px,calc(100vw-32px))] max-w-none overflow-hidden border-[var(--app-border-default)] bg-[var(--app-bg-elevated)] p-0 text-[var(--app-text-primary)]"
+            onEscapeKeyDown={(event) => event.preventDefault()}
+            onInteractOutside={(event) => event.preventDefault()}
+            onPointerDownOutside={(event) => event.preventDefault()}
+          >
+            <DialogHeader className="block border-[var(--app-border-default)] px-5 py-4">
+              <DialogTitle className="text-sm font-semibold text-[var(--app-text-primary)]">
+                待处理交互
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-xs leading-6 text-[var(--app-text-secondary)]">
+                Agent 运行未中断，当前步骤正在等待你通过前端卡片补充参数或确认执行。
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="px-5 py-5">
+              <InteractionCard
+                request={activeDialogInteraction}
+                disabled={isRunning}
+                onSubmit={(actionId, payload) =>
+                  submitInteraction(
+                    activeDialogInteraction.runId,
+                    activeDialogInteraction.id,
+                    actionId,
+                    payload
+                  )
+                }
+              />
+            </div>
+          </DialogContent>
+        ) : null}
+      </Dialog>
     </div>
   );
 }
