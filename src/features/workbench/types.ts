@@ -136,6 +136,7 @@ export type ScriptVariableDefinition = {
 export type ScriptLibraryItem = {
   id: string;
   key: string;
+  alias: string;
   scope: ScriptScope;
   nodeId: string | null;
   title: string;
@@ -152,6 +153,7 @@ export type ScriptLibraryItem = {
 
 export type ScriptLibraryUpsertInput = {
   key: string;
+  alias: string;
   scope: ScriptScope;
   nodeId: string | null;
   title: string;

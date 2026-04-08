@@ -363,12 +363,11 @@ export function parseCreateScriptInput(payload: unknown): CreateScriptInput {
     throw new RequestError(400, '脚本配置格式错误。');
   }
 
-  const scope = readScriptScope(payload.scope);
-
   return {
     key: readRequiredString(payload, 'key', '脚本 key'),
-    scope,
-    nodeId: scope === 'node' ? readRequiredString(payload, 'nodeId', '节点 ID') : null,
+    alias: readRequiredString(payload, 'alias', '脚本别名'),
+    scope: readScriptScope(payload.scope),
+    nodeId: readOptionalString(payload, 'nodeId') ?? null,
     title: readRequiredString(payload, 'title', '脚本标题'),
     description: readOptionalString(payload, 'description') ?? '',
     kind: readScriptKind(payload.kind),
@@ -387,6 +386,10 @@ export function parseUpdateScriptInput(payload: unknown): Partial<CreateScriptIn
 
   if (payload.key !== undefined) {
     nextInput.key = readRequiredString(payload, 'key', '脚本 key');
+  }
+
+  if (payload.alias !== undefined) {
+    nextInput.alias = readRequiredString(payload, 'alias', '脚本别名');
   }
 
   if (payload.scope !== undefined) {
