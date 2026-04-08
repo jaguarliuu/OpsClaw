@@ -60,3 +60,8 @@ export function buildQuickScriptSuggestionItems(
     highlighted: index === selectedIndex,
   }));
 }
+
+export function isQuickScriptQueryStillCurrent(inputBuffer: string, expectedQuery: string) {
+  const currentQuery = detectTerminalQuickScriptQuery(inputBuffer);
+  return currentQuery !== null && currentQuery === expectedQuery;
+}

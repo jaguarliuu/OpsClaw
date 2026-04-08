@@ -7,6 +7,7 @@ import {
   buildQuickScriptSuggestionItems,
   detectTerminalQuickScriptQuery,
   findExactQuickScriptMatch,
+  isQuickScriptQueryStillCurrent,
   rankQuickScriptCandidates,
 } from './terminalQuickScriptModel.js';
 
@@ -202,4 +203,10 @@ void test('buildQuickScriptSuggestionItems returns highlighted list items', () =
   assert.equal(items.length, 2);
   assert.equal(items[0]?.highlighted, true);
   assert.equal(items[0]?.label, 'restart');
+});
+
+void test('isQuickScriptQueryStillCurrent validates current input buffer against expected query', () => {
+  assert.equal(isQuickScriptQueryStillCurrent('x rest', 'res'), false);
+  assert.equal(isQuickScriptQueryStillCurrent('x rest', 'rest'), true);
+  assert.equal(isQuickScriptQueryStillCurrent('ls -la', 'rest'), false);
 });

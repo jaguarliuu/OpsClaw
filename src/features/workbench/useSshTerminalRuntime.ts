@@ -24,6 +24,7 @@ import type { TerminalSuggestionItem } from '@/features/workbench/sshTerminalSug
 import {
   buildQuickScriptSuggestionItems,
   detectTerminalQuickScriptQuery,
+  isQuickScriptQueryStillCurrent,
   rankQuickScriptCandidates,
   TERMINAL_QUICK_SCRIPT_DELAY_MS,
 } from '@/features/workbench/terminalQuickScriptModel';
@@ -59,6 +60,7 @@ type UseSshTerminalRuntimeOptions = {
 };
 
 const SUGGESTION_QUERY_DELAY_MS = 150;
+const QUICK_SCRIPT_SOURCE_CACHE_KEY_GLOBAL = '__global__';
 
 function logSshTerminalRuntime(event: string, details: Record<string, unknown> = {}) {
   console.info(`[SshTerminalRuntime] ${event}`, details);
@@ -94,6 +96,8 @@ export function useSshTerminalRuntime({
   const imeStateRef = useRef(createSshTerminalImeState());
   const quickScriptSelectedIndexRef = useRef(0);
   const rankedQuickScriptsRef = useRef<ScriptLibraryItem[]>([]);
+  const quickScriptSourceCacheRef = useRef(new Map<string, ScriptLibraryItem[]>());
+  const quickScriptSourceRequestRef = useRef(new Map<string, Promise<ScriptLibraryItem[]>>());
   const quickScriptRequestIdRef = useRef(0);
   const suggestionRef = useRef<string | null>(null);
   const quickScriptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -230,6 +234,9 @@ export function useSshTerminalRuntime({
       return;
     }
 
+    // Invalidate any inflight/queued result immediately for newer quick-script input.
+    quickScriptRequestIdRef.current += 1;
+
     if (quickScriptTimerRef.current) {
       clearTimeout(quickScriptTimerRef.current);
     }
@@ -241,12 +248,41 @@ export function useSshTerminalRuntime({
     setSuggestion(null);
 
     quickScriptTimerRef.current = setTimeout(() => {
-      const requestId = quickScriptRequestIdRef.current + 1;
-      quickScriptRequestIdRef.current = requestId;
+      const requestId = quickScriptRequestIdRef.current;
+      const sourceKey = sessionNodeIdRef.current ?? QUICK_SCRIPT_SOURCE_CACHE_KEY_GLOBAL;
 
-      void fetchScripts(sessionNodeIdRef.current)
+      const resolveSource = () => {
+        const cached = quickScriptSourceCacheRef.current.get(sourceKey);
+        if (cached) {
+          return Promise.resolve(cached);
+        }
+
+        const pending = quickScriptSourceRequestRef.current.get(sourceKey);
+        if (pending) {
+          return pending;
+        }
+
+        const request = fetchScripts(sessionNodeIdRef.current)
+          .then((items) => {
+            quickScriptSourceCacheRef.current.set(sourceKey, items);
+            quickScriptSourceRequestRef.current.delete(sourceKey);
+            return items;
+          })
+          .catch((error) => {
+            quickScriptSourceRequestRef.current.delete(sourceKey);
+            throw error;
+          });
+
+        quickScriptSourceRequestRef.current.set(sourceKey, request);
+        return request;
+      };
+
+      void resolveSource()
         .then((items) => {
           if (quickScriptRequestIdRef.current !== requestId) {
+            return;
+          }
+          if (!isQuickScriptQueryStillCurrent(inputBufferRef.current, query)) {
             return;
           }
 
@@ -443,7 +479,15 @@ export function useSshTerminalRuntime({
           }
 
           inputBufferRef.current = resolution.nextInputBuffer;
-          setSuggestion(resolution.nextSuggestion);
+          const quickScriptQuery = detectTerminalQuickScriptQuery(inputBufferRef.current);
+          const isQuickScriptMode = quickScriptQuery !== null;
+          if (isQuickScriptMode) {
+            if (suggestionRef.current !== null) {
+              setSuggestion(null);
+            }
+          } else {
+            setSuggestion(resolution.nextSuggestion);
+          }
 
           if (!isAgentLockedRef.current && resolution.commandToRecord) {
             void recordCommand({
@@ -455,8 +499,7 @@ export function useSshTerminalRuntime({
           }
 
           if (!isAgentLockedRef.current) {
-            const quickScriptQuery = detectTerminalQuickScriptQuery(inputBufferRef.current);
-            if (quickScriptQuery !== null) {
+            if (isQuickScriptMode) {
               fetchQuickScriptSuggestions(inputBufferRef.current);
             } else {
               clearQuickScriptSuggestions();

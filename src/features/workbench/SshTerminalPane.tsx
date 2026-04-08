@@ -326,6 +326,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
             placement={suggestionOverlayPosition.placement}
             top={suggestionOverlayPosition.top}
             title="快捷脚本"
+            hint="输入 x <alias> 继续筛选"
             items={quickScriptItems}
           />
         ) : suggestionVisible && suggestion ? (
@@ -334,6 +335,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
             placement={suggestionOverlayPosition.placement}
             top={suggestionOverlayPosition.top}
             title="命令建议"
+            hint="按 Tab 接受"
             items={[
               {
                 id: 'history-suggestion',

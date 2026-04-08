@@ -7,6 +7,7 @@ import type {
 } from '@/features/workbench/sshTerminalSuggestionOverlayModel';
 
 type SshTerminalSuggestionOverlayProps = {
+  hint?: string;
   placement: SshTerminalSuggestionOverlayPlacement;
   items: TerminalSuggestionItem[];
   title: string;
@@ -16,7 +17,7 @@ type SshTerminalSuggestionOverlayProps = {
 export const SshTerminalSuggestionOverlay = forwardRef<
   HTMLDivElement,
   SshTerminalSuggestionOverlayProps
->(function SshTerminalSuggestionOverlay({ placement, items, title, top }, ref) {
+>(function SshTerminalSuggestionOverlay({ hint, placement, items, title, top }, ref) {
   return (
     <div
       ref={ref}
@@ -27,7 +28,7 @@ export const SshTerminalSuggestionOverlay = forwardRef<
       <div className="space-y-1">
         <div className="flex items-center justify-between text-[11px] text-neutral-500">
           <span>{title}</span>
-          <span>Enter 执行 · Esc 关闭</span>
+          {hint ? <span>{hint}</span> : null}
         </div>
         {items.map((item) => (
           <div
