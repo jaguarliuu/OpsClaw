@@ -79,8 +79,8 @@ void test('getAgentRunDisplayState maps blocking mode before legacy run state', 
   assert.equal(
     getAgentRunDisplayState({
       state: 'waiting_for_human',
-      executionState: 'blocked_by_ui_gate',
-      blockingMode: 'ui_gate',
+      executionState: 'blocked_by_interaction',
+      blockingMode: 'interaction',
     }),
     'awaiting_user_action'
   );
@@ -88,7 +88,7 @@ void test('getAgentRunDisplayState maps blocking mode before legacy run state', 
     getAgentRunDisplayState({
       state: 'waiting_for_human',
       executionState: 'blocked_by_terminal',
-      blockingMode: 'terminal_input',
+      blockingMode: 'terminal_wait',
     }),
     'waiting_terminal'
   );

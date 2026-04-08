@@ -18,6 +18,7 @@ void test('approval gates expose approve and reject action labels', () => {
     reason: '命令命中敏感操作策略，需要用户审批后执行。',
     openedAt: 1,
     deadlineAt: 2,
+    presentationMode: 'inline_ui_action' as const,
     payload: {
       toolCallId: 'call-1',
       toolName: 'session.run_command',
@@ -47,6 +48,7 @@ void test('expired terminal_input gates expose resume-waiting as the primary act
     reason: '命令等待人工输入超时，Agent 已停止等待结果。',
     openedAt: 1,
     deadlineAt: 2,
+    presentationMode: 'terminal_wait' as const,
     payload: {
       toolCallId: 'call-2',
       toolName: 'session.run_command' as const,
@@ -74,6 +76,7 @@ void test('open terminal_input gates do not expose action buttons', () => {
     reason: '命令正在等待你在终端中继续输入。',
     openedAt: 1,
     deadlineAt: 2,
+    presentationMode: 'terminal_wait' as const,
     payload: {
       toolCallId: 'call-3',
       toolName: 'session.run_command' as const,
@@ -98,6 +101,7 @@ void test('parameter_confirmation gates expose confirm and reject actions with d
     reason: '该操作依赖受保护参数，请确认参数后继续。',
     openedAt: 1,
     deadlineAt: 2,
+    presentationMode: 'inline_ui_action' as const,
     payload: {
       toolCallId: 'call-4',
       toolName: 'session.run_command' as const,

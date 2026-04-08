@@ -71,7 +71,7 @@ type HumanGateRecordBase = {
   reason: string;
   openedAt: number;
   deadlineAt: number | null;
-  presentationMode?: HumanGatePresentationMode;
+  presentationMode: HumanGatePresentationMode;
 };
 
 export type TerminalInputGateRecord = HumanGateRecordBase & {

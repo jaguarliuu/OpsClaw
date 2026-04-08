@@ -18,6 +18,7 @@ void test('terminal input gates produce a session lock and block new agent work'
       reason: '命令正在等待你在终端中继续输入。',
       openedAt: 1,
       deadlineAt: 2,
+      presentationMode: 'terminal_wait',
       payload: {
         toolCallId: 'call-1',
         toolName: 'session.run_command',
@@ -58,6 +59,7 @@ void test('approval gates block panel actions without locking a terminal session
       reason: '命令命中敏感操作策略，需要用户审批后执行。',
       openedAt: 1,
       deadlineAt: 2,
+      presentationMode: 'inline_ui_action',
       payload: {
         toolCallId: 'call-1',
         toolName: 'session.run_command',
@@ -114,6 +116,7 @@ void test('expired terminal input gates keep the session lock banner resumable',
       reason: '命令等待人工输入超时，Agent 已停止等待结果。',
       openedAt: 1,
       deadlineAt: 2,
+      presentationMode: 'terminal_wait',
       payload: {
         toolCallId: 'call-1',
         toolName: 'session.run_command',

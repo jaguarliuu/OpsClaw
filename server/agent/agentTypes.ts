@@ -9,19 +9,13 @@ import type { InteractionRequest } from './interactionTypes.js';
 export type AgentRunExecutionState =
   | 'running'
   | 'blocked_by_interaction'
-  | 'blocked_by_ui_gate'
   | 'blocked_by_terminal'
   | 'suspended'
   | 'completed'
   | 'failed'
   | 'cancelled';
 
-export type AgentRunBlockingMode =
-  | 'none'
-  | 'interaction'
-  | 'ui_gate'
-  | 'terminal_wait'
-  | 'terminal_input';
+export type AgentRunBlockingMode = 'none' | 'interaction' | 'terminal_wait';
 
 export type AgentApprovalMode = 'auto-readonly' | 'manual-sensitive';
 
