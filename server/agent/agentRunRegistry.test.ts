@@ -80,6 +80,33 @@ void test('opening an interaction stores activeInteraction and blocks the run', 
   assert.equal(snapshot?.activeInteraction?.interactionKind, 'danger_confirm');
 });
 
+void test('opening a non-blocking interaction is rejected so the run snapshot stays self-consistent', () => {
+  const registry = createAgentRunRegistry();
+  registry.registerRun({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    task: 'show informational prompt',
+  });
+
+  assert.throws(
+    () =>
+      registry.openInteraction({
+        runId: 'run-1',
+        sessionId: 'session-1',
+        request: createDangerConfirmRequest({
+          blockingMode: 'none',
+        }),
+      }),
+    /阻断|blocking/
+  );
+
+  const snapshot = registry.getRun('run-1');
+  assert.equal(snapshot?.state, 'running');
+  assert.equal(snapshot?.executionState, 'running');
+  assert.equal(snapshot?.blockingMode, 'none');
+  assert.equal(snapshot?.activeInteraction, null);
+});
+
 void test('opening a terminal_wait interaction marks the run as blocked_by_terminal', () => {
   const registry = createAgentRunRegistry();
   registry.registerRun({

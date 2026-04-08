@@ -79,7 +79,15 @@ function toExecutionState(request: InteractionRequest): AgentRunExecutionState {
 }
 
 function toRunBlockingMode(request: InteractionRequest): AgentRunBlockingMode {
-  return request.interactionKind === 'terminal_wait' ? 'terminal_wait' : 'interaction';
+  return request.interactionKind === 'terminal_wait'
+    ? 'terminal_wait'
+    : request.blockingMode === 'none'
+      ? 'none'
+      : 'interaction';
+}
+
+function toRunState(request: InteractionRequest): AgentRunState {
+  return toExecutionState(request) === 'running' ? 'running' : 'waiting_for_human';
 }
 
 function toLegacyGateStatus(status: InteractionStatus): HumanGateStatus {
@@ -235,9 +243,12 @@ export function createAgentRunRegistry(options?: {
     if (input.request.status !== 'open') {
       throw new Error('新打开的 interaction 必须是 open 状态。');
     }
+    if (input.request.blockingMode === 'none') {
+      throw new Error('run registry 只接受会阻断执行的 interaction。');
+    }
 
     const request = structuredClone(input.request);
-    run.state = 'waiting_for_human';
+    run.state = toRunState(request);
     run.executionState = toExecutionState(request);
     run.blockingMode = toRunBlockingMode(request);
     run.activeInteraction = request;
