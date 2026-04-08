@@ -278,14 +278,16 @@ export function projectAgentSnapshotToEventState(
   state: AgentEventState,
   snapshot: AgentRunSnapshot
 ): AgentEventState {
+  const openGate = snapshot.openGate ?? null;
+
   return {
     ...state,
     runId: snapshot.runId,
     runState: snapshot.state,
     executionState: snapshot.executionState,
     blockingMode: snapshot.blockingMode,
-    activeGate: snapshot.openGate,
-    pendingUiGates: snapshot.openGate ? buildPendingUiGateItems([snapshot.openGate]) : [],
+    activeGate: openGate,
+    pendingUiGates: openGate ? buildPendingUiGateItems([openGate]) : [],
     error: null,
   };
 }

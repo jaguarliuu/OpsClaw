@@ -34,9 +34,13 @@ export type AgentRunRecord = {
   activeInteraction: InteractionRequest | null;
 };
 
+export type AgentRunSnapshot = AgentRunRecord & {
+  openGate: HumanGateRecord | null;
+};
+
 export type RegisterRunInput = Pick<AgentRunRecord, 'runId' | 'sessionId' | 'task'>;
 export type AgentRunSnapshotStore = {
-  save: (snapshot: AgentRunRecord) => void;
+  save: (snapshot: AgentRunSnapshot) => void;
 };
 
 export type OpenInteractionInput = {
@@ -199,13 +203,38 @@ function toLegacyGateRecord(request: InteractionRequest): HumanGateRecord {
   };
 }
 
+function toCompatibleOpenGate(request: InteractionRequest | null): HumanGateRecord | null {
+  if (!request) {
+    return null;
+  }
+
+  const kind = request.metadata[LEGACY_GATE_KIND_KEY];
+  if (
+    kind !== 'terminal_input' &&
+    kind !== 'approval' &&
+    kind !== 'parameter_confirmation'
+  ) {
+    return null;
+  }
+
+  return toLegacyGateRecord(request);
+}
+
 export function createAgentRunRegistry(options?: {
   snapshotStore?: AgentRunSnapshotStore;
 }) {
   const runs = new Map<string, AgentRunRecord>();
 
+  function toSnapshot(run: AgentRunRecord): AgentRunSnapshot {
+    const snapshot = structuredClone(run);
+    return {
+      ...snapshot,
+      openGate: toCompatibleOpenGate(snapshot.activeInteraction),
+    };
+  }
+
   function saveSnapshot(run: AgentRunRecord) {
-    options?.snapshotStore?.save(structuredClone(run));
+    options?.snapshotStore?.save(toSnapshot(run));
   }
 
   function getRequiredRun(runId: string) {
@@ -389,12 +418,12 @@ export function createAgentRunRegistry(options?: {
           candidate.sessionId === sessionId &&
           (candidate.state === 'waiting_for_human' || candidate.state === 'suspended')
       );
-      return run ? structuredClone(run) : null;
+      return run ? toSnapshot(run) : null;
     },
 
     getRun(runId: string) {
       const run = runs.get(runId);
-      return run ? structuredClone(run) : null;
+      return run ? toSnapshot(run) : null;
     },
 
     // Legacy human gate compatibility layer

@@ -11,11 +11,11 @@ export function isTerminalWaitGate(gate: HumanGateRecord | null): boolean {
 export function getAgentRunDisplayState(
   snapshot: Pick<AgentRunSnapshot, 'executionState' | 'blockingMode' | 'state'>
 ) {
-  if (snapshot.blockingMode === 'ui_gate') {
+  if (snapshot.blockingMode === 'ui_gate' || snapshot.blockingMode === 'interaction') {
     return 'awaiting_user_action';
   }
 
-  if (snapshot.blockingMode === 'terminal_input') {
+  if (snapshot.blockingMode === 'terminal_input' || snapshot.blockingMode === 'terminal_wait') {
     return 'waiting_terminal';
   }
 

@@ -180,7 +180,7 @@ export function useAgentRun() {
           getPendingContinuationRunIdFromSnapshot({
             runId: snapshot.runId,
             state: snapshot.state,
-            openGate: snapshot.openGate,
+            openGate: snapshot.openGate ?? null,
           })
         );
 
@@ -386,7 +386,13 @@ export function useAgentRun() {
     }
 
     applySnapshotToEventState(snapshot);
-    setPendingContinuationRunId(getPendingContinuationRunIdFromSnapshot(snapshot));
+    setPendingContinuationRunId(
+      getPendingContinuationRunIdFromSnapshot({
+        runId: snapshot.runId,
+        state: snapshot.state,
+        openGate: snapshot.openGate ?? null,
+      })
+    );
     return snapshot;
   }, []);
 

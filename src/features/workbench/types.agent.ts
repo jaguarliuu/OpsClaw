@@ -22,13 +22,19 @@ export type AgentRunState =
 export type AgentRunExecutionState =
   | 'running'
   | 'blocked_by_interaction'
+  | 'blocked_by_ui_gate'
   | 'blocked_by_terminal'
   | 'suspended'
   | 'completed'
   | 'failed'
   | 'cancelled';
 
-export type AgentRunBlockingMode = 'none' | 'interaction' | 'terminal_wait';
+export type AgentRunBlockingMode =
+  | 'none'
+  | 'interaction'
+  | 'ui_gate'
+  | 'terminal_wait'
+  | 'terminal_input';
 
 export type InteractionStatus = 'open' | 'submitted' | 'resolved' | 'rejected' | 'expired';
 export type InteractionKind =
@@ -173,7 +179,7 @@ type HumanGateRecordBase = {
   reason: string;
   openedAt: number;
   deadlineAt: number | null;
-  presentationMode: HumanGatePresentationMode;
+  presentationMode?: HumanGatePresentationMode;
 };
 
 export type TerminalInputGateRecord = HumanGateRecordBase & {
@@ -203,7 +209,8 @@ export type AgentRunSnapshot = {
   state: AgentRunState;
   executionState: AgentRunExecutionState;
   blockingMode: AgentRunBlockingMode;
-  activeInteraction: InteractionRequest | null;
+  activeInteraction?: InteractionRequest | null;
+  openGate?: HumanGateRecord | null;
 };
 
 export type ToolExecutionEnvelope = {

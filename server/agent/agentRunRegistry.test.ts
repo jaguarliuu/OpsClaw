@@ -129,6 +129,45 @@ void test('opening a terminal_wait interaction marks the run as blocked_by_termi
   assert.equal(request.status, 'open');
 });
 
+void test('legacy openGate bridge keeps openGate projected from activeInteraction across resolveGate', () => {
+  const registry = createAgentRunRegistry();
+  registry.registerRun({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    task: 'legacy approval bridge',
+  });
+
+  const gate = registry.openGate({
+    runId: 'run-1',
+    sessionId: 'session-1',
+    kind: 'approval',
+    reason: 'legacy runtime still opens approval gates',
+    deadlineAt: null,
+    payload: {
+      toolCallId: 'call-1',
+      toolName: 'session.run_command',
+      arguments: {
+        command: 'useradd ops-admin',
+      },
+      policy: {
+        action: 'require_approval',
+        matches: [],
+      },
+    },
+  });
+
+  const waitingSnapshot = registry.getRun('run-1');
+  assert.equal(waitingSnapshot?.activeInteraction?.id, gate.id);
+  assert.equal(waitingSnapshot?.openGate?.id, gate.id);
+  assert.equal(waitingSnapshot?.openGate?.status, 'open');
+  assert.equal(waitingSnapshot?.openGate?.presentationMode, 'inline_ui_action');
+
+  registry.resolveGate({ runId: 'run-1', gateId: gate.id });
+  const resolvedSnapshot = registry.getRun('run-1');
+  assert.equal(resolvedSnapshot?.activeInteraction?.status, 'resolved');
+  assert.equal(resolvedSnapshot?.openGate?.status, 'resolved');
+});
+
 void test('expiring an interaction suspends the run instead of failing it', () => {
   const registry = createAgentRunRegistry();
   registry.registerRun({
