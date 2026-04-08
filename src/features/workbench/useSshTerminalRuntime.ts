@@ -4,6 +4,7 @@ import type { FitAddon } from '@xterm/addon-fit';
 import type { Terminal } from '@xterm/xterm';
 
 import { searchCommands, recordCommand } from '@/features/workbench/api';
+import { fetchScripts } from '@/features/workbench/scriptApi';
 import {
   buildSshTerminalCopyFeedbackText,
   SSH_TERMINAL_COPY_FEEDBACK_DURATION_MS,
@@ -20,7 +21,12 @@ import {
   type SshTerminalQuickScriptOverlayState,
 } from '@/features/workbench/sshTerminalRuntimeModel';
 import type { TerminalSuggestionItem } from '@/features/workbench/sshTerminalSuggestionOverlayModel';
-import { buildQuickScriptSuggestionItems } from '@/features/workbench/terminalQuickScriptModel';
+import {
+  buildQuickScriptSuggestionItems,
+  detectTerminalQuickScriptQuery,
+  rankQuickScriptCandidates,
+  TERMINAL_QUICK_SCRIPT_DELAY_MS,
+} from '@/features/workbench/terminalQuickScriptModel';
 import { isAgentSessionLocked } from '@/features/workbench/agentSessionModel';
 import { loadTerminalRuntime } from '@/features/workbench/terminalRuntimeLoader';
 import { TERMINAL_THEMES } from '@/features/workbench/terminalSettings';
@@ -88,7 +94,9 @@ export function useSshTerminalRuntime({
   const imeStateRef = useRef(createSshTerminalImeState());
   const quickScriptSelectedIndexRef = useRef(0);
   const rankedQuickScriptsRef = useRef<ScriptLibraryItem[]>([]);
+  const quickScriptRequestIdRef = useRef(0);
   const suggestionRef = useRef<string | null>(null);
+  const quickScriptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -105,6 +113,19 @@ export function useSshTerminalRuntime({
     );
   }, [quickScriptSelectedIndex]);
 
+  const clearQuickScriptSuggestions = useCallback(() => {
+    quickScriptRequestIdRef.current += 1;
+    if (quickScriptTimerRef.current) {
+      clearTimeout(quickScriptTimerRef.current);
+      quickScriptTimerRef.current = null;
+    }
+    rankedQuickScriptsRef.current = [];
+    quickScriptSelectedIndexRef.current = 0;
+    setQuickScriptItems([]);
+    setQuickScriptSelectedIndex(0);
+    setQuickScriptVisible(false);
+  }, []);
+
   const isAgentLocked = isAgentSessionLocked(agentSessionLock);
 
   useEffect(() => {
@@ -120,12 +141,9 @@ export function useSshTerminalRuntime({
       clearTimeout(suggestionTimerRef.current);
       suggestionTimerRef.current = null;
     }
-    rankedQuickScriptsRef.current = [];
-    setQuickScriptItems([]);
-    setQuickScriptSelectedIndex(0);
-    setQuickScriptVisible(false);
+    clearQuickScriptSuggestions();
     setSuggestion(null);
-  }, [isAgentLocked]);
+  }, [clearQuickScriptSuggestions, isAgentLocked]);
 
   const readClipboardText = useCallback(async () => {
     if (window.__OPSCLAW_CLIPBOARD__) {
@@ -199,6 +217,60 @@ export function useSshTerminalRuntime({
         });
     }, SUGGESTION_QUERY_DELAY_MS);
   }, [sessionNodeIdRef]);
+
+  const fetchQuickScriptSuggestions = useCallback((inputBuffer: string) => {
+    if (isAgentLockedRef.current) {
+      clearQuickScriptSuggestions();
+      return;
+    }
+
+    const query = detectTerminalQuickScriptQuery(inputBuffer);
+    if (query === null) {
+      clearQuickScriptSuggestions();
+      return;
+    }
+
+    if (quickScriptTimerRef.current) {
+      clearTimeout(quickScriptTimerRef.current);
+    }
+
+    if (suggestionTimerRef.current) {
+      clearTimeout(suggestionTimerRef.current);
+      suggestionTimerRef.current = null;
+    }
+    setSuggestion(null);
+
+    quickScriptTimerRef.current = setTimeout(() => {
+      const requestId = quickScriptRequestIdRef.current + 1;
+      quickScriptRequestIdRef.current = requestId;
+
+      void fetchScripts(sessionNodeIdRef.current)
+        .then((items) => {
+          if (quickScriptRequestIdRef.current !== requestId) {
+            return;
+          }
+
+          const ranked = rankQuickScriptCandidates(items, query).slice(0, 8);
+          rankedQuickScriptsRef.current = ranked;
+
+          if (ranked.length === 0) {
+            setQuickScriptItems([]);
+            setQuickScriptVisible(false);
+            return;
+          }
+
+          const selectedIndex = 0;
+          quickScriptSelectedIndexRef.current = selectedIndex;
+          setQuickScriptSelectedIndex(selectedIndex);
+          setQuickScriptItems(buildQuickScriptSuggestionItems(ranked, selectedIndex));
+          setQuickScriptVisible(true);
+        })
+        .catch((error) => {
+          console.error('[SshTerminalRuntime] quick-script:search_error', error);
+          clearQuickScriptSuggestions();
+        });
+    }, TERMINAL_QUICK_SCRIPT_DELAY_MS);
+  }, [clearQuickScriptSuggestions, sessionNodeIdRef]);
 
   const confirmPendingPaste = useCallback(() => {
     if (pendingPaste === null) {
@@ -382,8 +454,16 @@ export function useSshTerminalRuntime({
             });
           }
 
-          if (!isAgentLockedRef.current && resolution.suggestionQuery !== null) {
-            fetchSuggestion(resolution.suggestionQuery);
+          if (!isAgentLockedRef.current) {
+            const quickScriptQuery = detectTerminalQuickScriptQuery(inputBufferRef.current);
+            if (quickScriptQuery !== null) {
+              fetchQuickScriptSuggestions(inputBufferRef.current);
+            } else {
+              clearQuickScriptSuggestions();
+              if (resolution.suggestionQuery !== null) {
+                fetchSuggestion(resolution.suggestionQuery);
+              }
+            }
           }
         });
 
@@ -418,6 +498,10 @@ export function useSshTerminalRuntime({
             clearTimeout(suggestionTimerRef.current);
             suggestionTimerRef.current = null;
           }
+          if (quickScriptTimerRef.current) {
+            clearTimeout(quickScriptTimerRef.current);
+            quickScriptTimerRef.current = null;
+          }
           if (copyFeedbackTimerRef.current) {
             clearTimeout(copyFeedbackTimerRef.current);
             copyFeedbackTimerRef.current = null;
@@ -425,10 +509,7 @@ export function useSshTerminalRuntime({
           setCopyFeedbackVisible(false);
           imeStateRef.current = createSshTerminalImeState();
           inputBufferRef.current = '';
-          rankedQuickScriptsRef.current = [];
-          setQuickScriptItems([]);
-          setQuickScriptSelectedIndex(0);
-          setQuickScriptVisible(false);
+          clearQuickScriptSuggestions();
           setSuggestion(null);
           setPendingPaste(null);
           rejectPendingExecution('终端已销毁，未完成的 Agent 命令已取消。');
@@ -465,7 +546,9 @@ export function useSshTerminalRuntime({
     };
   }, [
     containerRef,
+    clearQuickScriptSuggestions,
     disposeViewport,
+    fetchQuickScriptSuggestions,
     fetchSuggestion,
     fitAddonRef,
     initializedRef,
