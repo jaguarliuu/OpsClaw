@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { ScriptLibraryItem } from './types.js';
+
 import {
   detectTerminalQuickScriptQuery,
   findExactQuickScriptMatch,
@@ -14,7 +16,7 @@ void test('detectTerminalQuickScriptQuery only matches whole-line x prefix', () 
 });
 
 void test('findExactQuickScriptMatch prefers node script over global script', () => {
-  const items = [
+  const items: ScriptLibraryItem[] = [
     {
       id: 'global-1',
       key: 'restart-global',
