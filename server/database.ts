@@ -104,6 +104,44 @@ function toSqlRows(
   });
 }
 
+function readString(value: SqliteValue, field: string) {
+  if (typeof value !== 'string') {
+    throw new Error(`Invalid ${field} value.`);
+  }
+
+  return value;
+}
+
+function queryMany<T>(
+  database: SqlDatabaseHandle,
+  sql: string,
+  mapRow: (row: SqlRow) => T,
+  params?: SqlParams
+) {
+  const statement = database.prepare(sql, params);
+  const rows: T[] = [];
+
+  try {
+    while (statement.step()) {
+      rows.push(mapRow(statement.getAsObject()));
+    }
+  } finally {
+    statement.free();
+  }
+
+  return rows;
+}
+
+function queryTableColumns(database: SqlDatabaseHandle, tableName: string) {
+  const rows = queryMany(
+    database,
+    `PRAGMA table_info(${tableName})`,
+    (row) => readString(row.name, 'name')
+  );
+
+  return new Set(rows);
+}
+
 function ensureNodeCredentialColumns(database: SqlDatabaseHandle) {
   const result = database.exec('PRAGMA table_info(nodes);');
   const rows = result[0]?.values ?? [];
@@ -246,6 +284,7 @@ function ensureScriptLibraryTable(database: SqlDatabaseHandle) {
     CREATE TABLE IF NOT EXISTS script_library (
       id TEXT PRIMARY KEY,
       key TEXT NOT NULL,
+      alias TEXT NOT NULL,
       scope TEXT NOT NULL CHECK (scope IN ('global', 'node')),
       node_id TEXT,
       title TEXT NOT NULL,
@@ -261,6 +300,25 @@ function ensureScriptLibraryTable(database: SqlDatabaseHandle) {
   `);
   database.run(`CREATE INDEX IF NOT EXISTS idx_script_library_scope ON script_library(scope);`);
   database.run(`CREATE INDEX IF NOT EXISTS idx_script_library_node_id ON script_library(node_id);`);
+}
+
+function ensureScriptLibraryAliasColumn(database: SqlDatabaseHandle) {
+  const columns = queryTableColumns(database, 'script_library');
+  if (!columns.has('alias')) {
+    database.run(`ALTER TABLE script_library ADD COLUMN alias TEXT NOT NULL DEFAULT '';`);
+    database.run(`UPDATE script_library SET alias = key WHERE alias = '';`);
+  }
+
+  database.run(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_script_library_global_alias
+    ON script_library(alias)
+    WHERE scope = 'global';
+  `);
+  database.run(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_script_library_node_alias
+    ON script_library(node_id, alias)
+    WHERE scope = 'node';
+  `);
 }
 
 let databasePromise: Promise<SqliteDatabase> | null = null;
@@ -307,6 +365,7 @@ async function createDatabase(): Promise<SqliteDatabase> {
   ensureCommandHistoryTable(database);
   ensureLlmProvidersTable(database);
   ensureScriptLibraryTable(database);
+  ensureScriptLibraryAliasColumn(database);
 
   let persistQueue = Promise.resolve();
 

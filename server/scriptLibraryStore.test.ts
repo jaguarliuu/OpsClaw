@@ -29,6 +29,7 @@ void test('listResolvedScripts merges global and node scripts by key', async () 
 
   store.createScript({
     key: 'restart-nginx-global',
+    alias: 'restart-nginx-global',
     scope: 'global',
     nodeId: null,
     title: '重启 Nginx',
@@ -41,6 +42,7 @@ void test('listResolvedScripts merges global and node scripts by key', async () 
 
   store.createScript({
     key: 'restart-nginx-global',
+    alias: 'restart-nginx-global',
     scope: 'node',
     nodeId: 'node-1',
     title: '重启 Nginx（节点覆盖）',
@@ -53,6 +55,7 @@ void test('listResolvedScripts merges global and node scripts by key', async () 
 
   store.createScript({
     key: 'disk-usage-global',
+    alias: 'disk-usage-global',
     scope: 'global',
     nodeId: null,
     title: '磁盘占用',
@@ -85,6 +88,7 @@ void test('createScript and updateScript preserve template variables and tags', 
 
   const created = store.createScript({
     key: 'service-restart-template',
+    alias: 'service-restart-template',
     scope: 'global',
     nodeId: null,
     title: '服务重启模板',
@@ -130,6 +134,7 @@ void test('deleteScript removes the persisted item', async () => {
 
   const created = store.createScript({
     key: 'delete-me-script',
+    alias: 'delete-me-script',
     scope: 'global',
     nodeId: null,
     title: '待删除脚本',
@@ -147,4 +152,60 @@ void test('deleteScript removes the persisted item', async () => {
 
   const afterDelete = store.listResolvedScripts();
   assert.equal(afterDelete.some((item) => item.id === created.id), false);
+});
+
+void test('createScript persists alias and listResolvedScripts returns it', async () => {
+  const { createScriptLibraryStore } = await import('./scriptLibraryStore.js');
+  const store = await createScriptLibraryStore();
+
+  store.createScript({
+    key: 'disk-usage',
+    alias: 'disk',
+    scope: 'global',
+    nodeId: null,
+    title: '查看磁盘',
+    description: '查看磁盘占用',
+    kind: 'plain',
+    content: 'df -h',
+    variables: [],
+    tags: ['ops'],
+  });
+
+  const [item] = store.listResolvedScripts();
+  assert.equal(item?.alias, 'disk');
+});
+
+void test('node alias overrides global alias during resolved lookup', async () => {
+  const { createScriptLibraryStore } = await import('./scriptLibraryStore.js');
+  const store = await createScriptLibraryStore();
+
+  store.createScript({
+    key: 'restart-global',
+    alias: 'restart',
+    scope: 'global',
+    nodeId: null,
+    title: '全局重启',
+    description: '',
+    kind: 'plain',
+    content: 'systemctl restart nginx',
+    variables: [],
+    tags: [],
+  });
+
+  store.createScript({
+    key: 'restart-node',
+    alias: 'restart',
+    scope: 'node',
+    nodeId: 'node-1',
+    title: '节点重启',
+    description: '',
+    kind: 'plain',
+    content: 'service nginx restart',
+    variables: [],
+    tags: [],
+  });
+
+  const [resolved] = store.listResolvedScripts('node-1').filter((item) => item.alias === 'restart');
+  assert.equal(resolved?.resolvedFrom, 'node');
+  assert.equal(resolved?.content, 'service nginx restart');
 });

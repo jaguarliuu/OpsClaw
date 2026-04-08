@@ -18,6 +18,7 @@ export type ScriptVariableDefinition = {
 export type ScriptLibraryItem = {
   id: string;
   key: string;
+  alias: string;
   scope: ScriptScope;
   nodeId: string | null;
   title: string;
@@ -37,6 +38,7 @@ export type ResolvedScriptLibraryItem = ScriptLibraryItem & {
 
 export type CreateScriptInput = {
   key: string;
+  alias: string;
   scope: ScriptScope;
   nodeId: string | null;
   title: string;
@@ -51,6 +53,8 @@ export type UpdateScriptInput = Partial<Omit<CreateScriptInput, 'scope' | 'nodeI
   scope?: ScriptScope;
   nodeId?: string | null;
 };
+
+const SCRIPT_ALIAS_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
 function readString(value: SqlRow[string], field: string) {
   if (typeof value !== 'string') {
@@ -134,6 +138,7 @@ function mapScriptRow(row: SqlRow): ScriptLibraryItem {
   return {
     id: readString(row.id, 'id'),
     key: readString(row.key, 'key'),
+    alias: readString(row.alias, 'alias'),
     scope: readScope(row.scope),
     nodeId: readNullableString(row.node_id),
     title: readString(row.title, 'title'),
@@ -183,6 +188,17 @@ function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
+function normalizeAlias(value: string) {
+  const alias = value.trim();
+  if (!alias) {
+    throw new Error('脚本 alias 不能为空。');
+  }
+  if (!SCRIPT_ALIAS_PATTERN.test(alias)) {
+    throw new Error('脚本 alias 只能包含小写字母、数字、-、_。');
+  }
+  return alias;
+}
+
 function ensureValidVariables(kind: ScriptKind, variables: ScriptVariableDefinition[], content: string) {
   if (kind === 'plain') {
     if (variables.length > 0) {
@@ -209,6 +225,7 @@ function ensureValidVariables(kind: ScriptKind, variables: ScriptVariableDefinit
 
 function normalizeCreateInput(input: CreateScriptInput) {
   const key = input.key.trim();
+  const alias = normalizeAlias(input.alias);
   const title = input.title.trim();
   const description = (input.description ?? '').trim();
   const content = input.content.trim();
@@ -239,6 +256,7 @@ function normalizeCreateInput(input: CreateScriptInput) {
 
   return {
     key,
+    alias,
     scope: input.scope,
     nodeId: input.scope === 'node' ? input.nodeId : null,
     title,
@@ -259,6 +277,7 @@ function normalizeUpdateInput(current: ScriptLibraryItem, input: UpdateScriptInp
 
   return normalizeCreateInput({
     key: input.key ?? current.key,
+    alias: input.alias ?? current.alias,
     scope,
     nodeId,
     title: input.title ?? current.title,
@@ -318,6 +337,33 @@ export async function createScriptLibraryStore() {
     );
   }
 
+  function assertAliasAvailable(input: { alias: string; scope: ScriptScope; nodeId: string | null; excludeId?: string }) {
+    const row = queryOne(
+      database,
+      `
+        SELECT id FROM script_library
+        WHERE alias = :alias
+          AND (
+            (scope = 'global' AND :scope = 'global')
+            OR
+            (scope = 'node' AND :scope = 'node' AND node_id = :nodeId)
+          )
+          AND (:excludeId IS NULL OR id != :excludeId)
+      `,
+      (value) => value,
+      {
+        ':alias': input.alias,
+        ':scope': input.scope,
+        ':nodeId': input.nodeId,
+        ':excludeId': input.excludeId ?? null,
+      }
+    );
+
+    if (row) {
+      throw new Error('脚本 alias 已存在。');
+    }
+  }
+
   function listResolvedScripts(nodeId?: string): ResolvedScriptLibraryItem[] {
     const globalScripts = queryMany(
       database,
@@ -344,7 +390,7 @@ export async function createScriptLibraryStore() {
 
     const resolved = new Map<string, ResolvedScriptLibraryItem>();
     for (const item of globalScripts) {
-      resolved.set(item.key, {
+      resolved.set(item.alias, {
         ...item,
         resolvedFrom: 'global',
         overridesGlobal: false,
@@ -352,10 +398,10 @@ export async function createScriptLibraryStore() {
     }
 
     for (const item of nodeScripts) {
-      resolved.set(item.key, {
+      resolved.set(item.alias, {
         ...item,
         resolvedFrom: 'node',
-        overridesGlobal: resolved.has(item.key),
+        overridesGlobal: resolved.has(item.alias),
       });
     }
 
@@ -368,22 +414,24 @@ export async function createScriptLibraryStore() {
     if (existing) {
       throw new Error('同一作用域下脚本 key 已存在。');
     }
+    assertAliasAvailable({ alias: next.alias, scope: next.scope, nodeId: next.nodeId });
     const id = randomUUID();
     const now = new Date().toISOString();
 
     database.run(
       `
         INSERT INTO script_library (
-          id, key, scope, node_id, title, description, kind, content,
+          id, key, alias, scope, node_id, title, description, kind, content,
           variables_json, tags_json, created_at, updated_at
         ) VALUES (
-          :id, :key, :scope, :nodeId, :title, :description, :kind, :content,
+          :id, :key, :alias, :scope, :nodeId, :title, :description, :kind, :content,
           :variablesJson, :tagsJson, :createdAt, :updatedAt
         )
       `,
       {
         ':id': id,
         ':key': next.key,
+        ':alias': next.alias,
         ':scope': next.scope,
         ':nodeId': next.nodeId,
         ':title': next.title,
@@ -412,12 +460,14 @@ export async function createScriptLibraryStore() {
     if (existing && existing.id !== id) {
       throw new Error('同一作用域下脚本 key 已存在。');
     }
+    assertAliasAvailable({ alias: next.alias, scope: next.scope, nodeId: next.nodeId, excludeId: id });
     const now = new Date().toISOString();
 
     database.run(
       `
         UPDATE script_library
         SET key = :key,
+            alias = :alias,
             scope = :scope,
             node_id = :nodeId,
             title = :title,
@@ -432,6 +482,7 @@ export async function createScriptLibraryStore() {
       {
         ':id': id,
         ':key': next.key,
+        ':alias': next.alias,
         ':scope': next.scope,
         ':nodeId': next.nodeId,
         ':title': next.title,
