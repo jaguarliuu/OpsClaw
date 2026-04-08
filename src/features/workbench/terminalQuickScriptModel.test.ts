@@ -9,6 +9,7 @@ import {
   findExactQuickScriptMatch,
   isQuickScriptQueryStillCurrent,
   rankQuickScriptCandidates,
+  resolveQuickScriptExecutionTarget,
 } from './terminalQuickScriptModel.js';
 
 void test('detectTerminalQuickScriptQuery only matches whole-line x prefix', () => {
@@ -209,4 +210,53 @@ void test('isQuickScriptQueryStillCurrent validates current input buffer against
   assert.equal(isQuickScriptQueryStillCurrent('x rest', 'res'), false);
   assert.equal(isQuickScriptQueryStillCurrent('x rest', 'rest'), true);
   assert.equal(isQuickScriptQueryStillCurrent('ls -la', 'rest'), false);
+});
+
+void test('resolveQuickScriptExecutionTarget ignores stale ranked candidates from a previous query', () => {
+  const items: readonly ScriptLibraryItem[] = [
+    {
+      id: 'restart-node',
+      key: 'restart-node',
+      alias: 'restart',
+      scope: 'node',
+      nodeId: 'node-1',
+      title: '节点重启',
+      description: '',
+      kind: 'plain',
+      content: 'service nginx restart',
+      variables: [],
+      tags: ['service'],
+      resolvedFrom: 'node',
+      overridesGlobal: false,
+      createdAt: '',
+      updatedAt: '',
+    },
+    {
+      id: 'logs-global',
+      key: 'logs-global',
+      alias: 'logs',
+      scope: 'global',
+      nodeId: null,
+      title: '查看日志',
+      description: '',
+      kind: 'plain',
+      content: 'journalctl -n 200',
+      variables: [],
+      tags: ['debug'],
+      resolvedFrom: 'global',
+      overridesGlobal: false,
+      createdAt: '',
+      updatedAt: '',
+    },
+  ];
+
+  const target = resolveQuickScriptExecutionTarget({
+    query: 'res',
+    items,
+    rankedQuery: 'logs',
+    rankedItems: [items[1]!],
+    selectedIndex: 0,
+  });
+
+  assert.equal(target?.id, 'restart-node');
 });

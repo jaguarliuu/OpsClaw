@@ -65,3 +65,23 @@ export function isQuickScriptQueryStillCurrent(inputBuffer: string, expectedQuer
   const currentQuery = detectTerminalQuickScriptQuery(inputBuffer);
   return currentQuery !== null && currentQuery === expectedQuery;
 }
+
+export function resolveQuickScriptExecutionTarget(input: {
+  query: string;
+  items: readonly ScriptLibraryItem[];
+  rankedQuery: string | null;
+  rankedItems: readonly ScriptLibraryItem[];
+  selectedIndex: number;
+}) {
+  const normalizedQuery = input.query.trim().toLowerCase();
+  const normalizedRankedQuery = input.rankedQuery?.trim().toLowerCase() ?? null;
+  const rankedMatchesCurrent = normalizedQuery === normalizedRankedQuery;
+  const rankedCandidates = rankedMatchesCurrent
+    ? input.rankedItems
+    : rankQuickScriptCandidates(input.items, input.query);
+
+  const selectedIndex = rankedMatchesCurrent ? input.selectedIndex : 0;
+  const selectedMatch = rankedCandidates[selectedIndex] ?? null;
+  const exactMatch = findExactQuickScriptMatch(input.items, input.query);
+  return selectedMatch ?? exactMatch;
+}

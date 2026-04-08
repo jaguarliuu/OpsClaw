@@ -23,9 +23,9 @@ import type { TerminalSuggestionItem } from '@/features/workbench/sshTerminalSug
 import {
   buildQuickScriptSuggestionItems,
   detectTerminalQuickScriptQuery,
-  findExactQuickScriptMatch,
   isQuickScriptQueryStillCurrent,
   rankQuickScriptCandidates,
+  resolveQuickScriptExecutionTarget,
   TERMINAL_QUICK_SCRIPT_DELAY_MS,
 } from '@/features/workbench/terminalQuickScriptModel';
 import { isAgentSessionLocked } from '@/features/workbench/agentSessionModel';
@@ -100,6 +100,7 @@ export function useSshTerminalRuntime({
   const isAgentLockedRef = useRef(false);
   const imeStateRef = useRef(createSshTerminalImeState());
   const quickScriptSelectedIndexRef = useRef(0);
+  const rankedQuickScriptsQueryRef = useRef<string | null>(null);
   const rankedQuickScriptsRef = useRef<ScriptLibraryItem[]>([]);
   const quickScriptRequestIdRef = useRef(0);
   const suggestionRef = useRef<string | null>(null);
@@ -137,6 +138,7 @@ export function useSshTerminalRuntime({
       quickScriptTimerRef.current = null;
     }
     rankedQuickScriptsRef.current = [];
+    rankedQuickScriptsQueryRef.current = null;
     quickScriptSelectedIndexRef.current = 0;
     setQuickScriptItems([]);
     setQuickScriptSelectedIndex(0);
@@ -271,6 +273,7 @@ export function useSshTerminalRuntime({
       }
 
       const ranked = rankQuickScriptCandidates(quickScriptsRef.current, query).slice(0, 8);
+      rankedQuickScriptsQueryRef.current = query;
       rankedQuickScriptsRef.current = ranked;
 
       if (ranked.length === 0) {
@@ -461,10 +464,13 @@ export function useSshTerminalRuntime({
               websocket.send(JSON.stringify({ type: 'input', payload: '\x15' }));
             }
 
-            const exactMatch = findExactQuickScriptMatch(quickScriptsRef.current, quickQuery);
-            const selectedMatch =
-              rankedQuickScriptsRef.current[quickScriptSelectedIndexRef.current] ?? null;
-            const targetScript = selectedMatch ?? exactMatch;
+            const targetScript = resolveQuickScriptExecutionTarget({
+              query: quickQuery,
+              items: quickScriptsRef.current,
+              rankedQuery: rankedQuickScriptsQueryRef.current,
+              rankedItems: rankedQuickScriptsRef.current,
+              selectedIndex: quickScriptSelectedIndexRef.current,
+            });
 
             if (targetScript) {
               executeQuickScriptRef.current(targetScript);
