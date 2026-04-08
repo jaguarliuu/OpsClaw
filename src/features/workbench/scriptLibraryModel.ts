@@ -1,6 +1,7 @@
 import type { ScriptLibraryItem, ScriptVariableDefinition } from './types.js';
 
 const TEMPLATE_VARIABLE_PATTERN = /\$\{([a-zA-Z0-9_]+)\}/g;
+export const SCRIPT_ALIAS_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
 export function extractTemplateVariableNames(content: string) {
   const names = new Set<string>();
@@ -39,6 +40,17 @@ export function validateScriptVariableValues(
   };
 }
 
+export function validateScriptAlias(alias: string) {
+  const normalized = alias.trim();
+  if (!normalized) {
+    return { ok: false as const, message: '脚本别名不能为空。' };
+  }
+  if (!SCRIPT_ALIAS_PATTERN.test(normalized)) {
+    return { ok: false as const, message: '脚本别名只能包含小写字母、数字、-、_。' };
+  }
+  return { ok: true as const, message: null };
+}
+
 export function filterScriptLibraryItems(items: ScriptLibraryItem[], query: string) {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) {
@@ -46,7 +58,7 @@ export function filterScriptLibraryItems(items: ScriptLibraryItem[], query: stri
   }
 
   return items.filter((item) => {
-    const haystacks = [item.title, item.key, item.description, ...item.tags];
+    const haystacks = [item.alias, item.title, item.key, item.description, ...item.tags];
     return haystacks.some((value) => value.toLowerCase().includes(normalizedQuery));
   });
 }
