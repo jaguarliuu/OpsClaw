@@ -11,6 +11,8 @@ void test('buildHelpDialogContent returns app intro, feature bullets, tips, and 
   assert.ok(content.introduction.length >= 2);
   assert.ok(content.coreFeatures.length >= 4);
   assert.ok(content.usageTips.length >= 3);
+  assert.match(content.usageTips.join('\n'), /x <alias>/);
+  assert.ok(content.coreFeatures.some((item) => /脚本库/.test(item)));
   assert.deepEqual(content.shortcuts.slice(0, 3), [
     { key: '⌘T', label: '新建连接' },
     { key: '⌘A', label: '打开 AI 助手' },
