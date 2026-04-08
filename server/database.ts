@@ -306,8 +306,8 @@ function ensureScriptLibraryAliasColumn(database: SqlDatabaseHandle) {
   const columns = queryTableColumns(database, 'script_library');
   if (!columns.has('alias')) {
     database.run(`ALTER TABLE script_library ADD COLUMN alias TEXT NOT NULL DEFAULT '';`);
-    database.run(`UPDATE script_library SET alias = key WHERE alias = '';`);
   }
+  database.run(`UPDATE script_library SET alias = key WHERE alias = '';`);
 
   database.run(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_script_library_global_alias
