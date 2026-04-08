@@ -7,6 +7,14 @@ const LEGACY_GATE_KIND_KEY = '__legacyGateKind';
 const LEGACY_GATE_PAYLOAD_KEY = '__legacyGatePayload';
 const LEGACY_GATE_REASON_KEY = '__legacyGateReason';
 
+function getApprovalInteractionMessage(input: {
+  policy: { matches: Array<unknown> };
+}) {
+  return input.policy.matches.length > 0
+    ? '命令命中敏感操作策略，需要用户审批后执行。'
+    : '该操作需要用户审批后执行。';
+}
+
 export function createInteractionRequest(input: {
   runId: string;
   sessionId: string;
@@ -51,6 +59,9 @@ export function createInteractionRequest(input: {
   }
 
   if (input.source.source === 'policy_approval') {
+    const message = getApprovalInteractionMessage({
+      policy: input.source.context.policy,
+    });
     return {
       id: randomUUID(),
       runId: input.runId,
@@ -60,7 +71,7 @@ export function createInteractionRequest(input: {
       riskLevel: 'high',
       blockingMode: 'hard_block',
       title: '操作审批',
-      message: '该操作需要用户审批后执行。',
+      message,
       schemaVersion: 'v1',
       fields: [],
       actions: [
@@ -77,10 +88,7 @@ export function createInteractionRequest(input: {
             : undefined,
         [LEGACY_GATE_KIND_KEY]: 'approval',
         [LEGACY_GATE_PAYLOAD_KEY]: input.source.context,
-        [LEGACY_GATE_REASON_KEY]:
-          input.source.context.policy.matches.length > 0
-            ? '命令命中敏感操作策略，需要用户审批后执行。'
-            : '该操作需要用户审批后执行。',
+        [LEGACY_GATE_REASON_KEY]: message,
       },
     };
   }

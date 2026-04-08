@@ -297,6 +297,13 @@ export class OpsAgentRuntime {
     if (!snapshot?.activeInteraction || snapshot.activeInteraction.id !== requestId) {
       throw new Error('指定 interaction 不存在。');
     }
+    if (
+      !snapshot.activeInteraction.actions.some(
+        (action) => action.kind === submission.selectedAction
+      )
+    ) {
+      throw new Error('当前 interaction 不支持该提交动作。');
+    }
 
     const pausedRun = this.pausedRuns.get(runId);
     if (!pausedRun) {

@@ -147,6 +147,29 @@ test('parameter collection pause opens a collect_input interaction', async () =>
   assert.equal(opened.request.actions.map((action) => action.kind).join(','), 'submit,reject');
 });
 
+test('submitInteraction rejects actions that are not offered by the current interaction', async () => {
+  const runtime = createRuntimeForParameterPause();
+  const events: AgentStreamEvent[] = [];
+
+  await runtime.run(createRunInput(), event => {
+    events.push(event);
+  }, AbortSignal.timeout(5_000));
+
+  const opened = events.find((event) => event.type === 'interaction_requested');
+  assert.ok(opened && opened.type === 'interaction_requested');
+  assert.equal(opened.request.interactionKind, 'collect_input');
+
+  assert.throws(
+    () =>
+      runtime.submitInteraction(opened.runId, opened.request.id, {
+        selectedAction: 'approve',
+        payload: {},
+      }),
+    /不支持|未提供|action/i
+  );
+  assert.equal(runtime.getRunSnapshot(opened.runId)?.activeInteraction?.status, 'open');
+});
+
 test('任务完成后会将稳定观察整理后自动沉淀到节点记忆', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
@@ -1584,6 +1607,20 @@ test('命中敏感命令策略时 approval gate 会打开并等待而不是产�
         };
       }
     | undefined;
+  const approvalInteractionEvent = events.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'interaction_requested'
+  ) as
+    | {
+        request?: {
+          interactionKind?: unknown;
+          message?: unknown;
+        };
+      }
+    | undefined;
   const approvalRequiredEvent = events.find(
     event =>
       typeof event === 'object' &&
@@ -1620,6 +1657,11 @@ test('命中敏感命令策略时 approval gate 会打开并等待而不是产�
     | undefined;
 
   assert.ok(approvalEvent);
+  assert.equal(approvalInteractionEvent?.request?.interactionKind, 'approval');
+  assert.equal(
+    approvalInteractionEvent?.request?.message,
+    '命令命中敏感操作策略，需要用户审批后执行。'
+  );
   assert.equal(approvalEvent.gate?.kind, 'approval');
   assert.equal(approvalEvent.gate?.reason, '命令命中敏感操作策略，需要用户审批后执行。');
   assert.equal(approvalEvent.gate?.deadlineAt, null);
