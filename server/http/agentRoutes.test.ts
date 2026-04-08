@@ -98,155 +98,90 @@ function getRequiredRoute(
   return route.handler;
 }
 
-void test('resume-waiting returns 200 and resumes a suspended terminal_input gate', async () => {
+void test('submit interaction proxies selectedAction and payload', async () => {
   const routes: RegisteredRoute[] = [];
   const app = createFakeApp(routes);
   const snapshot = {
     runId: 'run-1',
     sessionId: 'session-1',
-    task: '设置 root 密码',
-    state: 'waiting_for_human',
-    openGate: {
-      id: 'gate-1',
+    task: '重启 nginx 服务',
+    state: 'suspended',
+    executionState: 'suspended',
+    blockingMode: 'none',
+    activeInteraction: {
+      id: 'interaction-1',
       runId: 'run-1',
       sessionId: 'session-1',
-      kind: 'terminal_input',
-      status: 'open',
-      reason: '命令正在等待你在终端中继续输入。',
+      status: 'resolved',
+      interactionKind: 'approval',
+      riskLevel: 'high',
+      blockingMode: 'hard_block',
+      title: '操作审批',
+      message: '该操作需要用户审批后执行。',
+      schemaVersion: 'v1',
+      fields: [],
+      actions: [
+        { id: 'approve', label: '继续执行', kind: 'approve', style: 'danger' },
+        { id: 'reject', label: '取消', kind: 'reject', style: 'secondary' },
+      ],
       openedAt: 1,
-      deadlineAt: 2,
-      payload: {
-        toolCallId: 'call-1',
-        toolName: 'session.run_command',
-        command: 'sudo passwd root',
-        timeoutMs: 300_000,
-      },
+      deadlineAt: null,
+      metadata: {},
     },
   };
-  const calls: Array<{ runId: string; gateId: string }> = [];
-
-  registerAgentRoutes(app as never, {
-    llmProviderStore: {} as never,
-    agentRuntime: {
-      resumeWaiting(runId: string, gateId: string) {
-        calls.push({ runId, gateId });
-        return snapshot;
-      },
-    } as never,
-  });
-
-  const handler = getRequiredRoute(routes, '/api/agent/runs/:runId/gates/:gateId/resume-waiting');
-  const response = createFakeResponse();
-
-  await handler(createFakeRequest({ runId: 'run-1', gateId: 'gate-1' }), response);
-
-  assert.deepEqual(calls, [{ runId: 'run-1', gateId: 'gate-1' }]);
-  assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.body, snapshot);
-});
-
-void test('resolve and reject return 200 with the updated gate snapshot', async () => {
-  const routes: RegisteredRoute[] = [];
-  const app = createFakeApp(routes);
   const calls: Array<{
-    action: string;
     runId: string;
-    gateId: string;
-    input?: { fields?: Record<string, string> };
+    requestId: string;
+    input: { selectedAction: string; payload: Record<string, unknown> };
   }> = [];
 
   registerAgentRoutes(app as never, {
     llmProviderStore: {} as never,
     agentRuntime: {
-      resolveGate(runId: string, gateId: string, input?: { fields?: Record<string, string> }) {
-        calls.push({ action: 'resolve', runId, gateId, input });
-        return {
-          runId,
-          sessionId: 'session-1',
-          task: '重启 nginx 服务',
-          state: 'suspended',
-          openGate: {
-            id: gateId,
-            runId,
-            sessionId: 'session-1',
-            kind: 'approval',
-            status: 'resolved',
-            reason: '需要审批',
-            openedAt: 1,
-            deadlineAt: 2,
-            payload: {
-              toolCallId: 'call-1',
-              toolName: 'session.run_command',
-              arguments: { command: 'systemctl restart nginx' },
-              policy: { action: 'require_approval', matches: [] },
-            },
-          },
-        };
-      },
-      rejectGate(runId: string, gateId: string) {
-        calls.push({ action: 'reject', runId, gateId });
-        return {
-          runId,
-          sessionId: 'session-1',
-          task: '重启 nginx 服务',
-          state: 'suspended',
-          openGate: {
-            id: gateId,
-            runId,
-            sessionId: 'session-1',
-            kind: 'approval',
-            status: 'rejected',
-            reason: '需要审批',
-            openedAt: 1,
-            deadlineAt: 2,
-            payload: {
-              toolCallId: 'call-1',
-              toolName: 'session.run_command',
-              arguments: { command: 'systemctl restart nginx' },
-              policy: { action: 'require_approval', matches: [] },
-            },
-          },
-        };
+      submitInteraction(
+        runId: string,
+        requestId: string,
+        input: { selectedAction: string; payload: Record<string, unknown> }
+      ) {
+        calls.push({ runId, requestId, input });
+        return snapshot;
       },
     } as never,
   });
 
-  const resolveHandler = getRequiredRoute(routes, '/api/agent/runs/:runId/gates/:gateId/resolve');
-  const rejectHandler = getRequiredRoute(routes, '/api/agent/runs/:runId/gates/:gateId/reject');
+  const handler = getRequiredRoute(
+    routes,
+    '/api/agent/runs/:runId/interactions/:requestId/submit'
+  );
+  const response = createFakeResponse();
 
-  const resolveResponse = createFakeResponse();
-  await resolveHandler(
+  await handler(
     createFakeRequest(
-      { runId: 'run-1', gateId: 'gate-1' },
+      { runId: 'run-1', requestId: 'interaction-1' },
       {
-        fields: {
+        selectedAction: 'approve',
+        payload: {
           username: 'ops-admin',
-          password: 'masked-secret',
         },
       }
     ),
-    resolveResponse
+    response
   );
-  assert.equal((resolveResponse.body as { openGate?: { status?: string } }).openGate?.status, 'resolved');
-
-  const rejectResponse = createFakeResponse();
-  await rejectHandler(createFakeRequest({ runId: 'run-1', gateId: 'gate-2' }), rejectResponse);
-  assert.equal((rejectResponse.body as { openGate?: { status?: string } }).openGate?.status, 'rejected');
 
   assert.deepEqual(calls, [
     {
-      action: 'resolve',
       runId: 'run-1',
-      gateId: 'gate-1',
+      requestId: 'interaction-1',
       input: {
-        fields: {
+        selectedAction: 'approve',
+        payload: {
           username: 'ops-admin',
-          password: 'masked-secret',
         },
       },
     },
-    { action: 'reject', runId: 'run-1', gateId: 'gate-2' },
   ]);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, snapshot);
 });
 
 void test('stream continuation proxies SSE events for a resumed run', async () => {
@@ -383,20 +318,29 @@ void test('reattach route returns the latest reattachable run snapshot for a ses
           sessionId,
           task: '重启 nginx',
           state: 'waiting_for_human',
-          openGate: {
-            id: 'gate-2',
+          executionState: 'blocked_by_interaction',
+          blockingMode: 'interaction',
+          activeInteraction: {
+            id: 'interaction-2',
             runId: 'run-2',
             sessionId,
-            kind: 'approval',
             status: 'open',
-            reason: '需要审批',
             openedAt: 1,
             deadlineAt: 2,
-            payload: {
-              toolCallId: 'call-2',
-              toolName: 'session.run_command',
-              arguments: { command: 'systemctl restart nginx' },
-              policy: { action: 'require_approval', matches: [] },
+            interactionKind: 'approval',
+            riskLevel: 'high',
+            blockingMode: 'hard_block',
+            title: '操作审批',
+            message: '需要审批',
+            schemaVersion: 'v1',
+            fields: [],
+            actions: [
+              { id: 'approve', label: '继续执行', kind: 'approve', style: 'danger' },
+              { id: 'reject', label: '取消', kind: 'reject', style: 'secondary' },
+            ],
+            metadata: {
+              source: 'policy_approval',
+              commandPreview: 'systemctl restart nginx',
             },
           },
         };

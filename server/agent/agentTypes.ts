@@ -1,11 +1,25 @@
 import type { StoredLlmProvider } from '../llmProviderStore.js';
 
-import type {
-  AgentRunBlockingMode,
-  AgentRunExecutionState,
-  AgentRunState,
-  HumanGateRecord,
-} from './humanGateTypes.js';
+import type { InteractionRequest } from './interactionTypes.js';
+
+export type AgentRunState =
+  | 'running'
+  | 'waiting_for_human'
+  | 'suspended'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export type AgentRunExecutionState =
+  | 'running'
+  | 'blocked_by_interaction'
+  | 'blocked_by_terminal'
+  | 'suspended'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export type AgentRunBlockingMode = 'none' | 'interaction' | 'terminal_wait';
 
 export type AgentApprovalMode = 'auto-readonly' | 'manual-sensitive';
 
@@ -108,37 +122,33 @@ export type AgentStreamEvent =
       timestamp: number;
     }
   | {
-      type: 'approval_required';
+      type: 'interaction_requested';
       runId: string;
-      step: number;
-      toolCallId: string;
-      toolName: string;
-      reason: string;
-      policy?: AgentPolicySummary;
+      request: InteractionRequest;
       timestamp: number;
     }
   | {
-      type: 'human_gate_opened';
+      type: 'interaction_updated';
       runId: string;
-      gate: HumanGateRecord;
+      request: InteractionRequest;
       timestamp: number;
     }
   | {
-      type: 'human_gate_resolved';
+      type: 'interaction_resolved';
       runId: string;
-      gate: HumanGateRecord;
+      request: InteractionRequest;
       timestamp: number;
     }
   | {
-      type: 'human_gate_rejected';
+      type: 'interaction_rejected';
       runId: string;
-      gate: HumanGateRecord;
+      request: InteractionRequest;
       timestamp: number;
     }
   | {
-      type: 'human_gate_expired';
+      type: 'interaction_expired';
       runId: string;
-      gate: HumanGateRecord;
+      request: InteractionRequest;
       timestamp: number;
     }
   | {

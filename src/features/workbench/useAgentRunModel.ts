@@ -5,18 +5,21 @@ import type {
   AgentRunState,
   AgentStreamEvent,
   AgentTimelineItem,
-  HumanGateRecord,
+  InteractionRequest,
 } from './types.agent';
-import type { PendingUiGateItem } from './agentPendingGateModel';
-import { buildPendingUiGateItems, reducePendingUiGates } from './agentPendingGateModel';
+import type { PendingInteractionItem } from './agentInteractionModel';
+import {
+  buildPendingInteractionItems,
+  reducePendingInteractionItems,
+} from './agentInteractionModel';
 
 export type AgentEventState = {
   runId: string | null;
   runState: AgentRunState | null;
   executionState: AgentRunExecutionState | null;
   blockingMode: AgentRunBlockingMode | null;
-  activeGate: HumanGateRecord | null;
-  pendingUiGates: PendingUiGateItem[];
+  activeInteraction: InteractionRequest | null;
+  pendingInteractions: PendingInteractionItem[];
   error: string | null;
 };
 
@@ -105,36 +108,12 @@ export function mapAgentEventToTimelineItem(
     };
   }
 
-  if (event.type === 'approval_required') {
-    return {
-      id: itemId,
-      kind: 'warning',
-      text: `工具 ${event.toolName} 需要审批：${event.reason}`,
-      step: event.step,
-      policy: event.policy,
-    };
-  }
-
   if (event.type === 'warning') {
     return {
       id: itemId,
       kind: 'warning',
       text: event.message,
       step: event.step,
-    };
-  }
-
-  if (
-    event.type === 'human_gate_opened' ||
-    event.type === 'human_gate_resolved' ||
-    event.type === 'human_gate_rejected' ||
-    event.type === 'human_gate_expired'
-  ) {
-    return {
-      id: itemId,
-      kind: 'human_gate',
-      runId: event.runId,
-      gate: event.gate,
     };
   }
 
@@ -215,21 +194,35 @@ export function reduceAgentEventState(
     };
   }
 
-  if (event.type === 'human_gate_opened' || event.type === 'human_gate_expired') {
+  if (event.type === 'interaction_requested' || event.type === 'interaction_updated') {
+    const pendingInteractions = reducePendingInteractionItems(
+      state.pendingInteractions,
+      event
+    );
+
     return {
       ...state,
       runId: event.runId,
-      activeGate: event.gate,
-      pendingUiGates: reducePendingUiGates(state.pendingUiGates, event),
+      activeInteraction: event.request,
+      pendingInteractions,
     };
   }
 
-  if (event.type === 'human_gate_resolved' || event.type === 'human_gate_rejected') {
+  if (
+    event.type === 'interaction_resolved' ||
+    event.type === 'interaction_rejected' ||
+    event.type === 'interaction_expired'
+  ) {
+    const pendingInteractions = reducePendingInteractionItems(
+      state.pendingInteractions,
+      event
+    );
+
     return {
       ...state,
       runId: event.runId,
-      activeGate: null,
-      pendingUiGates: reducePendingUiGates(state.pendingUiGates, event),
+      activeInteraction: null,
+      pendingInteractions,
     };
   }
 
@@ -240,8 +233,8 @@ export function reduceAgentEventState(
       runState: 'completed',
       executionState: 'completed',
       blockingMode: 'none',
-      activeGate: null,
-      pendingUiGates: [],
+      activeInteraction: null,
+      pendingInteractions: [],
       error: null,
     };
   }
@@ -253,8 +246,8 @@ export function reduceAgentEventState(
       runState: 'failed',
       executionState: 'failed',
       blockingMode: 'none',
-      activeGate: null,
-      pendingUiGates: [],
+      activeInteraction: null,
+      pendingInteractions: [],
       error: event.error,
     };
   }
@@ -266,8 +259,8 @@ export function reduceAgentEventState(
       runState: 'cancelled',
       executionState: 'cancelled',
       blockingMode: 'none',
-      activeGate: null,
-      pendingUiGates: [],
+      activeInteraction: null,
+      pendingInteractions: [],
     };
   }
 
@@ -278,14 +271,18 @@ export function projectAgentSnapshotToEventState(
   state: AgentEventState,
   snapshot: AgentRunSnapshot
 ): AgentEventState {
+  const pendingInteractions = snapshot.activeInteraction
+    ? buildPendingInteractionItems([snapshot.activeInteraction])
+    : [];
+
   return {
     ...state,
     runId: snapshot.runId,
     runState: snapshot.state,
     executionState: snapshot.executionState,
     blockingMode: snapshot.blockingMode,
-    activeGate: snapshot.openGate,
-    pendingUiGates: snapshot.openGate ? buildPendingUiGateItems([snapshot.openGate]) : [],
+    activeInteraction: snapshot.activeInteraction,
+    pendingInteractions,
     error: null,
   };
 }

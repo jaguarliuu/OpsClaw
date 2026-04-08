@@ -1,13 +1,48 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import type { AgentTimelineItem } from './types.agent.js';
+import type { AgentTimelineItem, InteractionRequest } from './types.agent.js';
 import {
   applyAgentEventToTimeline,
   projectAgentSnapshotToEventState,
   reduceAgentEventState,
   mapAgentEventToTimelineItem,
 } from './useAgentRunModel.js';
+
+function makeInteractionRequest(
+  overrides: Partial<InteractionRequest> = {}
+): InteractionRequest {
+  return {
+    id: 'interaction-1',
+    runId: 'run-1',
+    sessionId: 'session-1',
+    status: 'open',
+    interactionKind: 'approval',
+    riskLevel: 'high',
+    blockingMode: 'hard_block',
+    title: '操作审批',
+    message: '该操作需要用户审批后执行。',
+    schemaVersion: 'v1',
+    fields: [],
+    actions: [
+      { id: 'approve', label: '继续执行', kind: 'approve', style: 'danger' },
+      { id: 'reject', label: '取消', kind: 'reject', style: 'secondary' },
+    ],
+    openedAt: 1,
+    deadlineAt: null,
+    metadata: {},
+    ...overrides,
+  };
+}
+
+void test('stream event union no longer contains human_gate events', () => {
+  const source = readFileSync(new URL('./types.agent.ts', import.meta.url), 'utf8');
+
+  assert.equal(source.includes('human_gate_opened'), false);
+  assert.equal(source.includes('human_gate_resolved'), false);
+  assert.equal(source.includes("kind: 'human_gate'"), false);
+});
 
 void test('applyAgentEventToTimeline merges assistant_message_delta events into a single assistant item for the same step', () => {
   const firstPass = applyAgentEventToTimeline(
@@ -85,52 +120,6 @@ void test('applyAgentEventToTimeline lets assistant_message replace the merged d
   ]);
 });
 
-void test('maps approval_required events into warning timeline items while preserving policy metadata', () => {
-  const item = mapAgentEventToTimelineItem(
-    {
-      type: 'approval_required',
-      runId: 'run-1',
-      step: 2,
-      toolCallId: 'call-1',
-      toolName: 'session.run_command',
-      reason: '命令命中敏感操作策略，需要用户审批后执行。',
-      policy: {
-        action: 'require_approval',
-        matches: [
-          {
-            ruleId: 'service.restart',
-            title: '服务重启',
-            severity: 'high',
-            reason: '命令会重启或停止服务，可能影响在线流量。',
-            matchedText: 'systemctl restart',
-          },
-        ],
-      },
-      timestamp: Date.now(),
-    },
-    'item-1'
-  );
-
-  assert.deepEqual(item, {
-    id: 'item-1',
-    kind: 'warning',
-    text: '工具 session.run_command 需要审批：命令命中敏感操作策略，需要用户审批后执行。',
-    step: 2,
-    policy: {
-      action: 'require_approval',
-      matches: [
-        {
-          ruleId: 'service.restart',
-          title: '服务重启',
-          severity: 'high',
-          reason: '命令会重启或停止服务，可能影响在线流量。',
-          matchedText: 'systemctl restart',
-        },
-      ],
-    },
-  });
-});
-
 void test('maps failed tool results while preserving policy metadata on the result envelope', () => {
   const item = mapAgentEventToTimelineItem(
     {
@@ -192,144 +181,27 @@ void test('returns null for run_started because it should not append a timeline 
   );
 });
 
-void test('maps human_gate_opened events into dedicated human_gate timeline items', () => {
-  const item = mapAgentEventToTimelineItem(
-    {
-      type: 'human_gate_opened',
-      runId: 'run-1',
-      gate: {
-        id: 'gate-1',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        kind: 'terminal_input',
-        status: 'open',
-        reason: '命令正在等待你在终端中继续输入。',
-        openedAt: 1,
-        deadlineAt: 2,
-        presentationMode: 'terminal_wait',
-        payload: {
-          toolCallId: 'call-1',
-          toolName: 'session.run_command',
-          command: 'sudo passwd root',
-          timeoutMs: 300_000,
-        },
-      },
-      timestamp: Date.now(),
-    },
-    'item-gate-1'
-  );
-
-  assert.deepEqual(item, {
-    id: 'item-gate-1',
-    kind: 'human_gate',
-    runId: 'run-1',
-    gate: {
-      id: 'gate-1',
-      runId: 'run-1',
-      sessionId: 'session-1',
-      kind: 'terminal_input',
-      status: 'open',
-      reason: '命令正在等待你在终端中继续输入。',
-      openedAt: 1,
-      deadlineAt: 2,
-      presentationMode: 'terminal_wait',
-      payload: {
-        toolCallId: 'call-1',
-        toolName: 'session.run_command',
-        command: 'sudo passwd root',
-        timeoutMs: 300_000,
-      },
-    },
-  });
-});
-
-void test('applyAgentEventToTimeline appends human_gate status transitions as timeline entries', () => {
-  const items = applyAgentEventToTimeline(
-    [],
-    {
-      type: 'human_gate_expired',
-      runId: 'run-1',
-      gate: {
-        id: 'gate-1',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        kind: 'terminal_input',
-        status: 'expired',
-        reason: '命令等待人工输入超时，Agent 已停止等待结果。',
-        openedAt: 1,
-        deadlineAt: 2,
-        presentationMode: 'terminal_wait',
-        payload: {
-          toolCallId: 'call-1',
-          toolName: 'session.run_command',
-          command: 'sudo passwd root',
-          timeoutMs: 300_000,
-        },
-      },
-      timestamp: Date.now(),
-    },
-    () => 'item-gate-expired'
-  );
-
-  assert.equal(items[0]?.kind, 'human_gate');
-  assert.equal(items[0]?.gate.status, 'expired');
-});
-
-void test('reduceAgentEventState centralizes run state and gate projection for lifecycle events', () => {
-  const waitingState = reduceAgentEventState(
+void test('interaction_requested updates activeInteraction and pendingInteractions', () => {
+  const state = reduceAgentEventState(
     {
       runId: null,
       runState: 'running',
       executionState: 'running',
       blockingMode: 'none',
-      activeGate: null,
-      pendingUiGates: [],
+      activeInteraction: null,
+      pendingInteractions: [],
       error: null,
     },
     {
-      type: 'human_gate_opened',
+      type: 'interaction_requested',
       runId: 'run-1',
-      gate: {
-        id: 'gate-1',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        kind: 'terminal_input',
-        status: 'open',
-        reason: '命令正在等待你在终端中继续输入。',
-        openedAt: 1,
-        deadlineAt: 2,
-        presentationMode: 'terminal_wait',
-        payload: {
-          toolCallId: 'call-1',
-          toolName: 'session.run_command',
-          command: 'sudo passwd root',
-          timeoutMs: 300_000,
-        },
-      },
-      timestamp: Date.now(),
+      request: makeInteractionRequest({ interactionKind: 'approval' }),
+      timestamp: 1,
     }
   );
 
-  assert.equal(waitingState.activeGate?.id, 'gate-1');
-  assert.equal(waitingState.runState, 'running');
-  assert.deepEqual(waitingState.pendingUiGates, []);
-
-  const failedState = reduceAgentEventState(waitingState, {
-    type: 'run_failed',
-    runId: 'run-1',
-    error: 'Agent 执行失败',
-    timestamp: Date.now(),
-  });
-
-  assert.deepEqual(failedState, {
-    runId: 'run-1',
-    runState: 'failed',
-    executionState: 'failed',
-    blockingMode: 'none',
-    activeGate: null,
-    pendingUiGates: [],
-    error: 'Agent 执行失败',
-  });
+  assert.equal(state.activeInteraction?.interactionKind, 'approval');
+  assert.equal(state.pendingInteractions.length, 1);
 });
 
 void test('reduceAgentEventState tracks execution semantics from run_state_changed events', () => {
@@ -339,16 +211,16 @@ void test('reduceAgentEventState tracks execution semantics from run_state_chang
       runState: 'running',
       executionState: 'running',
       blockingMode: 'none',
-      activeGate: null,
-      pendingUiGates: [],
+      activeInteraction: null,
+      pendingInteractions: [],
       error: 'old error',
     },
     {
       type: 'run_state_changed',
       runId: 'run-1',
       state: 'waiting_for_human',
-      executionState: 'blocked_by_ui_gate',
-      blockingMode: 'ui_gate',
+      executionState: 'blocked_by_interaction',
+      blockingMode: 'interaction',
       timestamp: Date.now(),
     }
   );
@@ -356,99 +228,60 @@ void test('reduceAgentEventState tracks execution semantics from run_state_chang
   assert.deepEqual(state, {
     runId: 'run-1',
     runState: 'waiting_for_human',
-    executionState: 'blocked_by_ui_gate',
-    blockingMode: 'ui_gate',
-    activeGate: null,
-    pendingUiGates: [],
+    executionState: 'blocked_by_interaction',
+    blockingMode: 'interaction',
+    activeInteraction: null,
+    pendingInteractions: [],
     error: 'old error',
   });
 });
 
-void test('reduceAgentEventState maintains a pending UI gate queue from human gate events', () => {
-  const afterOpen = reduceAgentEventState(
+void test('interaction_resolved clears activeInteraction and pendingInteractions', () => {
+  const afterResolve = reduceAgentEventState(
     {
       runId: 'run-1',
       runState: 'waiting_for_human',
-      executionState: 'blocked_by_ui_gate',
-      blockingMode: 'ui_gate',
-      activeGate: null,
-      pendingUiGates: [],
+      executionState: 'blocked_by_interaction',
+      blockingMode: 'interaction',
+      activeInteraction: makeInteractionRequest(),
+      pendingInteractions: [
+        {
+          requestId: 'interaction-1',
+          gateId: 'interaction-1',
+          runId: 'run-1',
+          sessionId: 'session-1',
+          interactionKind: 'approval',
+          kind: 'approval',
+          riskLevel: 'high',
+          title: '操作审批',
+          summary: '需要批准',
+          openedAt: 1,
+          request: makeInteractionRequest(),
+        },
+      ],
       error: null,
     },
     {
-      type: 'human_gate_opened',
+      type: 'interaction_resolved',
       runId: 'run-1',
-      gate: {
-        id: 'gate-1',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        kind: 'parameter_confirmation',
-        status: 'open',
-        reason: '请确认用户名',
-        openedAt: 1,
-        deadlineAt: null,
-        presentationMode: 'inline_ui_action',
-        payload: {
-          toolCallId: 'call-1',
-          toolName: 'session.run_command',
-          command: 'useradd ops-admin',
-          intentKind: 'user_management',
-          fields: [],
-        },
-      },
-      timestamp: 1,
+      request: makeInteractionRequest({ status: 'resolved' }),
+      timestamp: 2,
     }
   );
 
-  assert.deepEqual(afterOpen.pendingUiGates, [
-    {
-      gateId: 'gate-1',
-      runId: 'run-1',
-      sessionId: 'session-1',
-      kind: 'parameter_confirmation',
-      title: '待补全',
-      summary: '请确认用户名',
-      openedAt: 1,
-    },
-  ]);
-
-  const afterResolve = reduceAgentEventState(afterOpen, {
-    type: 'human_gate_resolved',
-    runId: 'run-1',
-    gate: {
-      id: 'gate-1',
-      runId: 'run-1',
-      sessionId: 'session-1',
-      kind: 'parameter_confirmation',
-      status: 'resolved',
-      reason: '请确认用户名',
-      openedAt: 1,
-      deadlineAt: null,
-      presentationMode: 'inline_ui_action',
-      payload: {
-        toolCallId: 'call-1',
-        toolName: 'session.run_command',
-        command: 'useradd ops-admin',
-        intentKind: 'user_management',
-        fields: [],
-      },
-    },
-    timestamp: 2,
-  });
-
-  assert.deepEqual(afterResolve.pendingUiGates, []);
-  assert.equal(afterResolve.activeGate, null);
+  assert.equal(afterResolve.activeInteraction, null);
+  assert.deepEqual(afterResolve.pendingInteractions, []);
 });
 
-void test('projectAgentSnapshotToEventState derives pending UI gates from an open UI snapshot gate', () => {
+void test('projectAgentSnapshotToEventState derives pending interactions from activeInteraction snapshot state', () => {
   const state = projectAgentSnapshotToEventState(
     {
       runId: null,
       runState: null,
       executionState: null,
       blockingMode: null,
-      activeGate: null,
-      pendingUiGates: [],
+      activeInteraction: null,
+      pendingInteractions: [],
       error: 'old error',
     },
     {
@@ -456,51 +289,43 @@ void test('projectAgentSnapshotToEventState derives pending UI gates from an ope
       sessionId: 'session-1',
       task: '重启 nginx 服务',
       state: 'waiting_for_human',
-      executionState: 'blocked_by_ui_gate',
-      blockingMode: 'ui_gate',
-      openGate: {
-        id: 'gate-1',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        kind: 'approval',
-        status: 'open',
-        reason: '需要批准',
-        openedAt: 1,
-        deadlineAt: null,
-        presentationMode: 'inline_ui_action',
-        payload: {
-          toolCallId: 'call-1',
-          toolName: 'session.run_command',
-          arguments: {},
-          policy: { action: 'require_approval', matches: [] },
-        },
-      },
+      executionState: 'blocked_by_interaction',
+      blockingMode: 'interaction',
+      activeInteraction: makeInteractionRequest({
+        id: 'interaction-1',
+        message: '需要批准',
+      }),
     }
   );
 
-  assert.deepEqual(state.pendingUiGates, [
-    {
-      gateId: 'gate-1',
-      runId: 'run-1',
-      sessionId: 'session-1',
-      kind: 'approval',
-      title: '待批准',
-      summary: '需要批准',
-      openedAt: 1,
-    },
-  ]);
+  assert.deepEqual(
+    state.pendingInteractions.map((item) => ({
+      requestId: item.requestId,
+      interactionKind: item.interactionKind,
+      title: item.title,
+      summary: item.summary,
+    })),
+    [
+      {
+        requestId: 'interaction-1',
+        interactionKind: 'approval',
+        title: '操作审批',
+        summary: '需要批准',
+      },
+    ]
+  );
   assert.equal(state.error, null);
 });
 
-void test('projectAgentSnapshotToEventState ignores non-open UI gates when rebuilding the queue', () => {
+void test('projectAgentSnapshotToEventState ignores non-open interactions when rebuilding the queue', () => {
   const state = projectAgentSnapshotToEventState(
     {
       runId: 'run-1',
       runState: 'waiting_for_human',
-      executionState: 'blocked_by_ui_gate',
-      blockingMode: 'ui_gate',
-      activeGate: null,
-      pendingUiGates: [],
+      executionState: 'blocked_by_interaction',
+      blockingMode: 'interaction',
+      activeInteraction: null,
+      pendingInteractions: [],
       error: null,
     },
     {
@@ -510,26 +335,12 @@ void test('projectAgentSnapshotToEventState ignores non-open UI gates when rebui
       state: 'suspended',
       executionState: 'suspended',
       blockingMode: 'none',
-      openGate: {
-        id: 'gate-1',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        kind: 'approval',
+      activeInteraction: makeInteractionRequest({
         status: 'resolved',
-        reason: '需要批准',
-        openedAt: 1,
-        deadlineAt: null,
-        presentationMode: 'inline_ui_action',
-        payload: {
-          toolCallId: 'call-1',
-          toolName: 'session.run_command',
-          arguments: {},
-          policy: { action: 'require_approval', matches: [] },
-        },
-      },
+      }),
     }
   );
 
-  assert.deepEqual(state.pendingUiGates, []);
-  assert.equal(state.activeGate?.status, 'resolved');
+  assert.deepEqual(state.pendingInteractions, []);
+  assert.equal(state.activeInteraction?.status, 'resolved');
 });

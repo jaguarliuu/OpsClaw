@@ -202,18 +202,19 @@ test('agentLoop returns a resumable pause when tool execution requires HITL', as
   let toolExecutorCalls = 0;
   const pause: ToolPauseOutcome = {
     kind: 'pause',
-    gateKind: 'approval',
-    reason: '需要批准',
-    payload: {
-      toolCallId: 'call-1',
-      toolName: 'session.run_command',
-      arguments: {
-        sessionId: 'session-1',
-        command: 'df -h',
-      },
-      policy: {
-        action: 'require_approval',
-        matches: [],
+    interaction: {
+      source: 'policy_approval',
+      context: {
+        toolCallId: 'call-1',
+        toolName: 'session.run_command',
+        arguments: {
+          sessionId: 'session-1',
+          command: 'df -h',
+        },
+        policy: {
+          action: 'require_approval',
+          matches: [],
+        },
       },
     },
     continuation: {

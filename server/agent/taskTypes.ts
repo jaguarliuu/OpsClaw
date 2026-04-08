@@ -1,5 +1,5 @@
 import type { AgentApprovalMode } from './agentTypes.js';
-import type { HumanGateKind, HumanGateStatus } from './humanGateTypes.js';
+import type { InteractionKind, InteractionStatus } from './interactionTypes.js';
 
 export type AgentTaskKind = 'agent_run' | 'session_command' | 'subagent';
 export type AgentTaskState =
@@ -12,10 +12,10 @@ export type AgentTaskState =
 
 export type AgentTaskWaitState =
   | {
-      kind: 'human_gate';
-      gateId: string;
-      gateKind: HumanGateKind;
-      gateStatus: Extract<HumanGateStatus, 'open' | 'expired'>;
+      kind: 'interaction';
+      interactionId: string;
+      interactionKind: InteractionKind;
+      interactionStatus: Extract<InteractionStatus, 'open' | 'expired'>;
     }
   | {
       kind: 'subagent_run';

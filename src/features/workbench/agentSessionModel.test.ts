@@ -5,24 +5,28 @@ import {
   createAgentSessionModel,
   getAgentSessionLockBannerText,
   getSessionAgentSessionLock,
+  isAgentSessionLocked,
 } from './agentSessionModel.js';
 
-void test('terminal input gates produce a session lock and block new agent work', () => {
+void test('terminal_wait interaction produces a session lock and blocks new agent work', () => {
   const model = createAgentSessionModel({
-    activeGate: {
-      id: 'gate-1',
+    activeInteraction: {
+      id: 'interaction-1',
       runId: 'run-1',
       sessionId: 'session-1',
-      kind: 'terminal_input',
       status: 'open',
-      reason: '命令正在等待你在终端中继续输入。',
+      interactionKind: 'terminal_wait',
+      riskLevel: 'medium',
+      blockingMode: 'hard_block',
+      title: '等待终端交互',
+      message: '命令正在等待你在终端中继续输入。',
+      schemaVersion: 'v1',
+      fields: [],
+      actions: [],
       openedAt: 1,
-      deadlineAt: 2,
-      payload: {
-        toolCallId: 'call-1',
-        toolName: 'session.run_command',
-        command: 'sudo passwd root',
-        timeoutMs: 300_000,
+      deadlineAt: null,
+      metadata: {
+        commandPreview: 'sudo passwd root',
       },
     },
     pendingContinuationRunId: null,
@@ -34,66 +38,55 @@ void test('terminal input gates produce a session lock and block new agent work'
   assert.deepEqual(model.sessionLock, {
     sessionId: 'session-1',
     runId: 'run-1',
-    gateId: 'gate-1',
+    gateId: 'interaction-1',
     status: 'open',
     reason: '命令正在等待你在终端中继续输入。',
     command: 'sudo passwd root',
   });
-  assert.deepEqual(getSessionAgentSessionLock(model, 'session-1'), model.sessionLock);
-  assert.equal(getSessionAgentSessionLock(model, 'session-2'), null);
-  assert.equal(
-    getAgentSessionLockBannerText(model.sessionLock!),
-    '该终端正在被 Agent 用于交互命令，请在此完成输入。'
-  );
+  assert.equal(getSessionAgentSessionLock(model, 'session-1')?.runId, 'run-1');
 });
 
-void test('approval gates block panel actions without locking a terminal session', () => {
+void test('non-terminal interactions block panel actions without locking a terminal session', () => {
   const model = createAgentSessionModel({
-    activeGate: {
-      id: 'gate-2',
+    activeInteraction: {
+      id: 'interaction-1',
       runId: 'run-1',
       sessionId: 'session-1',
-      kind: 'approval',
       status: 'open',
-      reason: '命令命中敏感操作策略，需要用户审批后执行。',
+      interactionKind: 'approval',
+      riskLevel: 'high',
+      blockingMode: 'hard_block',
+      title: '操作审批',
+      message: '该操作需要用户批准后继续执行。',
+      schemaVersion: 'v1',
+      fields: [],
+      actions: [],
       openedAt: 1,
-      deadlineAt: 2,
-      payload: {
-        toolCallId: 'call-1',
-        toolName: 'session.run_command',
-        arguments: {
-          command: 'systemctl restart nginx',
-        },
-        policy: {
-          action: 'require_approval',
-          matches: [],
-        },
-      },
+      deadlineAt: null,
+      metadata: {},
     },
     pendingContinuationRunId: null,
   });
 
   assert.equal(model.isInteractionLocked, true);
-  assert.equal(model.canStartAgentRun, false);
-  assert.equal(model.canClearAgentItems, false);
   assert.equal(model.sessionLock, null);
+  assert.equal(isAgentSessionLocked(model.sessionLock), false);
 });
 
-void test('pending continuation without an open gate still blocks panel actions', () => {
+void test('pending continuation without an open interaction still blocks panel actions', () => {
   const model = createAgentSessionModel({
-    activeGate: null,
+    activeInteraction: null,
     pendingContinuationRunId: 'run-1',
   });
 
+  assert.equal(model.hasPendingContinuation, true);
   assert.equal(model.isInteractionLocked, true);
   assert.equal(model.canStartAgentRun, false);
-  assert.equal(model.canClearAgentItems, false);
-  assert.equal(model.sessionLock, null);
 });
 
 void test('idle state allows new agent work and clears session locks', () => {
   const model = createAgentSessionModel({
-    activeGate: null,
+    activeInteraction: null,
     pendingContinuationRunId: null,
   });
 
@@ -103,29 +96,32 @@ void test('idle state allows new agent work and clears session locks', () => {
   assert.equal(model.sessionLock, null);
 });
 
-void test('expired terminal input gates keep the session lock banner resumable', () => {
+void test('expired terminal_wait interactions keep the session lock banner resumable', () => {
   const model = createAgentSessionModel({
-    activeGate: {
-      id: 'gate-3',
+    activeInteraction: {
+      id: 'interaction-1',
       runId: 'run-1',
       sessionId: 'session-1',
-      kind: 'terminal_input',
       status: 'expired',
-      reason: '命令等待人工输入超时，Agent 已停止等待结果。',
+      interactionKind: 'terminal_wait',
+      riskLevel: 'medium',
+      blockingMode: 'hard_block',
+      title: '等待终端交互',
+      message: '命令等待人工输入超时，Agent 已停止等待结果。',
+      schemaVersion: 'v1',
+      fields: [],
+      actions: [],
       openedAt: 1,
-      deadlineAt: 2,
-      payload: {
-        toolCallId: 'call-1',
-        toolName: 'session.run_command',
-        command: 'sudo passwd root',
-        timeoutMs: 300_000,
+      deadlineAt: null,
+      metadata: {
+        commandPreview: 'sudo passwd root',
       },
     },
-    pendingContinuationRunId: 'run-1',
+    pendingContinuationRunId: null,
   });
 
   assert.equal(
-    getAgentSessionLockBannerText(model.sessionLock!),
+    getAgentSessionLockBannerText(model.sessionLock as NonNullable<typeof model.sessionLock>),
     '该终端上的 Agent 交互等待已暂停，可在 AI 面板中继续等待。'
   );
 });

@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { AssistantMessage, AssistantMessageEventStream, Context } from '@mariozechner/pi-ai';
 
 import type { StoredLlmProvider } from '../llmProviderStore.js';
+import type { AgentStreamEvent, CreateAgentRunInput } from './agentTypes.js';
 import { createAgentRunRegistry } from './agentRunRegistry.js';
 import { createToolRegistry } from './toolRegistry.js';
 import { ToolExecutor } from './toolExecutor.js';
@@ -38,6 +39,136 @@ function createAssistantMessage(message: Partial<AssistantMessage>): AssistantMe
     ...message,
   } as AssistantMessage;
 }
+
+function createRunInput(): CreateAgentRunInput {
+  return {
+    providerId: 'provider-1',
+    provider: createProvider(),
+    model: 'qwen-plus',
+    task: '创建一个 root 权限用户',
+    sessionId: 'session-1',
+    approvalMode: 'manual-sensitive',
+  };
+}
+
+function createRuntimeForParameterPause() {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  let completionCalls = 0;
+
+  return new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      async executeCommand(_sessionId: string, command: string) {
+        return {
+          sessionId: 'session-1',
+          command,
+          exitCode: 0,
+          output: 'user created',
+          truncated: false,
+          startedAt: Date.now(),
+          completedAt: Date.now(),
+          durationMs: 5,
+        };
+      },
+    } as never,
+    completeAgentContext: async () => {
+      completionCalls += 1;
+      if (completionCalls === 1) {
+        return createAssistantMessage({
+          stopReason: 'toolUse',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'call-1',
+              name: 'session.run_command',
+              arguments: {
+                sessionId: 'session-1',
+                command: 'sudo adduser adminuser',
+              },
+            },
+          ],
+        });
+      }
+
+      return createAssistantMessage({
+        stopReason: 'stop',
+        content: [{ type: 'text', text: '用户已创建。' }],
+      });
+    },
+  });
+}
+
+test('parameter collection pause opens a collect_input interaction', async () => {
+  const runtime = createRuntimeForParameterPause();
+  const events: AgentStreamEvent[] = [];
+
+  await runtime.run(createRunInput(), event => {
+    events.push(event);
+  }, AbortSignal.timeout(5_000));
+
+  const opened = events.find((event) => event.type === 'interaction_requested');
+  assert.ok(opened && opened.type === 'interaction_requested');
+  assert.equal(opened.request.interactionKind, 'collect_input');
+  assert.equal(opened.request.actions.map((action) => action.kind).join(','), 'submit,reject');
+});
+
+test('submitInteraction rejects actions that are not offered by the current interaction', async () => {
+  const runtime = createRuntimeForParameterPause();
+  const events: AgentStreamEvent[] = [];
+
+  await runtime.run(createRunInput(), event => {
+    events.push(event);
+  }, AbortSignal.timeout(5_000));
+
+  const opened = events.find((event) => event.type === 'interaction_requested');
+  assert.ok(opened && opened.type === 'interaction_requested');
+  assert.equal(opened.request.interactionKind, 'collect_input');
+
+  assert.throws(
+    () =>
+      runtime.submitInteraction(opened.runId, opened.request.id, {
+        selectedAction: 'approve',
+        payload: {},
+      }),
+    /不支持|未提供|action/i
+  );
+  assert.equal(runtime.getRunSnapshot(opened.runId)?.activeInteraction?.status, 'open');
+});
 
 test('任务完成后会将稳定观察整理后自动沉淀到节点记忆', async () => {
   const registry = createToolRegistry();
@@ -485,20 +616,39 @@ test('getSessionReattachableRun returns the latest suspended or waiting snapshot
     sessionId: 'session-1',
     task: 'older run',
   });
-  const gate = agentRunRegistry.openGate({
+  const request = agentRunRegistry.openInteraction({
     runId: 'run-1',
     sessionId: 'session-1',
-    kind: 'terminal_input',
-    reason: '命令正在等待用户在终端中继续输入。',
-    deadlineAt: 1_700_000_000_000,
-    payload: {
-      toolCallId: 'call-1',
-      toolName: 'session.run_command',
-      command: 'sudo passwd root',
-      timeoutMs: 300000,
+    request: {
+      id: 'interaction-1',
+      runId: 'run-1',
+      sessionId: 'session-1',
+      status: 'open',
+      interactionKind: 'terminal_wait',
+      riskLevel: 'medium',
+      blockingMode: 'hard_block',
+      title: '等待终端交互',
+      message: '命令正在等待用户在终端中继续输入。',
+      schemaVersion: 'v1',
+      fields: [{ type: 'display', key: 'command', value: 'sudo passwd root' }],
+      actions: [
+        {
+          id: 'continue_waiting',
+          label: '继续等待',
+          kind: 'continue_waiting',
+          style: 'primary',
+        },
+      ],
+      openedAt: 1,
+      deadlineAt: 1_700_000_000_000,
+      metadata: {
+        source: 'terminal_wait',
+        timeoutMs: 300000,
+        commandPreview: 'sudo passwd root',
+      },
     },
   });
-  agentRunRegistry.expireGate({ runId: 'run-1', gateId: gate.id });
+  agentRunRegistry.expireInteraction({ runId: 'run-1', interactionId: request.id });
 
   const runtime = new OpsAgentRuntime({
     agentRunRegistry,
@@ -1077,7 +1227,7 @@ test('当模型返回 error stopReason 时会把底层错误消息透传给 run_
   ]);
 });
 
-test('交互式 session 输入会打开 terminal_input gate 并在超时后挂起 run', async () => {
+test('交互式 session 输入会打开 terminal_wait interaction 并在超时后挂起 run', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
 
@@ -1163,31 +1313,29 @@ test('交互式 session 输入会打开 terminal_input gate 并在超时后挂�
     new AbortController().signal
   );
 
-  const gateOpened = events.find(
+  const interactionRequested = events.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_opened'
+      (event as { type?: unknown }).type === 'interaction_requested'
   ) as
     | {
-        gate?: {
-          kind?: unknown;
-          payload?: {
-            command?: unknown;
-            sessionLabel?: unknown;
-          };
+        request?: {
+          interactionKind?: unknown;
+          fields?: Array<{ key?: unknown; value?: unknown }>;
+          metadata?: { sessionLabel?: unknown };
         };
       }
     | undefined;
 
-  const gateExpired = events.find(
+  const interactionExpired = events.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_expired'
-  ) as { gate?: { status?: unknown } } | undefined;
+      (event as { type?: unknown }).type === 'interaction_expired'
+  ) as { request?: { status?: unknown } } | undefined;
 
   const runStates = events
     .filter(
@@ -1212,12 +1360,13 @@ test('交互式 session 输入会打开 terminal_input gate 并在超时后挂�
       }
     | undefined;
 
-  assert.equal(gateOpened?.gate?.kind, 'terminal_input');
-  assert.equal(gateOpened?.gate?.payload?.command, 'sudo passwd root');
-  assert.equal(gateOpened?.gate?.payload?.sessionLabel, 'ubuntu@10.0.0.8:22');
-  assert.equal(gateExpired?.gate?.status, 'expired');
+  assert.equal(interactionRequested?.request?.interactionKind, 'terminal_wait');
+  assert.equal(interactionRequested?.request?.fields?.[0]?.key, 'command');
+  assert.equal(interactionRequested?.request?.fields?.[0]?.value, 'sudo passwd root');
+  assert.equal(interactionRequested?.request?.metadata?.sessionLabel, 'ubuntu@10.0.0.8:22');
+  assert.equal(interactionExpired?.request?.status, 'expired');
   assert.equal(waitingStateEvent?.executionState, 'blocked_by_terminal');
-  assert.equal(waitingStateEvent?.blockingMode, 'terminal_input');
+  assert.equal(waitingStateEvent?.blockingMode, 'terminal_wait');
   assert.deepEqual(runStates, ['running', 'waiting_for_human', 'suspended']);
   assert.equal(
     events.some(
@@ -1231,7 +1380,7 @@ test('交互式 session 输入会打开 terminal_input gate 并在超时后挂�
   );
 });
 
-test('交互式 session 等待期间如果命令上下文丢失会 reject terminal_input gate 并让 run_failed', async () => {
+test('交互式 session 等待期间如果命令上下文丢失会拒绝 terminal_wait interaction 并让 run_failed', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
 
@@ -1319,13 +1468,13 @@ test('交互式 session 等待期间如果命令上下文丢失会 reject termin
     new AbortController().signal
   );
 
-  const rejectedGateEvent = events.find(
+  const rejectedInteractionEvent = events.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_rejected'
-  ) as { gate?: { status?: unknown } } | undefined;
+      (event as { type?: unknown }).type === 'interaction_rejected'
+  ) as { request?: { status?: unknown } } | undefined;
   const runFailedEvent = events.find(
     event =>
       typeof event === 'object' &&
@@ -1334,7 +1483,7 @@ test('交互式 session 等待期间如果命令上下文丢失会 reject termin
       (event as { type?: unknown }).type === 'run_failed'
   ) as { error?: unknown } | undefined;
 
-  assert.equal(rejectedGateEvent?.gate?.status, 'rejected');
+  assert.equal(rejectedInteractionEvent?.request?.status, 'rejected');
   assert.equal(runFailedEvent?.error, 'SSH 会话已关闭，交互式命令上下文丢失。');
   assert.equal(
     events.some(
@@ -1342,13 +1491,13 @@ test('交互式 session 等待期间如果命令上下文丢失会 reject termin
         typeof event === 'object' &&
         event !== null &&
         'type' in event &&
-        (event as { type?: unknown }).type === 'human_gate_resolved'
+        (event as { type?: unknown }).type === 'interaction_resolved'
     ),
     false
   );
 });
 
-test('命中敏感命令策略时 approval gate 会打开并等待而不是产生 approval_required 失败', async () => {
+test('命中敏感命令策略时 approval interaction 会打开并等待而不是走旧失败事件路径', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
 
@@ -1426,28 +1575,25 @@ test('命中敏感命令策略时 approval gate 会打开并等待而不是产�
     new AbortController().signal
   );
 
-  const approvalEvent = events.find(
+  const approvalInteractionEvent = events.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_opened'
+      (event as { type?: unknown }).type === 'interaction_requested'
   ) as
     | {
-        gate?: {
-          kind?: unknown;
-          reason?: unknown;
-          deadlineAt?: unknown;
-          payload?: {
-            policy?: {
-              action?: unknown;
-              matches?: Array<Record<string, unknown>>;
-            };
+        request?: {
+          interactionKind?: unknown;
+          message?: unknown;
+          metadata?: {
+            policyAction?: unknown;
+            policyMatches?: Array<{ ruleId?: unknown; title?: unknown }>;
           };
         };
       }
     | undefined;
-  const approvalRequiredEvent = events.find(
+  const legacyApprovalRequiredEvent = events.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
@@ -1482,17 +1628,36 @@ test('命中敏感命令策略时 approval gate 会打开并等待而不是产�
       }
     | undefined;
 
-  assert.ok(approvalEvent);
-  assert.equal(approvalEvent.gate?.kind, 'approval');
-  assert.equal(approvalEvent.gate?.reason, '命令命中敏感操作策略，需要用户审批后执行。');
-  assert.equal(approvalEvent.gate?.deadlineAt, null);
-  assert.equal(approvalEvent.gate?.payload?.policy?.action, 'require_approval');
-  assert.equal(approvalEvent.gate?.payload?.policy?.matches?.[0]?.ruleId, 'service.restart');
-  assert.equal(approvalEvent.gate?.payload?.policy?.matches?.[0]?.title, '服务重启');
+  assert.equal(approvalInteractionEvent?.request?.interactionKind, 'approval');
+  assert.equal(
+    approvalInteractionEvent?.request?.message,
+    '命令命中敏感操作策略，需要用户审批后执行。'
+  );
+  assert.equal(
+    (approvalInteractionEvent?.request?.metadata as { policyAction?: unknown } | undefined)
+      ?.policyAction,
+    'require_approval'
+  );
+  assert.equal(
+    (
+      approvalInteractionEvent?.request?.metadata as {
+        policyMatches?: Array<{ ruleId?: unknown; title?: unknown }>;
+      } | undefined
+    )?.policyMatches?.[0]?.ruleId,
+    'service.restart'
+  );
+  assert.equal(
+    (
+      approvalInteractionEvent?.request?.metadata as {
+        policyMatches?: Array<{ ruleId?: unknown; title?: unknown }>;
+      } | undefined
+    )?.policyMatches?.[0]?.title,
+    '服务重启'
+  );
   assert.equal(waitingStateEvent !== undefined, true);
-  assert.equal(waitingStateEvent?.executionState, 'blocked_by_ui_gate');
-  assert.equal(waitingStateEvent?.blockingMode, 'ui_gate');
-  assert.equal(approvalRequiredEvent === undefined, true);
+  assert.equal(waitingStateEvent?.executionState, 'blocked_by_interaction');
+  assert.equal(waitingStateEvent?.blockingMode, 'interaction');
+  assert.equal(legacyApprovalRequiredEvent === undefined, true);
   assert.equal(toolStartedEvent === undefined, true);
   assert.equal(toolResultEvent === undefined, true);
   assert.equal(
@@ -1507,7 +1672,7 @@ test('命中敏感命令策略时 approval gate 会打开并等待而不是产�
   );
 });
 
-test('open approval gate keeps mutation blocked until resolveGate is called', async () => {
+test('open approval interaction keeps mutation blocked until the interaction is submitted', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
 
@@ -1596,18 +1761,20 @@ test('open approval gate keeps mutation blocked until resolveGate is called', as
     new AbortController().signal
   );
 
-  const openedGateEvent = events.find(
+  const openedInteractionEvent = events.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_opened'
-  ) as { runId?: unknown; gate?: { id?: unknown } } | undefined;
-  const runId = typeof openedGateEvent?.runId === 'string' ? openedGateEvent.runId : null;
+      (event as { type?: unknown }).type === 'interaction_requested'
+  ) as { runId?: unknown; request?: { id?: unknown; interactionKind?: unknown } } | undefined;
+  const runId =
+    typeof openedInteractionEvent?.runId === 'string' ? openedInteractionEvent.runId : null;
 
   assert.ok(runId);
-  assert.equal(runtime.getRunSnapshot(runId)?.executionState, 'blocked_by_ui_gate');
-  assert.equal(runtime.getRunSnapshot(runId)?.blockingMode, 'ui_gate');
+  assert.equal(openedInteractionEvent?.request?.interactionKind, 'approval');
+  assert.equal(runtime.getRunSnapshot(runId)?.executionState, 'blocked_by_interaction');
+  assert.equal(runtime.getRunSnapshot(runId)?.blockingMode, 'interaction');
   assert.equal(executeCalls, 0);
   await assert.rejects(
     runtime.streamContinuation(
@@ -1620,7 +1787,7 @@ test('open approval gate keeps mutation blocked until resolveGate is called', as
   assert.equal(executeCalls, 0);
 });
 
-test('manual-sensitive 下交互式 passwd 命令会先打开 approval gate', async () => {
+test('manual-sensitive 下交互式 passwd 命令会先打开 approval interaction', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
 
@@ -1703,14 +1870,14 @@ test('manual-sensitive 下交互式 passwd 命令会先打开 approval gate', as
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_opened'
-  ) as { gate?: { kind?: unknown; reason?: unknown } } | undefined;
+      (event as { type?: unknown }).type === 'interaction_requested'
+  ) as { request?: { interactionKind?: unknown; message?: unknown } } | undefined;
 
-  assert.equal(approvalEvent?.gate?.kind, 'approval');
-  assert.equal(approvalEvent?.gate?.reason, '该操作需要用户审批后执行。');
+  assert.equal(approvalEvent?.request?.interactionKind, 'approval');
+  assert.equal(approvalEvent?.request?.message, '该操作需要用户审批后执行。');
 });
 
-test('resumeWaiting 会继续等待同一个 terminal_input gate 并让原始 run 自然完成', async () => {
+test('提交 continue_waiting 会继续等待同一个 terminal_wait interaction 并让原始 run 自然完成', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
 
@@ -1835,26 +2002,30 @@ test('resumeWaiting 会继续等待同一个 terminal_input gate 并让原始 ru
     new AbortController().signal
   );
 
-  const openedGateEvent = initialEvents.find(
+  const openedInteractionEvent = initialEvents.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_opened'
-  ) as { runId?: unknown; gate?: { id?: unknown } } | undefined;
+      (event as { type?: unknown }).type === 'interaction_requested'
+  ) as { runId?: unknown; request?: { id?: unknown } } | undefined;
 
-  const runId = typeof openedGateEvent?.runId === 'string' ? openedGateEvent.runId : null;
-  const gateId =
-    openedGateEvent?.gate && typeof openedGateEvent.gate.id === 'string'
-      ? openedGateEvent.gate.id
+  const runId =
+    typeof openedInteractionEvent?.runId === 'string' ? openedInteractionEvent.runId : null;
+  const requestId =
+    openedInteractionEvent?.request && typeof openedInteractionEvent.request.id === 'string'
+      ? openedInteractionEvent.request.id
       : null;
 
   assert.ok(runId);
-  assert.ok(gateId);
+  assert.ok(requestId);
 
-  const snapshot = runtime.resumeWaiting(runId, gateId);
+  const snapshot = runtime.submitInteraction(runId, requestId, {
+    selectedAction: 'continue_waiting',
+    payload: {},
+  });
   assert.equal(snapshot?.state, 'waiting_for_human');
-  assert.equal(snapshot?.openGate?.status, 'open');
+  assert.equal(snapshot?.activeInteraction?.status, 'open');
   assert.equal(resumeCalls, 1);
 
   const continuation = runtime.streamContinuation(
@@ -1877,13 +2048,13 @@ test('resumeWaiting 会继续等待同一个 terminal_input gate 并让原始 ru
 
   await continuation;
 
-  const resolvedGateEvent = resumedEvents.find(
+  const resolvedInteractionEvent = resumedEvents.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_resolved'
-  ) as { gate?: { status?: unknown } } | undefined;
+      (event as { type?: unknown }).type === 'interaction_resolved'
+  ) as { request?: { status?: unknown } } | undefined;
   const toolFinishedEvent = resumedEvents.find(
     event =>
       typeof event === 'object' &&
@@ -1892,7 +2063,7 @@ test('resumeWaiting 会继续等待同一个 terminal_input gate 并让原始 ru
       (event as { type?: unknown }).type === 'tool_execution_finished'
   ) as { result?: { ok?: unknown } } | undefined;
 
-  assert.equal(resolvedGateEvent?.gate?.status, 'resolved');
+  assert.equal(resolvedInteractionEvent?.request?.status, 'resolved');
   assert.equal(toolFinishedEvent?.result?.ok, true);
   assert.equal(
     resumedEvents.some(
@@ -1907,7 +2078,7 @@ test('resumeWaiting 会继续等待同一个 terminal_input gate 并让原始 ru
   assert.equal(runtime.getRunSnapshot(runId)?.state, 'completed');
 });
 
-test('resolveGate 会用确认后的字段恢复 parameter_confirmation gate，并在需要时继续进入 approval gate', async () => {
+test('提交确认字段后会恢复 parameter_confirmation interaction，并在需要时继续进入 approval interaction', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
 
@@ -2009,58 +2180,60 @@ test('resolveGate 会用确认后的字段恢复 parameter_confirmation gate，�
     new AbortController().signal
   );
 
-  const openedGateEvent = initialEvents.find(
+  const openedInteractionEvent = initialEvents.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_opened'
+      (event as { type?: unknown }).type === 'interaction_requested'
   ) as
     | {
         runId?: unknown;
-        gate?: {
+        request?: {
           id?: unknown;
-          kind?: unknown;
-          payload?: {
-            command?: unknown;
-            fields?: Array<{
-              name?: unknown;
-              value?: unknown;
-              source?: unknown;
-            }>;
-          };
+          interactionKind?: unknown;
+          metadata?: { commandPreview?: unknown };
+          fields?: Array<{
+            key?: unknown;
+            label?: unknown;
+            value?: unknown;
+          }>;
         };
       }
     | undefined;
 
-  const runId = typeof openedGateEvent?.runId === 'string' ? openedGateEvent.runId : null;
-  const gateId =
-    openedGateEvent?.gate && typeof openedGateEvent.gate.id === 'string'
-      ? openedGateEvent.gate.id
+  const runId =
+    typeof openedInteractionEvent?.runId === 'string' ? openedInteractionEvent.runId : null;
+  const requestId =
+    openedInteractionEvent?.request && typeof openedInteractionEvent.request.id === 'string'
+      ? openedInteractionEvent.request.id
       : null;
 
   assert.ok(runId);
-  assert.ok(gateId);
-  assert.equal(openedGateEvent?.gate?.kind, 'parameter_confirmation');
-  assert.equal(openedGateEvent?.gate?.payload?.command, 'sudo adduser adminuser');
-  assert.deepEqual(openedGateEvent?.gate?.payload?.fields, [
+  assert.ok(requestId);
+  assert.equal(openedInteractionEvent?.request?.interactionKind, 'collect_input');
+  assert.equal(openedInteractionEvent?.request?.metadata?.commandPreview, 'sudo adduser adminuser');
+  assert.deepEqual(openedInteractionEvent?.request?.fields, [
     {
-      name: 'username',
+      type: 'text',
+      key: 'username',
       label: '用户名',
-      value: 'adminuser',
       required: true,
-      source: 'agent_inferred',
+      value: 'adminuser',
     },
   ]);
   assert.equal(executeCalls, 0);
   assert.equal(executedCommand, null);
 
-  const snapshot = runtime.resolveGate(runId, gateId, {
-    fields: {
-      username: 'ops-admin',
+  const snapshot = runtime.submitInteraction(runId, requestId, {
+    selectedAction: 'submit',
+    payload: {
+      fields: {
+        username: 'ops-admin',
+      },
     },
   });
-  assert.equal(snapshot?.openGate?.status, 'resolved');
+  assert.equal(snapshot?.activeInteraction?.status, 'resolved');
   assert.equal(snapshot?.state, 'suspended');
 
   await runtime.streamContinuation(
@@ -2071,29 +2244,28 @@ test('resolveGate 会用确认后的字段恢复 parameter_confirmation gate，�
     new AbortController().signal
   );
 
-  const approvalGateEvent = resumedEvents.find(
+  const approvalInteractionEvent = resumedEvents.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_opened' &&
-      (event as { gate?: { kind?: unknown } }).gate?.kind === 'approval'
+      (event as { type?: unknown }).type === 'interaction_requested' &&
+      (event as { request?: { interactionKind?: unknown } }).request?.interactionKind ===
+        'approval'
   ) as
     | {
-        gate?: {
-          reason?: unknown;
-          payload?: {
-            arguments?: {
-              command?: unknown;
-            };
+        request?: {
+          message?: unknown;
+          metadata?: {
+            commandPreview?: unknown;
           };
         };
       }
     | undefined;
 
-  assert.equal(approvalGateEvent?.gate?.reason, '该操作需要用户审批后执行。');
+  assert.equal(approvalInteractionEvent?.request?.message, '该操作需要用户审批后执行。');
   assert.equal(
-    approvalGateEvent?.gate?.payload?.arguments?.command,
+    approvalInteractionEvent?.request?.metadata?.commandPreview,
     'sudo adduser ops-admin'
   );
   assert.equal(executeCalls, 0);
@@ -2101,7 +2273,7 @@ test('resolveGate 会用确认后的字段恢复 parameter_confirmation gate，�
   assert.equal(runtime.getRunSnapshot(runId)?.state, 'waiting_for_human');
 });
 
-test('显式提供用户名的 user_management 命令会先打开 approval gate 而不是直接执行', async () => {
+test('显式提供用户名的 user_management 命令会先打开 approval interaction 而不是直接执行', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
 
@@ -2192,21 +2364,21 @@ test('显式提供用户名的 user_management 命令会先打开 approval gate 
     new AbortController().signal
   );
 
-  const openedGateEvent = events.find(
+  const openedInteractionEvent = events.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_opened'
-  ) as { gate?: { kind?: unknown; reason?: unknown } } | undefined;
+      (event as { type?: unknown }).type === 'interaction_requested'
+  ) as { request?: { interactionKind?: unknown; message?: unknown } } | undefined;
 
-  assert.equal(openedGateEvent?.gate?.kind, 'approval');
-  assert.equal(openedGateEvent?.gate?.reason, '该操作需要用户审批后执行。');
+  assert.equal(openedInteractionEvent?.request?.interactionKind, 'approval');
+  assert.equal(openedInteractionEvent?.request?.message, '该操作需要用户审批后执行。');
   assert.equal(executeCalls, 0);
   assert.equal(executedCommand, null);
 });
 
-test('parameter_confirmation 确认后若仍需审批，会先转成 approval gate 再执行', async () => {
+test('parameter_confirmation 确认后若仍需审批，会先转成 approval interaction 再执行', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
 
@@ -2309,28 +2481,35 @@ test('parameter_confirmation 确认后若仍需审批，会先转成 approval ga
     new AbortController().signal
   );
 
-  const parameterGateEvent = initialEvents.find(
+  const parameterInteractionEvent = initialEvents.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_opened'
-  ) as { runId?: unknown; gate?: { id?: unknown; kind?: unknown } } | undefined;
+      (event as { type?: unknown }).type === 'interaction_requested'
+  ) as { runId?: unknown; request?: { id?: unknown; interactionKind?: unknown } } | undefined;
 
-  const runId = typeof parameterGateEvent?.runId === 'string' ? parameterGateEvent.runId : null;
-  const gateId =
-    parameterGateEvent?.gate && typeof parameterGateEvent.gate.id === 'string'
-      ? parameterGateEvent.gate.id
+  const runId =
+    typeof parameterInteractionEvent?.runId === 'string'
+      ? parameterInteractionEvent.runId
+      : null;
+  const requestId =
+    parameterInteractionEvent?.request &&
+    typeof parameterInteractionEvent.request.id === 'string'
+      ? parameterInteractionEvent.request.id
       : null;
 
   assert.ok(runId);
-  assert.ok(gateId);
-  assert.equal(parameterGateEvent?.gate?.kind, 'parameter_confirmation');
+  assert.ok(requestId);
+  assert.equal(parameterInteractionEvent?.request?.interactionKind, 'collect_input');
   assert.equal(executeCalls, 0);
 
-  runtime.resolveGate(runId, gateId, {
-    fields: {
-      username: 'ops-admin',
+  runtime.submitInteraction(runId, requestId, {
+    selectedAction: 'submit',
+    payload: {
+      fields: {
+        username: 'ops-admin',
+      },
     },
   });
 
@@ -2342,26 +2521,31 @@ test('parameter_confirmation 确认后若仍需审批，会先转成 approval ga
     new AbortController().signal
   );
 
-  const approvalGateEvent = approvalEvents.find(
+  const approvalInteractionEvent = approvalEvents.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_opened' &&
-      (event as { gate?: { kind?: unknown } }).gate?.kind === 'approval'
-  ) as { gate?: { id?: unknown; reason?: unknown } } | undefined;
+      (event as { type?: unknown }).type === 'interaction_requested' &&
+      (event as { request?: { interactionKind?: unknown } }).request?.interactionKind ===
+        'approval'
+  ) as { request?: { id?: unknown; message?: unknown } } | undefined;
 
-  const approvalGateId =
-    approvalGateEvent?.gate && typeof approvalGateEvent.gate.id === 'string'
-      ? approvalGateEvent.gate.id
+  const approvalRequestId =
+    approvalInteractionEvent?.request &&
+    typeof approvalInteractionEvent.request.id === 'string'
+      ? approvalInteractionEvent.request.id
       : null;
 
-  assert.equal(approvalGateEvent?.gate?.reason, '该操作需要用户审批后执行。');
-  assert.ok(approvalGateId);
+  assert.equal(approvalInteractionEvent?.request?.message, '该操作需要用户审批后执行。');
+  assert.ok(approvalRequestId);
   assert.equal(executeCalls, 0);
   assert.equal(runtime.getRunSnapshot(runId)?.state, 'waiting_for_human');
 
-  runtime.resolveGate(runId, approvalGateId);
+  runtime.submitInteraction(runId, approvalRequestId, {
+    selectedAction: 'approve',
+    payload: {},
+  });
 
   await runtime.streamContinuation(
     runId,
@@ -2384,7 +2568,7 @@ test('parameter_confirmation 确认后若仍需审批，会先转成 approval ga
   assert.equal(executedCommand, 'sudo adduser ops-admin');
 });
 
-test('resolveGate 会让 approval gate 回到运行态并继续执行原始工具调用', async () => {
+test('approval interaction 确认后会回到运行态并继续执行原始工具调用', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
 
@@ -2480,25 +2664,29 @@ test('resolveGate 会让 approval gate 回到运行态并继续执行原始工�
     new AbortController().signal
   );
 
-  const openedGateEvent = initialEvents.find(
+  const openedInteractionEvent = initialEvents.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_opened'
-  ) as { runId?: unknown; gate?: { id?: unknown } } | undefined;
+      (event as { type?: unknown }).type === 'interaction_requested'
+  ) as { runId?: unknown; request?: { id?: unknown } } | undefined;
 
-  const runId = typeof openedGateEvent?.runId === 'string' ? openedGateEvent.runId : null;
-  const gateId =
-    openedGateEvent?.gate && typeof openedGateEvent.gate.id === 'string'
-      ? openedGateEvent.gate.id
+  const runId =
+    typeof openedInteractionEvent?.runId === 'string' ? openedInteractionEvent.runId : null;
+  const requestId =
+    openedInteractionEvent?.request && typeof openedInteractionEvent.request.id === 'string'
+      ? openedInteractionEvent.request.id
       : null;
 
   assert.ok(runId);
-  assert.ok(gateId);
+  assert.ok(requestId);
 
-  const snapshot = await runtime.resolveGate(runId, gateId);
-  assert.equal(snapshot?.openGate?.status, 'resolved');
+  const snapshot = runtime.submitInteraction(runId, requestId, {
+    selectedAction: 'approve',
+    payload: {},
+  });
+  assert.equal(snapshot?.activeInteraction?.status, 'resolved');
   assert.equal(snapshot?.state, 'suspended');
 
   await runtime.streamContinuation(
@@ -2509,13 +2697,13 @@ test('resolveGate 会让 approval gate 回到运行态并继续执行原始工�
     new AbortController().signal
   );
 
-  const resolvedGateEvent = resumedEvents.find(
+  const resolvedInteractionEvent = resumedEvents.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_resolved'
-  ) as { gate?: { status?: unknown } } | undefined;
+      (event as { type?: unknown }).type === 'interaction_resolved'
+  ) as { request?: { status?: unknown } } | undefined;
   const toolFinishedEvent = resumedEvents.find(
     event =>
       typeof event === 'object' &&
@@ -2524,13 +2712,13 @@ test('resolveGate 会让 approval gate 回到运行态并继续执行原始工�
       (event as { type?: unknown }).type === 'tool_execution_finished'
   ) as { result?: { ok?: unknown } } | undefined;
 
-  assert.equal(resolvedGateEvent?.gate?.status, 'resolved');
+  assert.equal(resolvedInteractionEvent?.request?.status, 'resolved');
   assert.equal(toolFinishedEvent?.result?.ok, true);
   assert.equal(executeCalls, 1);
   assert.equal(runtime.getRunSnapshot(runId)?.state, 'completed');
 });
 
-test('rejectGate 会把 approval gate 转成结构化拒绝结果并继续推进 run', async () => {
+test('reject interaction 会把 approval interaction 转成结构化拒绝结果并继续推进 run', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
 
@@ -2621,25 +2809,29 @@ test('rejectGate 会把 approval gate 转成结构化拒绝结果并继续推进
     new AbortController().signal
   );
 
-  const openedGateEvent = initialEvents.find(
+  const openedInteractionEvent = initialEvents.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_opened'
-  ) as { runId?: unknown; gate?: { id?: unknown } } | undefined;
+      (event as { type?: unknown }).type === 'interaction_requested'
+  ) as { runId?: unknown; request?: { id?: unknown } } | undefined;
 
-  const runId = typeof openedGateEvent?.runId === 'string' ? openedGateEvent.runId : null;
-  const gateId =
-    openedGateEvent?.gate && typeof openedGateEvent.gate.id === 'string'
-      ? openedGateEvent.gate.id
+  const runId =
+    typeof openedInteractionEvent?.runId === 'string' ? openedInteractionEvent.runId : null;
+  const requestId =
+    openedInteractionEvent?.request && typeof openedInteractionEvent.request.id === 'string'
+      ? openedInteractionEvent.request.id
       : null;
 
   assert.ok(runId);
-  assert.ok(gateId);
+  assert.ok(requestId);
 
-  const snapshot = await runtime.rejectGate(runId, gateId);
-  assert.equal(snapshot?.openGate?.status, 'rejected');
+  const snapshot = runtime.submitInteraction(runId, requestId, {
+    selectedAction: 'reject',
+    payload: {},
+  });
+  assert.equal(snapshot?.activeInteraction?.status, 'rejected');
   assert.equal(snapshot?.state, 'suspended');
 
   await runtime.streamContinuation(
@@ -2650,13 +2842,13 @@ test('rejectGate 会把 approval gate 转成结构化拒绝结果并继续推进
     new AbortController().signal
   );
 
-  const rejectedGateEvent = resumedEvents.find(
+  const rejectedInteractionEvent = resumedEvents.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_rejected'
-  ) as { gate?: { status?: unknown } } | undefined;
+      (event as { type?: unknown }).type === 'interaction_rejected'
+  ) as { request?: { status?: unknown } } | undefined;
   const toolFinishedEvent = resumedEvents.find(
     event =>
       typeof event === 'object' &&
@@ -2665,14 +2857,14 @@ test('rejectGate 会把 approval gate 转成结构化拒绝结果并继续推进
       (event as { type?: unknown }).type === 'tool_execution_finished'
   ) as { result?: { ok?: unknown; error?: { code?: unknown } } } | undefined;
 
-  assert.equal(rejectedGateEvent?.gate?.status, 'rejected');
+  assert.equal(rejectedInteractionEvent?.request?.status, 'rejected');
   assert.equal(toolFinishedEvent?.result?.ok, false);
   assert.equal(toolFinishedEvent?.result?.error?.code, 'approval_rejected');
   assert.equal(executeCalls, 0);
   assert.equal(runtime.getRunSnapshot(runId)?.state, 'completed');
 });
 
-test('resolveGate 会在原始请求已 abort 后改用 continuation signal 执行 approval 工具', async () => {
+test('approval interaction 会在原始请求已 abort 后改用 continuation signal 执行工具', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
 
@@ -2782,7 +2974,7 @@ test('resolveGate 会在原始请求已 abort 后改用 continuation signal 执�
         typeof event === 'object' &&
         event !== null &&
         'type' in event &&
-        (event as { type?: unknown }).type === 'human_gate_opened'
+        (event as { type?: unknown }).type === 'interaction_requested'
       ) {
         initialController.abort();
       }
@@ -2790,25 +2982,29 @@ test('resolveGate 会在原始请求已 abort 后改用 continuation signal 执�
     initialController.signal
   );
 
-  const openedGateEvent = initialEvents.find(
+  const openedInteractionEvent = initialEvents.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_opened'
-  ) as { runId?: unknown; gate?: { id?: unknown } } | undefined;
+      (event as { type?: unknown }).type === 'interaction_requested'
+  ) as { runId?: unknown; request?: { id?: unknown } } | undefined;
 
-  const runId = typeof openedGateEvent?.runId === 'string' ? openedGateEvent.runId : null;
-  const gateId =
-    openedGateEvent?.gate && typeof openedGateEvent.gate.id === 'string'
-      ? openedGateEvent.gate.id
+  const runId =
+    typeof openedInteractionEvent?.runId === 'string' ? openedInteractionEvent.runId : null;
+  const requestId =
+    openedInteractionEvent?.request && typeof openedInteractionEvent.request.id === 'string'
+      ? openedInteractionEvent.request.id
       : null;
 
   assert.ok(runId);
-  assert.ok(gateId);
+  assert.ok(requestId);
 
-  const snapshot = runtime.resolveGate(runId, gateId);
-  assert.equal(snapshot?.openGate?.status, 'resolved');
+  const snapshot = runtime.submitInteraction(runId, requestId, {
+    selectedAction: 'approve',
+    payload: {},
+  });
+  assert.equal(snapshot?.activeInteraction?.status, 'resolved');
 
   await runtime.streamContinuation(
     runId,
@@ -2932,24 +3128,28 @@ test('approval continuation 若在恢复后抛出异常，会保留可检查的�
     new AbortController().signal
   );
 
-  const openedGateEvent = initialEvents.find(
+  const openedInteractionEvent = initialEvents.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_opened'
-  ) as { runId?: unknown; gate?: { id?: unknown } } | undefined;
+      (event as { type?: unknown }).type === 'interaction_requested'
+  ) as { runId?: unknown; request?: { id?: unknown } } | undefined;
 
-  const runId = typeof openedGateEvent?.runId === 'string' ? openedGateEvent.runId : null;
-  const gateId =
-    openedGateEvent?.gate && typeof openedGateEvent.gate.id === 'string'
-      ? openedGateEvent.gate.id
+  const runId =
+    typeof openedInteractionEvent?.runId === 'string' ? openedInteractionEvent.runId : null;
+  const requestId =
+    openedInteractionEvent?.request && typeof openedInteractionEvent.request.id === 'string'
+      ? openedInteractionEvent.request.id
       : null;
 
   assert.ok(runId);
-  assert.ok(gateId);
+  assert.ok(requestId);
 
-  runtime.resolveGate(runId, gateId);
+  runtime.submitInteraction(runId, requestId, {
+    selectedAction: 'approve',
+    payload: {},
+  });
 
   await assert.rejects(
     runtime.streamContinuation(
@@ -2962,7 +3162,7 @@ test('approval continuation 若在恢复后抛出异常，会保留可检查的�
 
   const failedSnapshot = runtime.getRunSnapshot(runId);
   assert.equal(failedSnapshot?.state, 'running');
-  assert.equal(failedSnapshot?.openGate?.status, 'resolved');
+  assert.equal(failedSnapshot?.activeInteraction?.status, 'resolved');
 
   allowCompletion = true;
 
@@ -2976,7 +3176,7 @@ test('approval continuation 若在恢复后抛出异常，会保留可检查的�
   assert.equal(runtime.getRunSnapshot(runId)?.state, 'completed');
 });
 
-test('terminal_input gate 在原始请求已 abort 后仍可通过 continuation signal 恢复并完成', async () => {
+test('terminal_wait interaction 在原始请求已 abort 后仍可通过 continuation signal 恢复并完成', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
 
@@ -3127,7 +3327,7 @@ test('terminal_input gate 在原始请求已 abort 后仍可通过 continuation 
         typeof event === 'object' &&
         event !== null &&
         'type' in event &&
-        (event as { type?: unknown }).type === 'human_gate_opened'
+        (event as { type?: unknown }).type === 'interaction_requested'
       ) {
         initialController.abort();
       }
@@ -3135,22 +3335,23 @@ test('terminal_input gate 在原始请求已 abort 后仍可通过 continuation 
     initialController.signal
   );
 
-  const openedGateEvent = initialEvents.find(
+  const openedInteractionEvent = initialEvents.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_opened'
-  ) as { runId?: unknown; gate?: { id?: unknown } } | undefined;
+      (event as { type?: unknown }).type === 'interaction_requested'
+  ) as { runId?: unknown; request?: { id?: unknown } } | undefined;
 
-  const runId = typeof openedGateEvent?.runId === 'string' ? openedGateEvent.runId : null;
-  const gateId =
-    openedGateEvent?.gate && typeof openedGateEvent.gate.id === 'string'
-      ? openedGateEvent.gate.id
+  const runId =
+    typeof openedInteractionEvent?.runId === 'string' ? openedInteractionEvent.runId : null;
+  const requestId =
+    openedInteractionEvent?.request && typeof openedInteractionEvent.request.id === 'string'
+      ? openedInteractionEvent.request.id
       : null;
 
   assert.ok(runId);
-  assert.ok(gateId);
+  assert.ok(requestId);
   assert.equal(
     initialEvents.some(
       event =>
@@ -3162,7 +3363,10 @@ test('terminal_input gate 在原始请求已 abort 后仍可通过 continuation 
     false
   );
 
-  const snapshot = runtime.resumeWaiting(runId, gateId);
+  const snapshot = runtime.submitInteraction(runId, requestId, {
+    selectedAction: 'continue_waiting',
+    payload: {},
+  });
   assert.equal(snapshot?.state, 'waiting_for_human');
 
   const continuation = runtime.streamContinuation(
@@ -3203,7 +3407,7 @@ test('terminal_input gate 在原始请求已 abort 后仍可通过 continuation 
   assert.equal(runtime.getRunSnapshot(runId)?.state, 'completed');
 });
 
-test('terminal_input gate 过期后若底层命令已自行完成，resumeWaiting 仍可继续推进 run', async () => {
+test('terminal_wait interaction 过期后若底层命令已自行完成，continue_waiting 仍可继续推进 run', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);
 
@@ -3344,22 +3548,23 @@ test('terminal_input gate 过期后若底层命令已自行完成，resumeWaitin
     new AbortController().signal
   );
 
-  const openedGateEvent = initialEvents.find(
+  const openedInteractionEvent = initialEvents.find(
     event =>
       typeof event === 'object' &&
       event !== null &&
       'type' in event &&
-      (event as { type?: unknown }).type === 'human_gate_opened'
-  ) as { runId?: unknown; gate?: { id?: unknown } } | undefined;
+      (event as { type?: unknown }).type === 'interaction_requested'
+  ) as { runId?: unknown; request?: { id?: unknown } } | undefined;
 
-  const runId = typeof openedGateEvent?.runId === 'string' ? openedGateEvent.runId : null;
-  const gateId =
-    openedGateEvent?.gate && typeof openedGateEvent.gate.id === 'string'
-      ? openedGateEvent.gate.id
+  const runId =
+    typeof openedInteractionEvent?.runId === 'string' ? openedInteractionEvent.runId : null;
+  const requestId =
+    openedInteractionEvent?.request && typeof openedInteractionEvent.request.id === 'string'
+      ? openedInteractionEvent.request.id
       : null;
 
   assert.ok(runId);
-  assert.ok(gateId);
+  assert.ok(requestId);
   assert.equal(runtime.getRunSnapshot(runId)?.state, 'suspended');
 
   commandCompleted = true;
@@ -3387,8 +3592,11 @@ test('terminal_input gate 过期后若底层命令已自行完成，resumeWaitin
     durationMs: 42,
   });
 
-  const snapshot = runtime.resumeWaiting(runId, gateId);
-  assert.equal(snapshot?.openGate?.status, 'open');
+  const snapshot = runtime.submitInteraction(runId, requestId, {
+    selectedAction: 'continue_waiting',
+    payload: {},
+  });
+  assert.equal(snapshot?.activeInteraction?.status, 'open');
 
   await runtime.streamContinuation(
     runId,

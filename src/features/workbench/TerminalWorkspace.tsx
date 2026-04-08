@@ -33,7 +33,7 @@ type TerminalWorkspaceProps = {
   agentSessionLock: AgentSessionLock | null;
   isUtilityDrawerOpen: boolean;
   isMacShortcutPlatform: boolean;
-  pendingUiGateCount: number;
+  pendingInteractionCount: number;
   sessions: LiveSession[];
   sidebarCollapsed: boolean;
   onCloseSession: (sessionId: string) => void;
@@ -53,7 +53,7 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
   agentSessionLock,
   isUtilityDrawerOpen,
   isMacShortcutPlatform,
-  pendingUiGateCount,
+  pendingInteractionCount,
   sessions,
   sidebarCollapsed,
   onCloseSession,
@@ -209,7 +209,7 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
         desktopWindowControlsInsetStyle={desktopWindowChrome.windowControlsInsetStyle}
         isUtilityDrawerOpen={isUtilityDrawerOpen}
         isMacShortcutPlatform={isMacShortcutPlatform}
-        pendingUiGateCount={pendingUiGateCount}
+        pendingInteractionCount={pendingInteractionCount}
         sessions={sessions}
         sidebarCollapsed={sidebarCollapsed}
         splitLayout={splitLayout}

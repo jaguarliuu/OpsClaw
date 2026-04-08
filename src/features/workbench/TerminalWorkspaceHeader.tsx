@@ -1,7 +1,7 @@
 import { Sparkles } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { PendingGateIndicator } from '@/features/workbench/PendingGateIndicator';
+import { PendingInteractionIndicator } from '@/features/workbench/PendingGateIndicator';
 import type { LiveSession } from '@/features/workbench/types';
 import {
   buildWorkbenchLayoutActions,
@@ -24,7 +24,7 @@ type TerminalWorkspaceHeaderProps = {
   sessions: LiveSession[];
   sidebarCollapsed: boolean;
   splitLayout: SplitLayout;
-  pendingUiGateCount: number;
+  pendingInteractionCount: number;
   onCloseSession: (sessionId: string) => void;
   onEnterSplitMode: (layout: 'horizontal' | 'vertical') => void;
   onExitSplitMode: () => void;
@@ -85,7 +85,7 @@ export function TerminalWorkspaceHeader({
   desktopWindowControlsInsetStyle,
   isUtilityDrawerOpen,
   isMacShortcutPlatform,
-  pendingUiGateCount,
+  pendingInteractionCount,
   sessions,
   sidebarCollapsed,
   splitLayout,
@@ -232,7 +232,10 @@ export function TerminalWorkspaceHeader({
             {renderToolActionContent(utilityDrawerAction)}
           </Button>
 
-          <PendingGateIndicator count={pendingUiGateCount} onClick={onOpenPendingGates} />
+          <PendingInteractionIndicator
+            count={pendingInteractionCount}
+            onClick={onOpenPendingGates}
+          />
 
           <Button
             key={aiAssistantAction.id}

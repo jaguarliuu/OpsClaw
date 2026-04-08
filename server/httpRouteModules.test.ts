@@ -73,23 +73,12 @@ void test('route modules register their own route domains', async () => {
   assert.ok(routes.some((route) => route.method === 'post' && route.path === '/api/commands'));
   assert.ok(routes.some((route) => route.method === 'post' && route.path === '/api/llm/chat'));
   assert.ok(routes.some((route) => route.method === 'post' && route.path === '/api/agent/runs'));
+  assert.equal(routes.some((route) => route.path.includes('/gates/')), false);
   assert.ok(
     routes.some(
       (route) =>
         route.method === 'post' &&
-        route.path === '/api/agent/runs/:runId/gates/:gateId/resume-waiting'
-    )
-  );
-  assert.ok(
-    routes.some(
-      (route) =>
-        route.method === 'post' && route.path === '/api/agent/runs/:runId/gates/:gateId/resolve'
-    )
-  );
-  assert.ok(
-    routes.some(
-      (route) =>
-        route.method === 'post' && route.path === '/api/agent/runs/:runId/gates/:gateId/reject'
+        route.path === '/api/agent/runs/:runId/interactions/:requestId/submit'
     )
   );
   assert.ok(routes.some((route) => route.method === 'post' && route.path === '/api/agent/runs/:runId/stream'));

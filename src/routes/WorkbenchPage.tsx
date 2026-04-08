@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { PendingGatePanel } from '@/features/workbench/PendingGatePanel';
+import { PendingInteractionPanel } from '@/features/workbench/PendingGatePanel';
 import { buildSettingsPath } from '@/features/workbench/settingsNavigation';
 import {
   buildGroupTree,
@@ -114,7 +114,7 @@ export function WorkbenchPage() {
   });
   const agentRun = useAgentRun();
   const agentSessionLock = createAgentSessionModel({
-    activeGate: agentRun.activeGate,
+    activeInteraction: agentRun.activeInteraction,
     pendingContinuationRunId: agentRun.pendingContinuationRunId,
   }).sessionLock;
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
@@ -274,7 +274,7 @@ export function WorkbenchPage() {
           agentSessionLock={agentSessionLock}
           isUtilityDrawerOpen={isUtilityDrawerOpen}
           isMacShortcutPlatform={typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)}
-          pendingUiGateCount={agentRun.pendingUiGates.length}
+          pendingInteractionCount={agentRun.pendingInteractions.length}
           onCloseSession={handleCloseSession}
           onOpenPendingGates={() => setIsPendingGatePanelOpen(true)}
           onOpenNewConnection={openNewConnection}
@@ -301,8 +301,8 @@ export function WorkbenchPage() {
       </div>
 
       {shouldRenderPendingGatePanel ? (
-        <PendingGatePanel
-          items={agentRun.pendingUiGates}
+        <PendingInteractionPanel
+          items={agentRun.pendingInteractions}
           open={isPendingGatePanelOpen}
           onClose={() => setIsPendingGatePanelOpen(false)}
           onSelectRun={(runId) => {
@@ -310,8 +310,7 @@ export function WorkbenchPage() {
             setAiAssistantRequestedRunId(runId);
             handleOpenAiAssistant('agent');
           }}
-          onResolve={agentRun.approveGate}
-          onReject={agentRun.rejectGate}
+          onSubmitInteraction={agentRun.submitInteraction}
         />
       ) : null}
 
