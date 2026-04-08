@@ -186,6 +186,9 @@ function ScriptLibraryEditorDialog({
                   draft: {
                     ...current.draft,
                     scope: value,
+                    nodeId: value === 'node'
+                      ? (current.draft.nodeId ?? activeNodeId)
+                      : current.draft.nodeId,
                   },
                 }));
               }}
@@ -653,6 +656,10 @@ export function ScriptLibraryPanel({
       const aliasValidation = validateScriptAlias(payload.alias);
       if (!aliasValidation.ok) {
         setEditorError(aliasValidation.message);
+        return;
+      }
+      if (payload.scope === 'node' && !payload.nodeId) {
+        setEditorError('节点脚本必须绑定节点，请先选择节点后再保存。');
         return;
       }
 
