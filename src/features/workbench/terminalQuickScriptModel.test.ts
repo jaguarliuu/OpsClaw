@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { ScriptLibraryItem } from './types.js';
 
 import {
+  buildQuickScriptSuggestionItems,
   detectTerminalQuickScriptQuery,
   findExactQuickScriptMatch,
   rankQuickScriptCandidates,
@@ -155,4 +156,50 @@ void test('rankQuickScriptCandidates orders items by alias exact, scope, and ali
     'node-beta',
     'global-charlie',
   ]);
+});
+
+void test('buildQuickScriptSuggestionItems returns highlighted list items', () => {
+  const items = buildQuickScriptSuggestionItems(
+    [
+      {
+        id: 'node-1',
+        key: 'restart-node',
+        alias: 'restart',
+        scope: 'node',
+        nodeId: 'node-1',
+        title: '节点重启',
+        description: '',
+        kind: 'plain',
+        content: 'service nginx restart',
+        variables: [],
+        tags: [],
+        resolvedFrom: 'node',
+        overridesGlobal: true,
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        id: 'global-1',
+        key: 'logs-global',
+        alias: 'logs',
+        scope: 'global',
+        nodeId: null,
+        title: '查看日志',
+        description: '',
+        kind: 'plain',
+        content: 'journalctl -n 200',
+        variables: [],
+        tags: [],
+        resolvedFrom: 'global',
+        overridesGlobal: false,
+        createdAt: '',
+        updatedAt: '',
+      },
+    ],
+    0
+  );
+
+  assert.equal(items.length, 2);
+  assert.equal(items[0]?.highlighted, true);
+  assert.equal(items[0]?.label, 'restart');
 });

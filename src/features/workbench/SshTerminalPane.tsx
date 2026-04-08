@@ -155,6 +155,8 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
       dismissPendingPaste,
       pendingPaste,
       pasteFromClipboard,
+      quickScriptItems,
+      quickScriptVisible,
       selectAll,
       suggestion,
       suggestionVisible,
@@ -236,7 +238,9 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
     }, [settings, sendResize]);
 
     useEffect(() => {
-      if (!suggestionVisible || !suggestion) {
+      const hasOverlay =
+        (quickScriptVisible && quickScriptItems.length > 0) || (suggestionVisible && suggestion);
+      if (!hasOverlay) {
         return;
       }
 
@@ -273,7 +277,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
       return () => {
         window.removeEventListener('resize', updateSuggestionOverlayPosition);
       };
-    }, [suggestion, suggestionVisible]);
+    }, [quickScriptItems.length, quickScriptVisible, suggestion, suggestionVisible]);
 
     return (
       <div
@@ -316,14 +320,30 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
           />
         )}
 
-        {suggestionVisible && suggestion && (
+        {quickScriptVisible && quickScriptItems.length > 0 ? (
           <SshTerminalSuggestionOverlay
             ref={suggestionOverlayRef}
             placement={suggestionOverlayPosition.placement}
-            suggestion={suggestion}
             top={suggestionOverlayPosition.top}
+            title="快捷脚本"
+            items={quickScriptItems}
           />
-        )}
+        ) : suggestionVisible && suggestion ? (
+          <SshTerminalSuggestionOverlay
+            ref={suggestionOverlayRef}
+            placement={suggestionOverlayPosition.placement}
+            top={suggestionOverlayPosition.top}
+            title="命令建议"
+            items={[
+              {
+                id: 'history-suggestion',
+                label: suggestion,
+                detail: '按 Tab 接受',
+                highlighted: true,
+              },
+            ]}
+          />
+        ) : null}
 
         {copyFeedbackVisible ? (
           <div className="pointer-events-none absolute bottom-4 right-4 z-20 rounded-md border border-emerald-500/20 bg-[var(--app-bg-elevated2)] px-3 py-2 text-xs font-medium text-emerald-400 shadow-[0_10px_30px_rgba(0,0,0,0.28)]">

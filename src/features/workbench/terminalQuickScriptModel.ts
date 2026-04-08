@@ -3,6 +3,13 @@ import type { ScriptLibraryItem } from './types.js';
 export const TERMINAL_QUICK_SCRIPT_PREFIX = 'x ';
 export const TERMINAL_QUICK_SCRIPT_DELAY_MS = 300;
 
+export type TerminalQuickScriptSuggestionItem = {
+  id: string;
+  label: string;
+  detail: string;
+  highlighted: boolean;
+};
+
 export function detectTerminalQuickScriptQuery(input: string) {
   if (!input.startsWith(TERMINAL_QUICK_SCRIPT_PREFIX)) {
     return null;
@@ -40,4 +47,16 @@ export function findExactQuickScriptMatch(items: readonly ScriptLibraryItem[], q
   return rankQuickScriptCandidates(items, normalized).find(
     (item) => item.alias.toLowerCase() === normalized
   ) ?? null;
+}
+
+export function buildQuickScriptSuggestionItems(
+  items: ScriptLibraryItem[],
+  selectedIndex: number
+): TerminalQuickScriptSuggestionItem[] {
+  return items.map((item, index) => ({
+    id: item.id,
+    label: item.alias,
+    detail: `${item.title} · ${item.resolvedFrom} · ${item.kind}`,
+    highlighted: index === selectedIndex,
+  }));
 }

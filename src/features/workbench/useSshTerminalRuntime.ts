@@ -17,11 +17,14 @@ import {
   shouldConfirmSshTerminalPaste,
   shouldToggleSshTerminalSearchShortcut,
   resolveSshTerminalInput,
+  type SshTerminalQuickScriptOverlayState,
 } from '@/features/workbench/sshTerminalRuntimeModel';
+import type { TerminalSuggestionItem } from '@/features/workbench/sshTerminalSuggestionOverlayModel';
+import { buildQuickScriptSuggestionItems } from '@/features/workbench/terminalQuickScriptModel';
 import { isAgentSessionLocked } from '@/features/workbench/agentSessionModel';
 import { loadTerminalRuntime } from '@/features/workbench/terminalRuntimeLoader';
 import { TERMINAL_THEMES } from '@/features/workbench/terminalSettings';
-import type { AgentSessionLock, ConnectionStatus } from '@/features/workbench/types';
+import type { AgentSessionLock, ConnectionStatus, ScriptLibraryItem } from '@/features/workbench/types';
 
 type UseSshTerminalRuntimeOptions = {
   agentSessionLock: AgentSessionLock | null;
@@ -77,15 +80,30 @@ export function useSshTerminalRuntime({
   const [copyFeedbackVisible, setCopyFeedbackVisible] = useState(false);
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [quickScriptItems, setQuickScriptItems] = useState<TerminalSuggestionItem[]>([]);
+  const [quickScriptVisible, setQuickScriptVisible] = useState(false);
+  const [quickScriptSelectedIndex, setQuickScriptSelectedIndex] = useState(0);
   const copyFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isAgentLockedRef = useRef(false);
   const imeStateRef = useRef(createSshTerminalImeState());
+  const quickScriptSelectedIndexRef = useRef(0);
+  const rankedQuickScriptsRef = useRef<ScriptLibraryItem[]>([]);
   const suggestionRef = useRef<string | null>(null);
   const suggestionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     suggestionRef.current = suggestion;
   }, [suggestion]);
+
+  useEffect(() => {
+    quickScriptSelectedIndexRef.current = quickScriptSelectedIndex;
+    setQuickScriptItems(
+      buildQuickScriptSuggestionItems(
+        rankedQuickScriptsRef.current,
+        quickScriptSelectedIndexRef.current
+      )
+    );
+  }, [quickScriptSelectedIndex]);
 
   const isAgentLocked = isAgentSessionLocked(agentSessionLock);
 
@@ -102,6 +120,10 @@ export function useSshTerminalRuntime({
       clearTimeout(suggestionTimerRef.current);
       suggestionTimerRef.current = null;
     }
+    rankedQuickScriptsRef.current = [];
+    setQuickScriptItems([]);
+    setQuickScriptSelectedIndex(0);
+    setQuickScriptVisible(false);
     setSuggestion(null);
   }, [isAgentLocked]);
 
@@ -403,6 +425,10 @@ export function useSshTerminalRuntime({
           setCopyFeedbackVisible(false);
           imeStateRef.current = createSshTerminalImeState();
           inputBufferRef.current = '';
+          rankedQuickScriptsRef.current = [];
+          setQuickScriptItems([]);
+          setQuickScriptSelectedIndex(0);
+          setQuickScriptVisible(false);
           setSuggestion(null);
           setPendingPaste(null);
           rejectPendingExecution('终端已销毁，未完成的 Agent 命令已取消。');
@@ -462,6 +488,12 @@ export function useSshTerminalRuntime({
     writeClipboardText,
   ]);
 
+  const quickScriptOverlayState: SshTerminalQuickScriptOverlayState = {
+    quickScriptItems,
+    quickScriptVisible,
+    quickScriptSelectedIndex,
+  };
+
   return {
     copyFeedbackText: buildSshTerminalCopyFeedbackText(),
     copyFeedbackVisible,
@@ -470,6 +502,9 @@ export function useSshTerminalRuntime({
     dismissPendingPaste,
     pendingPaste,
     pasteFromClipboard,
+    quickScriptItems: quickScriptOverlayState.quickScriptItems,
+    quickScriptSelectedIndex: quickScriptOverlayState.quickScriptSelectedIndex,
+    quickScriptVisible: quickScriptOverlayState.quickScriptVisible,
     selectAll,
     suggestion,
     suggestionVisible: !isAgentLocked && suggestion !== null && inputBufferRef.current !== '',

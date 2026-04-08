@@ -1,5 +1,12 @@
 export type SshTerminalSuggestionOverlayPlacement = 'above' | 'below';
 
+export type TerminalSuggestionItem = {
+  id: string;
+  label: string;
+  detail: string;
+  highlighted: boolean;
+};
+
 type ResolveSshTerminalSuggestionOverlayPositionOptions = {
   cursorRow: number;
   overlayHeight: number;
