@@ -23,7 +23,7 @@ test.after(async () => {
   }
 });
 
-void test('listResolvedScripts merges global and node scripts by key', async () => {
+void test('listResolvedScripts merges global and node scripts by alias precedence', async () => {
   const { createScriptLibraryStore } = await import('./scriptLibraryStore.js');
   const store = await createScriptLibraryStore();
 
@@ -208,4 +208,91 @@ void test('node alias overrides global alias during resolved lookup', async () =
   const [resolved] = store.listResolvedScripts('node-1').filter((item) => item.alias === 'restart');
   assert.equal(resolved?.resolvedFrom, 'node');
   assert.equal(resolved?.content, 'service nginx restart');
+});
+
+void test('createScript rejects invalid alias format', async () => {
+  const { createScriptLibraryStore } = await import('./scriptLibraryStore.js');
+  const store = await createScriptLibraryStore();
+
+  assert.throws(
+    () =>
+      store.createScript({
+        key: 'invalid-alias-script',
+        alias: 'Invalid Alias',
+        scope: 'global',
+        nodeId: null,
+        title: '别名不合法',
+        description: '',
+        kind: 'plain',
+        content: 'echo invalid',
+        variables: [],
+        tags: [],
+      }),
+    /脚本 alias 只能包含小写字母、数字、-、_。/
+  );
+});
+
+void test('createScript rejects duplicate alias within same scope layer', async () => {
+  const { createScriptLibraryStore } = await import('./scriptLibraryStore.js');
+  const store = await createScriptLibraryStore();
+
+  store.createScript({
+    key: 'global-1',
+    alias: 'dup-global',
+    scope: 'global',
+    nodeId: null,
+    title: 'global 1',
+    description: '',
+    kind: 'plain',
+    content: 'echo 1',
+    variables: [],
+    tags: [],
+  });
+
+  assert.throws(
+    () =>
+      store.createScript({
+        key: 'global-2',
+        alias: 'dup-global',
+        scope: 'global',
+        nodeId: null,
+        title: 'global 2',
+        description: '',
+        kind: 'plain',
+        content: 'echo 2',
+        variables: [],
+        tags: [],
+      }),
+    /脚本 alias 已存在。/
+  );
+
+  store.createScript({
+    key: 'node-1-script-1',
+    alias: 'dup-node',
+    scope: 'node',
+    nodeId: 'node-1',
+    title: 'node 1 script 1',
+    description: '',
+    kind: 'plain',
+    content: 'echo node1-1',
+    variables: [],
+    tags: [],
+  });
+
+  assert.throws(
+    () =>
+      store.createScript({
+        key: 'node-1-script-2',
+        alias: 'dup-node',
+        scope: 'node',
+        nodeId: 'node-1',
+        title: 'node 1 script 2',
+        description: '',
+        kind: 'plain',
+        content: 'echo node1-2',
+        variables: [],
+        tags: [],
+      }),
+    /脚本 alias 已存在。/
+  );
 });

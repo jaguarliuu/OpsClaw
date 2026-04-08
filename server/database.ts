@@ -142,6 +142,59 @@ function queryTableColumns(database: SqlDatabaseHandle, tableName: string) {
   return new Set(rows);
 }
 
+function readNullableString(value: SqliteValue, field: string) {
+  if (value === null) {
+    return null;
+  }
+
+  if (typeof value !== 'string') {
+    throw new Error(`Invalid ${field} value.`);
+  }
+
+  return value;
+}
+
+function assertNoScriptAliasCollisions(database: SqlDatabaseHandle) {
+  const globalCollisions = queryMany(
+    database,
+    `
+      SELECT alias
+      FROM script_library
+      WHERE scope = 'global'
+      GROUP BY alias
+      HAVING COUNT(*) > 1
+    `,
+    (row) => readString(row.alias, 'alias')
+  );
+
+  if (globalCollisions.length > 0) {
+    const aliases = globalCollisions.map((alias) => `"${alias}"`).join(', ');
+    throw new Error(`Script library migration failed: duplicate global aliases found: ${aliases}.`);
+  }
+
+  const nodeCollisions = queryMany(
+    database,
+    `
+      SELECT node_id, alias
+      FROM script_library
+      WHERE scope = 'node'
+      GROUP BY node_id, alias
+      HAVING COUNT(*) > 1
+    `,
+    (row) => ({
+      nodeId: readNullableString(row.node_id, 'node_id'),
+      alias: readString(row.alias, 'alias'),
+    })
+  );
+
+  if (nodeCollisions.length > 0) {
+    const entries = nodeCollisions
+      .map((item) => `node_id=${item.nodeId ?? 'NULL'}, alias="${item.alias}"`)
+      .join('; ');
+    throw new Error(`Script library migration failed: duplicate node aliases found: ${entries}.`);
+  }
+}
+
 function ensureNodeCredentialColumns(database: SqlDatabaseHandle) {
   const result = database.exec('PRAGMA table_info(nodes);');
   const rows = result[0]?.values ?? [];
@@ -308,6 +361,7 @@ function ensureScriptLibraryAliasColumn(database: SqlDatabaseHandle) {
     database.run(`ALTER TABLE script_library ADD COLUMN alias TEXT NOT NULL DEFAULT '';`);
   }
   database.run(`UPDATE script_library SET alias = key WHERE alias = '';`);
+  assertNoScriptAliasCollisions(database);
 
   database.run(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_script_library_global_alias
