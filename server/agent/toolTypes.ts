@@ -7,7 +7,7 @@ import type {
 } from './controlledExecutionTypes.js';
 import type { FileMemoryStore } from './fileMemoryStore.js';
 import type { AgentPolicySummary } from './agentTypes.js';
-import type { ParameterConfirmationField } from './humanGateTypes.js';
+import type { ParameterConfirmationField } from './interactionPayloadTypes.js';
 import type { SessionRegistry } from './sessionRegistry.js';
 
 export type ToolRiskLevel = 'safe' | 'caution' | 'dangerous';

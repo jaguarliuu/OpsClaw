@@ -1,8 +1,8 @@
-import type { HumanGateRecord } from './types.agent';
+import type { InteractionRequest } from './types.agent';
 import type { AgentSessionLock } from './types';
 
 type CreateAgentSessionModelOptions = {
-  activeGate: HumanGateRecord | null;
+  activeInteraction?: InteractionRequest | null;
   pendingContinuationRunId: string | null;
 };
 
@@ -14,38 +14,43 @@ export type AgentSessionModel = {
   sessionLock: AgentSessionLock | null;
 };
 
-export function getAgentSessionLockFromGate(gate: HumanGateRecord | null): AgentSessionLock | null {
+export function getAgentSessionLockFromInteraction(
+  interaction: InteractionRequest | null
+): AgentSessionLock | null {
   if (
-    gate === null ||
-    gate.kind !== 'terminal_input' ||
-    (gate.status !== 'open' && gate.status !== 'expired')
+    interaction === null ||
+    interaction.interactionKind !== 'terminal_wait' ||
+    (interaction.status !== 'open' && interaction.status !== 'expired')
   ) {
     return null;
   }
 
   return {
-    sessionId: gate.sessionId,
-    runId: gate.runId,
-    gateId: gate.id,
-    status: gate.status,
-    reason: gate.reason,
-    command: gate.payload.command,
+    sessionId: interaction.sessionId,
+    runId: interaction.runId,
+    gateId: interaction.id,
+    status: interaction.status,
+    reason: interaction.message,
+    command:
+      typeof interaction.metadata.commandPreview === 'string'
+        ? interaction.metadata.commandPreview
+        : interaction.title,
   };
 }
 
 export function createAgentSessionModel({
-  activeGate,
+  activeInteraction = null,
   pendingContinuationRunId,
 }: CreateAgentSessionModelOptions): AgentSessionModel {
   const hasPendingContinuation = pendingContinuationRunId !== null;
-  const isInteractionLocked = activeGate !== null || hasPendingContinuation;
+  const isInteractionLocked = activeInteraction !== null || hasPendingContinuation;
 
   return {
     hasPendingContinuation,
     isInteractionLocked,
     canStartAgentRun: !isInteractionLocked,
     canClearAgentItems: !isInteractionLocked,
-    sessionLock: getAgentSessionLockFromGate(activeGate),
+    sessionLock: getAgentSessionLockFromInteraction(activeInteraction),
   };
 }
 

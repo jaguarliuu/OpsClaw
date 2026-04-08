@@ -1,11 +1,11 @@
-import type { AgentRunSnapshot, HumanGateRecord } from './types.agent';
+import type { AgentRunSnapshot, InteractionRequest } from './types.agent';
 
-export function isUiResolvableGate(gate: HumanGateRecord | null): boolean {
-  return gate?.presentationMode === 'inline_ui_action';
+export function isUiResolvableInteraction(interaction: InteractionRequest | null): boolean {
+  return interaction !== null && interaction.interactionKind !== 'terminal_wait';
 }
 
-export function isTerminalWaitGate(gate: HumanGateRecord | null): boolean {
-  return gate?.presentationMode === 'terminal_wait';
+export function isTerminalWaitInteraction(interaction: InteractionRequest | null): boolean {
+  return interaction?.interactionKind === 'terminal_wait';
 }
 
 export function getAgentRunDisplayState(

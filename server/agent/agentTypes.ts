@@ -1,10 +1,14 @@
 import type { StoredLlmProvider } from '../llmProviderStore.js';
 
-import type {
-  AgentRunState,
-  HumanGateRecord,
-} from './humanGateTypes.js';
 import type { InteractionRequest } from './interactionTypes.js';
+
+export type AgentRunState =
+  | 'running'
+  | 'waiting_for_human'
+  | 'suspended'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
 export type AgentRunExecutionState =
   | 'running'
@@ -115,40 +119,6 @@ export type AgentStreamEvent =
       toolCallId: string;
       toolName: string;
       result: ToolExecutionEnvelope;
-      timestamp: number;
-    }
-  | {
-      type: 'approval_required';
-      runId: string;
-      step: number;
-      toolCallId: string;
-      toolName: string;
-      reason: string;
-      policy?: AgentPolicySummary;
-      timestamp: number;
-    }
-  | {
-      type: 'human_gate_opened';
-      runId: string;
-      gate: HumanGateRecord;
-      timestamp: number;
-    }
-  | {
-      type: 'human_gate_resolved';
-      runId: string;
-      gate: HumanGateRecord;
-      timestamp: number;
-    }
-  | {
-      type: 'human_gate_rejected';
-      runId: string;
-      gate: HumanGateRecord;
-      timestamp: number;
-    }
-  | {
-      type: 'human_gate_expired';
-      runId: string;
-      gate: HumanGateRecord;
       timestamp: number;
     }
   | {

@@ -1,195 +1,124 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildPendingUiGateItems, reducePendingUiGates } from './agentPendingGateModel.js';
+import {
+  buildPendingUiGateItems,
+  reducePendingUiGates,
+} from './agentPendingGateModel.js';
 
-void test('buildPendingUiGateItems only includes inline_ui_action gates and sorts approval first', () => {
+void test('buildPendingUiGateItems only includes blocking non-terminal interactions', () => {
   const items = buildPendingUiGateItems([
     {
-      id: 'gate-terminal-wait',
+      id: 'interaction-terminal',
       runId: 'run-1',
       sessionId: 'session-1',
-      kind: 'approval',
       status: 'open',
-      reason: 'should be ignored because terminal wait',
+      interactionKind: 'terminal_wait',
+      riskLevel: 'medium',
+      blockingMode: 'hard_block',
+      title: '等待终端交互',
+      message: '请在终端中继续输入。',
+      schemaVersion: 'v1',
+      fields: [],
+      actions: [],
       openedAt: 3,
       deadlineAt: null,
-      presentationMode: 'terminal_wait',
-      payload: {
-        toolCallId: 'call-0',
-        toolName: 'session.run_command',
-        arguments: {},
-        policy: { action: 'require_approval', matches: [] },
-      },
+      metadata: {},
     },
     {
-      id: 'gate-approval-2',
+      id: 'interaction-approval',
       runId: 'run-2',
       sessionId: 'session-1',
-      kind: 'approval',
       status: 'open',
-      reason: 'second approval',
-      openedAt: 5,
-      deadlineAt: null,
-      presentationMode: 'inline_ui_action',
-      payload: {
-        toolCallId: 'call-1',
-        toolName: 'session.run_command',
-        arguments: {},
-        policy: { action: 'require_approval', matches: [] },
-      },
-    },
-    {
-      id: 'gate-param-1',
-      runId: 'run-3',
-      sessionId: 'session-1',
-      kind: 'parameter_confirmation',
-      status: 'open',
-      reason: 'param confirmation',
+      interactionKind: 'approval',
+      riskLevel: 'high',
+      blockingMode: 'hard_block',
+      title: '操作审批',
+      message: '需要批准。',
+      schemaVersion: 'v1',
+      fields: [],
+      actions: [],
       openedAt: 1,
       deadlineAt: null,
-      presentationMode: 'inline_ui_action',
-      payload: {
-        toolCallId: 'call-2',
-        toolName: 'session.run_command',
-        command: 'echo hi',
-        intentKind: 'diagnostic.readonly',
-        fields: [],
-      },
-    },
-    {
-      id: 'gate-approval-1',
-      runId: 'run-4',
-      sessionId: 'session-1',
-      kind: 'approval',
-      status: 'open',
-      reason: 'first approval',
-      openedAt: 1,
-      deadlineAt: null,
-      presentationMode: 'inline_ui_action',
-      payload: {
-        toolCallId: 'call-3',
-        toolName: 'session.run_command',
-        arguments: {},
-        policy: { action: 'require_approval', matches: [] },
-      },
+      metadata: {},
     },
   ]);
 
   assert.deepEqual(
     items.map((item) => ({
-      gateId: item.gateId,
-      kind: item.kind,
-      openedAt: item.openedAt,
+      requestId: item.requestId,
+      interactionKind: item.interactionKind,
       title: item.title,
-      summary: item.summary,
     })),
     [
       {
-        gateId: 'gate-approval-1',
-        kind: 'approval',
-        openedAt: 1,
-        title: '待批准',
-        summary: 'first approval',
-      },
-      {
-        gateId: 'gate-approval-2',
-        kind: 'approval',
-        openedAt: 5,
-        title: '待批准',
-        summary: 'second approval',
-      },
-      {
-        gateId: 'gate-param-1',
-        kind: 'parameter_confirmation',
-        openedAt: 1,
-        title: '待补全',
-        summary: 'param confirmation',
+        requestId: 'interaction-approval',
+        interactionKind: 'approval',
+        title: '操作审批',
       },
     ]
   );
 });
 
-void test('reducePendingUiGates replaces the previous open gate when the same run opens a new UI gate', () => {
+void test('reducePendingUiGates replaces the previous interaction when the same run opens a new one', () => {
   const first = reducePendingUiGates([], {
-    type: 'human_gate_opened',
+    type: 'interaction_requested',
     runId: 'run-1',
-    gate: {
-      id: 'gate-1',
+    request: {
+      id: 'interaction-1',
       runId: 'run-1',
       sessionId: 'session-1',
-      kind: 'approval',
       status: 'open',
-      reason: 'first gate',
+      interactionKind: 'approval',
+      riskLevel: 'high',
+      blockingMode: 'hard_block',
+      title: '操作审批',
+      message: 'first',
+      schemaVersion: 'v1',
+      fields: [],
+      actions: [],
       openedAt: 1,
       deadlineAt: null,
-      presentationMode: 'inline_ui_action',
-      payload: {
-        toolCallId: 'call-1',
-        toolName: 'session.run_command',
-        arguments: {},
-        policy: { action: 'require_approval', matches: [] },
-      },
+      metadata: {},
     },
     timestamp: 1,
   });
 
   const second = reducePendingUiGates(first, {
-    type: 'human_gate_opened',
+    type: 'interaction_requested',
     runId: 'run-1',
-    gate: {
-      id: 'gate-2',
+    request: {
+      id: 'interaction-2',
       runId: 'run-1',
       sessionId: 'session-1',
-      kind: 'approval',
       status: 'open',
-      reason: 'second gate',
+      interactionKind: 'collect_input',
+      riskLevel: 'medium',
+      blockingMode: 'soft_block',
+      title: '补全关键参数',
+      message: 'second',
+      schemaVersion: 'v1',
+      fields: [],
+      actions: [],
       openedAt: 2,
       deadlineAt: null,
-      presentationMode: 'inline_ui_action',
-      payload: {
-        toolCallId: 'call-2',
-        toolName: 'session.run_command',
-        arguments: {},
-        policy: { action: 'require_approval', matches: [] },
-      },
+      metadata: {},
     },
     timestamp: 2,
   });
 
-  assert.deepEqual(second, [
-    {
-      gateId: 'gate-2',
-      runId: 'run-1',
-      sessionId: 'session-1',
-      kind: 'approval',
-      title: '待批准',
-      summary: 'second gate',
-      openedAt: 2,
-    },
-  ]);
-});
-
-void test('buildPendingUiGateItems ignores resolved or rejected UI gates', () => {
-  const items = buildPendingUiGateItems([
-    {
-      id: 'gate-resolved',
-      runId: 'run-1',
-      sessionId: 'session-1',
-      kind: 'approval',
-      status: 'resolved',
-      reason: 'already handled',
-      openedAt: 1,
-      deadlineAt: null,
-      presentationMode: 'inline_ui_action',
-      payload: {
-        toolCallId: 'call-1',
-        toolName: 'session.run_command',
-        arguments: {},
-        policy: { action: 'require_approval', matches: [] },
+  assert.deepEqual(
+    second.map((item) => ({
+      requestId: item.requestId,
+      interactionKind: item.interactionKind,
+      summary: item.summary,
+    })),
+    [
+      {
+        requestId: 'interaction-2',
+        interactionKind: 'collect_input',
+        summary: 'second',
       },
-    },
-  ]);
-
-  assert.deepEqual(items, []);
+    ]
+  );
 });

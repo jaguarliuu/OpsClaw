@@ -231,63 +231,6 @@ export class OpsAgentRuntime {
     return this.agentRunRegistry.getReattachableRun(sessionId);
   }
 
-  resumeWaiting(runId: string, gateId: string) {
-    const snapshot = this.agentRunRegistry.getRun(runId);
-    if (!snapshot?.openGate || snapshot.openGate.id !== gateId) {
-      throw new Error('指定的 human gate 不存在。');
-    }
-    if (snapshot.openGate.kind !== 'terminal_input') {
-      throw new Error('只有 terminal_input gate 支持继续等待。');
-    }
-    if (snapshot.openGate.status !== 'expired') {
-      throw new Error('只有 suspended 的 terminal_input gate 才能继续等待。');
-    }
-    return this.submitInteraction(runId, gateId, {
-      selectedAction: 'continue_waiting',
-      payload: {},
-    });
-  }
-
-  resolveGate(
-    runId: string,
-    gateId: string,
-    input?: { fields?: Record<string, string> }
-  ) {
-    const snapshot = this.agentRunRegistry.getRun(runId);
-    if (!snapshot?.openGate || snapshot.openGate.id !== gateId) {
-      throw new Error('指定的 human gate 不存在。');
-    }
-    if (
-      snapshot.openGate.kind !== 'approval' &&
-      snapshot.openGate.kind !== 'parameter_confirmation'
-    ) {
-      throw new Error('只有 approval 或 parameter_confirmation gate 支持批准。');
-    }
-
-    return this.submitInteraction(runId, gateId, {
-      selectedAction: snapshot.openGate.kind === 'approval' ? 'approve' : 'submit',
-      payload: input?.fields ? { fields: input.fields } : {},
-    });
-  }
-
-  rejectGate(runId: string, gateId: string) {
-    const snapshot = this.agentRunRegistry.getRun(runId);
-    if (!snapshot?.openGate || snapshot.openGate.id !== gateId) {
-      throw new Error('指定的 human gate 不存在。');
-    }
-    if (
-      snapshot.openGate.kind !== 'approval' &&
-      snapshot.openGate.kind !== 'parameter_confirmation'
-    ) {
-      throw new Error('只有 approval 或 parameter_confirmation gate 支持拒绝。');
-    }
-
-    return this.submitInteraction(runId, gateId, {
-      selectedAction: 'reject',
-      payload: {},
-    });
-  }
-
   submitInteraction(
     runId: string,
     requestId: string,
@@ -722,14 +665,6 @@ export class OpsAgentRuntime {
       request: openedRequest,
       timestamp: Date.now(),
     });
-    if (this.agentRunRegistry.getRun(options.runId)?.openGate) {
-      options.emit({
-        type: 'human_gate_opened',
-        runId: options.runId,
-        gate: this.agentRunRegistry.getRun(options.runId)?.openGate as never,
-        timestamp: Date.now(),
-      });
-    }
     this.emitRunStateChanged(options.runId, options.emit);
 
     if (options.pause.interaction.source !== 'terminal_wait') {
@@ -781,14 +716,6 @@ export class OpsAgentRuntime {
             request: rejectedRequest,
             timestamp: Date.now(),
           });
-          if (this.agentRunRegistry.getRun(options.runId)?.openGate) {
-            options.emit({
-              type: 'human_gate_rejected',
-              runId: options.runId,
-              gate: this.agentRunRegistry.getRun(options.runId)?.openGate as never,
-              timestamp: Date.now(),
-            });
-          }
           this.agentRunRegistry.markRunFailed(options.runId);
           options.emit({
             type: 'run_failed',
@@ -808,14 +735,6 @@ export class OpsAgentRuntime {
           }),
           timestamp: Date.now(),
         });
-        if (this.agentRunRegistry.getRun(options.runId)?.openGate) {
-          options.emit({
-            type: 'human_gate_resolved',
-            runId: options.runId,
-            gate: this.agentRunRegistry.getRun(options.runId)?.openGate as never,
-            timestamp: Date.now(),
-          });
-        }
         this.agentRunRegistry.markRunRunning({
           runId: options.runId,
           clearInteraction: true,
@@ -843,15 +762,6 @@ export class OpsAgentRuntime {
           type: 'interaction_expired',
           runId: options.runId,
           request: expiredRequest,
-          timestamp: Date.now(),
-        });
-      }
-      const expiredGate = this.agentRunRegistry.getRun(options.runId)?.openGate;
-      if (expiredGate) {
-        options.emit({
-          type: 'human_gate_expired',
-          runId: options.runId,
-          gate: expiredGate,
           timestamp: Date.now(),
         });
       }
@@ -909,14 +819,6 @@ export class OpsAgentRuntime {
         request: snapshot.activeInteraction,
         timestamp: Date.now(),
       });
-      if (snapshot.openGate) {
-        options.emit({
-          type: 'human_gate_rejected',
-          runId: options.runId,
-          gate: snapshot.openGate,
-          timestamp: Date.now(),
-        });
-      }
       this.agentRunRegistry.markRunRunning({
         runId: options.runId,
       });
@@ -937,14 +839,6 @@ export class OpsAgentRuntime {
       request: snapshot.activeInteraction,
       timestamp: Date.now(),
     });
-    if (snapshot.openGate) {
-      options.emit({
-        type: 'human_gate_resolved',
-        runId: options.runId,
-        gate: snapshot.openGate,
-        timestamp: Date.now(),
-      });
-    }
     this.agentRunRegistry.markRunRunning({
       runId: options.runId,
     });

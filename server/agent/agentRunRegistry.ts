@@ -1,17 +1,7 @@
-import { randomUUID } from 'node:crypto';
-
 import type {
   AgentRunState,
-  ApprovalGatePayload,
-  HumanGateRecord,
-  HumanGateStatus,
-  ParameterConfirmationGatePayload,
-  TerminalInputGatePayload,
-} from './humanGateTypes.js';
-import type {
-  InteractionRequest,
-  InteractionStatus,
-} from './interactionTypes.js';
+} from './agentTypes.js';
+import type { InteractionRequest } from './interactionTypes.js';
 
 export type AgentRunExecutionState =
   | 'running'
@@ -34,9 +24,7 @@ export type AgentRunRecord = {
   activeInteraction: InteractionRequest | null;
 };
 
-export type AgentRunSnapshot = AgentRunRecord & {
-  openGate: HumanGateRecord | null;
-};
+export type AgentRunSnapshot = AgentRunRecord;
 
 export type RegisterRunInput = Pick<AgentRunRecord, 'runId' | 'sessionId' | 'task'>;
 export type AgentRunSnapshotStore = {
@@ -48,31 +36,6 @@ export type OpenInteractionInput = {
   sessionId: string;
   request: InteractionRequest;
 };
-
-type OpenHumanGateInputBase = {
-  runId: string;
-  sessionId: string;
-  reason: string;
-  deadlineAt: number | null;
-};
-
-export type OpenHumanGateInput =
-  | (OpenHumanGateInputBase & {
-      kind: 'terminal_input';
-      payload: TerminalInputGatePayload;
-    })
-  | (OpenHumanGateInputBase & {
-      kind: 'approval';
-      payload: ApprovalGatePayload;
-    })
-  | (OpenHumanGateInputBase & {
-      kind: 'parameter_confirmation';
-      payload: ParameterConfirmationGatePayload;
-    });
-
-const LEGACY_GATE_KIND_KEY = '__legacyGateKind';
-const LEGACY_GATE_PAYLOAD_KEY = '__legacyGatePayload';
-const LEGACY_GATE_REASON_KEY = '__legacyGateReason';
 
 function toExecutionState(request: InteractionRequest): AgentRunExecutionState {
   return request.interactionKind === 'terminal_wait'
@@ -94,143 +57,13 @@ function toRunState(request: InteractionRequest): AgentRunState {
   return toExecutionState(request) === 'running' ? 'running' : 'waiting_for_human';
 }
 
-function toLegacyGateStatus(status: InteractionStatus): HumanGateStatus {
-  if (status === 'submitted') {
-    return 'open';
-  }
-
-  return status;
-}
-
-function createLegacyInteractionRequest(input: OpenHumanGateInput): InteractionRequest {
-  const interactionKind =
-    input.kind === 'terminal_input'
-      ? 'terminal_wait'
-      : input.kind === 'approval'
-        ? 'approval'
-        : 'collect_input';
-
-  return {
-    id: randomUUID(),
-    runId: input.runId,
-    sessionId: input.sessionId,
-    status: 'open',
-    interactionKind,
-    riskLevel: input.kind === 'approval' ? 'high' : 'medium',
-    blockingMode: 'hard_block',
-    title:
-      input.kind === 'terminal_input'
-        ? '等待终端交互'
-        : input.kind === 'approval'
-          ? '操作审批'
-          : '参数确认',
-    message: input.reason,
-    schemaVersion: 'v1',
-    fields:
-      input.kind === 'terminal_input'
-        ? [{ type: 'display', key: 'command', value: input.payload.command }]
-        : [],
-    actions:
-      input.kind === 'terminal_input'
-        ? [
-            {
-              id: 'continue_waiting',
-              label: '继续等待',
-              kind: 'continue_waiting',
-              style: 'primary',
-            },
-            { id: 'cancel', label: '取消', kind: 'cancel', style: 'secondary' },
-          ]
-        : [
-            { id: 'approve', label: '继续执行', kind: 'approve', style: 'danger' },
-            { id: 'reject', label: '取消', kind: 'reject', style: 'secondary' },
-          ],
-    openedAt: Date.now(),
-    deadlineAt: input.deadlineAt,
-    metadata: {
-      [LEGACY_GATE_KIND_KEY]: input.kind,
-      [LEGACY_GATE_PAYLOAD_KEY]: input.payload,
-      [LEGACY_GATE_REASON_KEY]: input.reason,
-    },
-  };
-}
-
-function toLegacyGateRecord(request: InteractionRequest): HumanGateRecord {
-  const kind = request.metadata[LEGACY_GATE_KIND_KEY];
-  const payload = request.metadata[LEGACY_GATE_PAYLOAD_KEY];
-  const reason = request.metadata[LEGACY_GATE_REASON_KEY];
-
-  if (
-    kind !== 'terminal_input' &&
-    kind !== 'approval' &&
-    kind !== 'parameter_confirmation'
-  ) {
-    throw new Error('当前 interaction 不包含 legacy human gate 信息。');
-  }
-
-  const base = {
-    id: request.id,
-    runId: request.runId,
-    sessionId: request.sessionId,
-    status: toLegacyGateStatus(request.status),
-    reason: typeof reason === 'string' ? reason : request.message,
-    openedAt: request.openedAt,
-    deadlineAt: request.deadlineAt,
-    presentationMode:
-      request.interactionKind === 'terminal_wait' ? 'terminal_wait' : 'inline_ui_action',
-  } as const;
-
-  if (kind === 'terminal_input') {
-    return {
-      ...base,
-      kind,
-      payload: payload as TerminalInputGatePayload,
-    };
-  }
-
-  if (kind === 'approval') {
-    return {
-      ...base,
-      kind,
-      payload: payload as ApprovalGatePayload,
-    };
-  }
-
-  return {
-    ...base,
-    kind,
-    payload: payload as ParameterConfirmationGatePayload,
-  };
-}
-
-function toCompatibleOpenGate(request: InteractionRequest | null): HumanGateRecord | null {
-  if (!request) {
-    return null;
-  }
-
-  const kind = request.metadata[LEGACY_GATE_KIND_KEY];
-  if (
-    kind !== 'terminal_input' &&
-    kind !== 'approval' &&
-    kind !== 'parameter_confirmation'
-  ) {
-    return null;
-  }
-
-  return toLegacyGateRecord(request);
-}
-
 export function createAgentRunRegistry(options?: {
   snapshotStore?: AgentRunSnapshotStore;
 }) {
   const runs = new Map<string, AgentRunRecord>();
 
   function toSnapshot(run: AgentRunRecord): AgentRunSnapshot {
-    const snapshot = structuredClone(run);
-    return {
-      ...snapshot,
-      openGate: toCompatibleOpenGate(snapshot.activeInteraction),
-    };
+    return structuredClone(run);
   }
 
   function saveSnapshot(run: AgentRunRecord) {
@@ -368,12 +201,12 @@ export function createAgentRunRegistry(options?: {
       return structuredClone(interaction);
     },
 
-    markRunRunning(input: { runId: string; clearInteraction?: boolean; clearGate?: boolean }) {
+    markRunRunning(input: { runId: string; clearInteraction?: boolean }) {
       const run = getRequiredRun(input.runId);
       run.state = 'running';
       run.executionState = 'running';
       run.blockingMode = 'none';
-      if (input.clearInteraction || input.clearGate) {
+      if (input.clearInteraction) {
         run.activeInteraction = null;
       }
 
@@ -424,46 +257,6 @@ export function createAgentRunRegistry(options?: {
     getRun(runId: string) {
       const run = runs.get(runId);
       return run ? toSnapshot(run) : null;
-    },
-
-    // Legacy human gate compatibility layer
-    openGate(input: OpenHumanGateInput) {
-      const request = createLegacyInteractionRequest(input);
-      const opened = openInteractionInternal({
-        runId: input.runId,
-        sessionId: input.sessionId,
-        request,
-      });
-      return toLegacyGateRecord(opened);
-    },
-
-    expireGate(input: { runId: string; gateId: string }) {
-      this.expireInteraction({ runId: input.runId, interactionId: input.gateId });
-    },
-
-    markGateReopened(input: { runId: string; gateId: string; deadlineAt: number }) {
-      const reopened = this.markInteractionReopened({
-        runId: input.runId,
-        interactionId: input.gateId,
-        deadlineAt: input.deadlineAt,
-      });
-      return toLegacyGateRecord(reopened);
-    },
-
-    resolveGate(input: { runId: string; gateId: string }) {
-      const resolved = this.resolveInteraction({
-        runId: input.runId,
-        interactionId: input.gateId,
-      });
-      return toLegacyGateRecord(resolved);
-    },
-
-    rejectGate(input: { runId: string; gateId: string }) {
-      const rejected = this.rejectInteraction({
-        runId: input.runId,
-        interactionId: input.gateId,
-      });
-      return toLegacyGateRecord(rejected);
     },
   };
 }

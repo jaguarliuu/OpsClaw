@@ -126,25 +126,6 @@ export type ParameterSource =
   | 'system_observed'
   | 'agent_inferred';
 
-export type HumanGateKind = 'terminal_input' | 'approval' | 'parameter_confirmation';
-export type HumanGateStatus = 'open' | 'resolved' | 'rejected' | 'expired';
-export type HumanGatePresentationMode = 'inline_ui_action' | 'terminal_wait';
-
-export type TerminalInputGatePayload = {
-  toolCallId: string;
-  toolName: 'session.run_command';
-  command: string;
-  sessionLabel?: string;
-  timeoutMs: number;
-};
-
-export type ApprovalGatePayload = {
-  toolCallId: string;
-  toolName: string;
-  arguments: Record<string, unknown>;
-  policy: AgentPolicySummary;
-};
-
 export type ParameterConfirmationField = {
   name: string;
   label: string;
@@ -152,49 +133,6 @@ export type ParameterConfirmationField = {
   required: boolean;
   source: ParameterSource;
 };
-
-export type ParameterConfirmationGatePayload = {
-  toolCallId: string;
-  toolName: 'session.run_command';
-  command: string;
-  intentKind: OpsClawIntentKind;
-  fields: ParameterConfirmationField[];
-};
-
-export type HumanGatePayload =
-  | TerminalInputGatePayload
-  | ApprovalGatePayload
-  | ParameterConfirmationGatePayload;
-type HumanGateRecordBase = {
-  id: string;
-  runId: string;
-  sessionId: string;
-  status: HumanGateStatus;
-  reason: string;
-  openedAt: number;
-  deadlineAt: number | null;
-  presentationMode: HumanGatePresentationMode;
-};
-
-export type TerminalInputGateRecord = HumanGateRecordBase & {
-  kind: 'terminal_input';
-  payload: TerminalInputGatePayload;
-};
-
-export type ApprovalGateRecord = HumanGateRecordBase & {
-  kind: 'approval';
-  payload: ApprovalGatePayload;
-};
-
-export type ParameterConfirmationGateRecord = HumanGateRecordBase & {
-  kind: 'parameter_confirmation';
-  payload: ParameterConfirmationGatePayload;
-};
-
-export type HumanGateRecord =
-  | TerminalInputGateRecord
-  | ApprovalGateRecord
-  | ParameterConfirmationGateRecord;
 
 export type AgentRunSnapshot = {
   runId: string;
@@ -204,7 +142,6 @@ export type AgentRunSnapshot = {
   executionState: AgentRunExecutionState;
   blockingMode: AgentRunBlockingMode;
   activeInteraction: InteractionRequest | null;
-  openGate?: HumanGateRecord | null;
 };
 
 export type ToolExecutionEnvelope = {
@@ -284,40 +221,6 @@ export type AgentStreamEvent =
       timestamp: number;
     }
   | {
-      type: 'approval_required';
-      runId: string;
-      step: number;
-      toolCallId: string;
-      toolName: string;
-      reason: string;
-      policy?: AgentPolicySummary;
-      timestamp: number;
-    }
-  | {
-      type: 'human_gate_opened';
-      runId: string;
-      gate: HumanGateRecord;
-      timestamp: number;
-    }
-  | {
-      type: 'human_gate_resolved';
-      runId: string;
-      gate: HumanGateRecord;
-      timestamp: number;
-    }
-  | {
-      type: 'human_gate_rejected';
-      runId: string;
-      gate: HumanGateRecord;
-      timestamp: number;
-    }
-  | {
-      type: 'human_gate_expired';
-      runId: string;
-      gate: HumanGateRecord;
-      timestamp: number;
-    }
-  | {
       type: 'interaction_requested';
       runId: string;
       request: InteractionRequest;
@@ -378,7 +281,6 @@ export type AgentStreamEvent =
 export type AgentTimelineItem =
   | { id: string; kind: 'user'; text: string }
   | { id: string; kind: 'assistant'; text: string; step: number }
-  | { id: string; kind: 'human_gate'; runId: string; gate: HumanGateRecord }
   | {
       id: string;
       kind: 'tool_call';

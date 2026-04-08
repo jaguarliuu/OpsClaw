@@ -743,7 +743,7 @@ git commit -m "feat: add productized hitl action cards"
 - Modify: `src/features/workbench/useAgentRunModel.test.ts`
 - Modify: `src/features/workbench/agentPendingGateModel.test.ts`
 
-- [ ] **Step 1: Add the failing compatibility regression tests**
+- [x] **Step 1: Add the failing compatibility regression tests**
 
 ```ts
 void test('terminal_input gates still map to waiting_terminal and never enter the global pending queue', () => {
@@ -763,13 +763,13 @@ test('resolveGate for approval returns a snapshot with blockingMode none', async
 });
 ```
 
-- [ ] **Step 2: Run the targeted suite to verify failures**
+- [x] **Step 2: Run the targeted suite to verify failures**
 
 Run: `pnpm exec tsx --test server/http/agentRoutes.test.ts server/agent/agentRuntime.test.ts src/features/workbench/useAgentRunModel.test.ts src/features/workbench/agentPendingGateModel.test.ts`
 
-Expected: FAIL until the richer semantics are wired consistently.
+Expected: FAIL until the richer semantics and interaction-only cleanup are wired consistently.
 
-- [ ] **Step 3: Implement the missing compatibility behavior**
+- [x] **Step 3: Implement the missing compatibility behavior**
 
 Ensure all of these hold:
 
@@ -777,8 +777,9 @@ Ensure all of these hold:
 - resolve/reject snapshots clear `blockingMode`
 - chained `parameter_confirmation -> approval` replaces the pending item for the same run
 - unresolved `approval` still blocks the mutation continuation in runtime
+- legacy `human_gate_*`, `approval_required`, and gate bridge helpers no longer leak through runtime/frontend protocol surfaces
 
-- [ ] **Step 4: Run the full feature verification suite**
+- [x] **Step 4: Run the full feature verification suite**
 
 Run:
 
@@ -787,24 +788,26 @@ pnpm exec tsx --test \
   server/agent/agentRunRegistry.test.ts \
   server/agent/agentRuntime.test.ts \
   server/http/agentRoutes.test.ts \
+  server/httpRouteModules.test.ts \
+  server/agent/unifiedInteractionCleanup.test.ts \
+  src/features/workbench/agentInteractionModel.test.ts \
   src/features/workbench/agentPendingGateModel.test.ts \
   src/features/workbench/agentGatePresentationModel.test.ts \
-  src/features/workbench/agentGateUiModel.test.ts \
-  src/features/workbench/agentParameterGateModel.test.ts \
+  src/features/workbench/agentSessionModel.test.ts \
   src/features/workbench/useAgentRunModel.test.ts \
   src/features/workbench/workbenchShellModel.test.ts
 ```
 
 Expected: PASS
 
-- [ ] **Step 5: Run typechecks and lint**
+- [x] **Step 5: Run typechecks and lint**
 
 Run:
 
 ```bash
 pnpm typecheck
 pnpm exec eslint \
-  server/agent/humanGateTypes.ts \
+  server/agent/interactionPayloadTypes.ts \
   server/agent/agentRunRegistry.ts \
   server/agent/agentTypes.ts \
   server/http/agentRoutes.test.ts \
@@ -813,6 +816,7 @@ pnpm exec eslint \
   src/features/workbench/useAgentRunModel.ts \
   src/features/workbench/agentPendingGateModel.ts \
   src/features/workbench/agentGatePresentationModel.ts \
+  src/features/workbench/agentInteractionModel.ts \
   src/features/workbench/TerminalWorkspaceHeader.tsx \
   src/routes/WorkbenchPage.tsx \
   src/features/workbench/AiAssistantPanel.tsx

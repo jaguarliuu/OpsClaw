@@ -3,73 +3,73 @@ import test from 'node:test';
 
 import {
   getAgentRunDisplayState,
-  isTerminalWaitGate,
-  isUiResolvableGate,
+  isTerminalWaitInteraction,
+  isUiResolvableInteraction,
 } from './agentGatePresentationModel.js';
 
-void test('isUiResolvableGate only returns true for inline_ui_action gates', () => {
-  assert.equal(isUiResolvableGate(null), false);
+void test('isUiResolvableInteraction only returns true for non-terminal interactions', () => {
+  assert.equal(isUiResolvableInteraction(null), false);
   assert.equal(
-    isUiResolvableGate({
-      id: 'gate-1',
+    isUiResolvableInteraction({
+      id: 'interaction-1',
       runId: 'run-1',
       sessionId: 'session-1',
-      kind: 'approval',
       status: 'open',
-      reason: '需要批准',
+      interactionKind: 'approval',
+      riskLevel: 'high',
+      blockingMode: 'hard_block',
+      title: '操作审批',
+      message: '需要用户批准。',
+      schemaVersion: 'v1',
+      fields: [],
+      actions: [],
       openedAt: 1,
       deadlineAt: null,
-      presentationMode: 'inline_ui_action',
-      payload: {
-        toolCallId: 'call-1',
-        toolName: 'session.run_command',
-        arguments: {},
-        policy: { action: 'require_approval', matches: [] },
-      },
+      metadata: {},
     }),
     true
   );
   assert.equal(
-    isUiResolvableGate({
-      id: 'gate-2',
+    isUiResolvableInteraction({
+      id: 'interaction-2',
       runId: 'run-1',
       sessionId: 'session-1',
-      kind: 'terminal_input',
       status: 'open',
-      reason: '等待终端输入',
-      openedAt: 2,
-      deadlineAt: 3,
-      presentationMode: 'terminal_wait',
-      payload: {
-        toolCallId: 'call-2',
-        toolName: 'session.run_command',
-        command: 'sudo passwd root',
-        timeoutMs: 300_000,
-      },
+      interactionKind: 'terminal_wait',
+      riskLevel: 'medium',
+      blockingMode: 'hard_block',
+      title: '等待终端交互',
+      message: '请在终端中继续输入。',
+      schemaVersion: 'v1',
+      fields: [],
+      actions: [],
+      openedAt: 1,
+      deadlineAt: null,
+      metadata: {},
     }),
     false
   );
 });
 
-void test('isTerminalWaitGate only returns true for terminal_wait gates', () => {
-  assert.equal(isTerminalWaitGate(null), false);
+void test('isTerminalWaitInteraction only returns true for terminal_wait interactions', () => {
+  assert.equal(isTerminalWaitInteraction(null), false);
   assert.equal(
-    isTerminalWaitGate({
-      id: 'gate-1',
+    isTerminalWaitInteraction({
+      id: 'interaction-1',
       runId: 'run-1',
       sessionId: 'session-1',
-      kind: 'terminal_input',
       status: 'open',
-      reason: '等待终端输入',
+      interactionKind: 'terminal_wait',
+      riskLevel: 'medium',
+      blockingMode: 'hard_block',
+      title: '等待终端交互',
+      message: '请在终端中继续输入。',
+      schemaVersion: 'v1',
+      fields: [],
+      actions: [],
       openedAt: 1,
-      deadlineAt: 2,
-      presentationMode: 'terminal_wait',
-      payload: {
-        toolCallId: 'call-1',
-        toolName: 'session.run_command',
-        command: 'sudo passwd root',
-        timeoutMs: 300_000,
-      },
+      deadlineAt: null,
+      metadata: {},
     }),
     true
   );

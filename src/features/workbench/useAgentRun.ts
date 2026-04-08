@@ -13,12 +13,10 @@ import type {
   AgentRunSnapshot,
   AgentStreamEvent,
   AgentTimelineItem,
-  HumanGateRecord,
   InteractionAction,
   InteractionRequest,
 } from './types.agent';
-import type { PendingUiGateItem } from './agentPendingGateModel';
-import { isTerminalWaitGate } from './agentGatePresentationModel';
+import type { PendingInteractionItem } from './agentInteractionModel';
 import {
   applyAgentEventToTimeline,
   projectAgentSnapshotToEventState,
@@ -48,9 +46,7 @@ export function useAgentRun() {
   const [executionState, setExecutionState] = useState<AgentRunExecutionState | null>(null);
   const [blockingMode, setBlockingMode] = useState<AgentRunBlockingMode | null>(null);
   const [activeInteraction, setActiveInteraction] = useState<InteractionRequest | null>(null);
-  const [pendingInteractions, setPendingInteractions] = useState<PendingUiGateItem[]>([]);
-  const [compatActiveGate, setCompatActiveGate] = useState<HumanGateRecord | null>(null);
-  const [compatPendingUiGates, setCompatPendingUiGates] = useState<PendingUiGateItem[]>([]);
+  const [pendingInteractions, setPendingInteractions] = useState<PendingInteractionItem[]>([]);
   const [pendingContinuationRunId, setPendingContinuationRunId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const eventStateRef = useRef({
@@ -59,9 +55,7 @@ export function useAgentRun() {
     executionState: null as AgentRunExecutionState | null,
     blockingMode: null as AgentRunBlockingMode | null,
     activeInteraction: null as InteractionRequest | null,
-    pendingInteractions: [] as PendingUiGateItem[],
-    activeGate: null as HumanGateRecord | null,
-    pendingUiGates: [] as PendingUiGateItem[],
+    pendingInteractions: [] as PendingInteractionItem[],
     error: null as string | null,
   });
 
@@ -73,17 +67,8 @@ export function useAgentRun() {
     runId: string;
     state: AgentRunState;
     activeInteraction: InteractionRequest | null;
-    openGate: HumanGateRecord | null;
   }) {
     if (isTerminalWaitInteraction(snapshot.activeInteraction)) {
-      return snapshot.runId;
-    }
-
-    if (isTerminalWaitGate(snapshot.openGate)) {
-      return snapshot.runId;
-    }
-
-    if (snapshot.state === 'suspended' && snapshot.openGate?.kind === 'terminal_input') {
       return snapshot.runId;
     }
 
@@ -97,8 +82,6 @@ export function useAgentRun() {
     setBlockingMode(nextEventState.blockingMode);
     setActiveInteraction(nextEventState.activeInteraction);
     setPendingInteractions(nextEventState.pendingInteractions);
-    setCompatActiveGate(nextEventState.activeGate ?? null);
-    setCompatPendingUiGates(nextEventState.pendingUiGates ?? nextEventState.pendingInteractions);
     setError(nextEventState.error);
   }
 
@@ -160,7 +143,6 @@ export function useAgentRun() {
       if (event.type === 'run_completed') {
         setRunState('completed');
         setActiveInteraction(null);
-        setCompatActiveGate(null);
         setPendingContinuationRunId(null);
         setIsRunning(false);
         return;
@@ -204,7 +186,6 @@ export function useAgentRun() {
             runId: snapshot.runId,
             state: snapshot.state,
             activeInteraction: snapshot.activeInteraction,
-            openGate: snapshot.openGate ?? null,
           })
         );
 
@@ -258,8 +239,6 @@ export function useAgentRun() {
         blockingMode: 'none',
         activeInteraction: null,
         pendingInteractions: [],
-        activeGate: null,
-        pendingUiGates: [],
         error: null,
       };
       setIsRunning(true);
@@ -269,8 +248,6 @@ export function useAgentRun() {
       setBlockingMode('none');
       setActiveInteraction(null);
       setPendingInteractions([]);
-      setCompatActiveGate(null);
-      setCompatPendingUiGates([]);
       setPendingContinuationRunId(null);
       appendItem({
         id: createItemId(),
@@ -318,49 +295,6 @@ export function useAgentRun() {
     setIsRunning(false);
   }, []);
 
-  const continuePendingRun = useCallback(
-    async (runIdToContinue: string) => {
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-      setError(null);
-      eventStateRef.current = {
-        ...eventStateRef.current,
-        error: null,
-      };
-      setIsRunning(true);
-
-      try {
-        await streamAgentRunContinuation({
-          runId: runIdToContinue,
-          signal: controller.signal,
-          onEvent: handleEvent,
-        });
-        setPendingContinuationRunId(null);
-      } catch (runError) {
-        if (runError instanceof Error && runError.name === 'AbortError') {
-          appendItem({
-            id: createItemId(),
-            kind: 'status',
-            text: 'Agent 已停止。',
-          });
-          return;
-        }
-
-        const message = runError instanceof Error ? runError.message : 'Agent 继续执行失败';
-        setError(message);
-        appendItem({
-          id: createItemId(),
-          kind: 'status',
-          text: `继续执行失败：${message}。可点击“继续运行”重试。`,
-        });
-      } finally {
-        abortControllerRef.current = null;
-        setIsRunning(false);
-      }
-    },
-    [appendItem, handleEvent]
-  );
-
   function getSelectedAction(
     requestId: string,
     preferredKinds: InteractionAction['kind'][]
@@ -375,17 +309,6 @@ export function useAgentRun() {
       }
 
       return request.actions[0]?.id ?? preferredKinds[0];
-    }
-
-    const gate = eventStateRef.current.activeGate;
-    if (gate?.id === requestId) {
-      if (gate.kind === 'approval') {
-        return preferredKinds.includes('approve') ? 'approve' : preferredKinds[0];
-      }
-
-      if (gate.kind === 'parameter_confirmation') {
-        return preferredKinds.includes('submit') ? 'submit' : preferredKinds[0];
-      }
     }
 
     return preferredKinds[0];
@@ -408,32 +331,31 @@ export function useAgentRun() {
     [continueRun]
   );
 
-  const resumeGate = useCallback(
-    async (runIdToContinue: string, requestId: string) => {
-      await submitInteraction(runIdToContinue, requestId, ['continue_waiting']);
-    },
-    [submitInteraction]
-  );
-
-  const approveGate = useCallback(
+  const submitInteractionAction = useCallback(
     async (
       runIdToContinue: string,
       requestId: string,
-      input?: { fields?: Record<string, string> }
+      actionId: string,
+      payload: Record<string, unknown> = {}
     ) => {
-      await submitInteraction(
-        runIdToContinue,
-        requestId,
-        ['approve', 'submit'],
-        input?.fields ? { fields: input.fields } : {}
-      );
-    },
-    [submitInteraction]
-  );
+      const request = eventStateRef.current.activeInteraction;
+      const selectedAction =
+        request?.id === requestId
+          ? request.actions.find((action) => action.id === actionId)?.kind
+          : null;
 
-  const rejectGate = useCallback(
-    async (runIdToContinue: string, requestId: string) => {
-      await submitInteraction(runIdToContinue, requestId, ['reject', 'cancel']);
+      if (!selectedAction) {
+        throw new Error('当前交互动作不存在或已失效。');
+      }
+
+      const normalizedAction: InteractionAction['kind'] =
+        selectedAction === 'cancel'
+          ? 'reject'
+          : selectedAction === 'acknowledge'
+            ? 'submit'
+            : selectedAction;
+
+      await submitInteraction(runIdToContinue, requestId, [normalizedAction], payload);
     },
     [submitInteraction]
   );
@@ -446,8 +368,6 @@ export function useAgentRun() {
       blockingMode: null,
       activeInteraction: null,
       pendingInteractions: [],
-      activeGate: null,
-      pendingUiGates: [],
       error: null,
     };
     setItems([]);
@@ -458,8 +378,6 @@ export function useAgentRun() {
     setBlockingMode(null);
     setActiveInteraction(null);
     setPendingInteractions([]);
-    setCompatActiveGate(null);
-    setCompatPendingUiGates([]);
     setPendingContinuationRunId(null);
   }, []);
 
@@ -475,7 +393,6 @@ export function useAgentRun() {
         runId: snapshot.runId,
         state: snapshot.state,
         activeInteraction: snapshot.activeInteraction,
-        openGate: snapshot.openGate ?? null,
       })
     );
     return snapshot;
@@ -491,15 +408,10 @@ export function useAgentRun() {
     blockingMode,
     activeInteraction,
     pendingInteractions,
-    activeGate: compatActiveGate,
-    pendingUiGates: compatPendingUiGates,
     pendingContinuationRunId,
     runAgent,
     stopAgent,
-    approveGate,
-    rejectGate,
-    resumeGate,
-    continuePendingRun,
+    submitInteraction: submitInteractionAction,
     loadReattachableRun,
     clearItems,
   };

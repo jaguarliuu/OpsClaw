@@ -128,7 +128,6 @@ void test('submit interaction proxies selectedAction and payload', async () => {
       deadlineAt: null,
       metadata: {},
     },
-    openGate: null,
   };
   const calls: Array<{
     runId: string;
@@ -319,20 +318,29 @@ void test('reattach route returns the latest reattachable run snapshot for a ses
           sessionId,
           task: '重启 nginx',
           state: 'waiting_for_human',
-          openGate: {
-            id: 'gate-2',
+          executionState: 'blocked_by_interaction',
+          blockingMode: 'interaction',
+          activeInteraction: {
+            id: 'interaction-2',
             runId: 'run-2',
             sessionId,
-            kind: 'approval',
             status: 'open',
-            reason: '需要审批',
             openedAt: 1,
             deadlineAt: 2,
-            payload: {
-              toolCallId: 'call-2',
-              toolName: 'session.run_command',
-              arguments: { command: 'systemctl restart nginx' },
-              policy: { action: 'require_approval', matches: [] },
+            interactionKind: 'approval',
+            riskLevel: 'high',
+            blockingMode: 'hard_block',
+            title: '操作审批',
+            message: '需要审批',
+            schemaVersion: 'v1',
+            fields: [],
+            actions: [
+              { id: 'approve', label: '继续执行', kind: 'approve', style: 'danger' },
+              { id: 'reject', label: '取消', kind: 'reject', style: 'secondary' },
+            ],
+            metadata: {
+              source: 'policy_approval',
+              commandPreview: 'systemctl restart nginx',
             },
           },
         };

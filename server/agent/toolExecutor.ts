@@ -1,7 +1,7 @@
 import type { ToolCall } from '@mariozechner/pi-ai';
 
 import type { AgentPolicySummary, ToolExecutionEnvelope } from './agentTypes.js';
-import type { ParameterConfirmationField } from './humanGateTypes.js';
+import type { ParameterConfirmationField } from './interactionPayloadTypes.js';
 import { logAgent } from './logger.js';
 import { buildSessionCommandPlan } from './sessionCommandPlanner.js';
 import { evaluateSessionCommandPolicy } from './commandPolicy.js';

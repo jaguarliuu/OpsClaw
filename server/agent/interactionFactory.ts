@@ -3,10 +3,6 @@ import { randomUUID } from 'node:crypto';
 import type { InteractionRequest } from './interactionTypes.js';
 import type { InteractionSource } from './toolTypes.js';
 
-const LEGACY_GATE_KIND_KEY = '__legacyGateKind';
-const LEGACY_GATE_PAYLOAD_KEY = '__legacyGatePayload';
-const LEGACY_GATE_REASON_KEY = '__legacyGateReason';
-
 function getApprovalInteractionMessage(input: {
   policy: { matches: Array<unknown> };
 }) {
@@ -51,9 +47,6 @@ export function createInteractionRequest(input: {
         source: input.source.source,
         intentKind: input.source.context.intentKind,
         commandPreview: input.source.context.command,
-        [LEGACY_GATE_KIND_KEY]: 'parameter_confirmation',
-        [LEGACY_GATE_PAYLOAD_KEY]: input.source.context,
-        [LEGACY_GATE_REASON_KEY]: '该变更缺少已确认的关键参数，需先由用户确认。',
       },
     };
   }
@@ -86,9 +79,8 @@ export function createInteractionRequest(input: {
           typeof input.source.context.arguments.command === 'string'
             ? input.source.context.arguments.command
             : undefined,
-        [LEGACY_GATE_KIND_KEY]: 'approval',
-        [LEGACY_GATE_PAYLOAD_KEY]: input.source.context,
-        [LEGACY_GATE_REASON_KEY]: message,
+        policyAction: input.source.context.policy.action,
+        policyMatches: input.source.context.policy.matches,
       },
     };
   }
@@ -121,6 +113,7 @@ export function createInteractionRequest(input: {
       deadlineAt: null,
       metadata: {
         source: input.source.source,
+        commandPreview: input.source.context.commandPreview,
       },
     };
   }
@@ -158,9 +151,6 @@ export function createInteractionRequest(input: {
         timeoutMs: input.source.context.timeoutMs,
         commandPreview: input.source.context.command,
         sessionLabel: input.source.context.sessionLabel,
-        [LEGACY_GATE_KIND_KEY]: 'terminal_input',
-        [LEGACY_GATE_PAYLOAD_KEY]: input.source.context,
-        [LEGACY_GATE_REASON_KEY]: '命令正在等待你在终端中继续输入。',
       },
     };
   }

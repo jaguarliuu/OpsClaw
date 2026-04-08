@@ -129,43 +129,34 @@ void test('opening a terminal_wait interaction marks the run as blocked_by_termi
   assert.equal(request.status, 'open');
 });
 
-void test('legacy openGate bridge keeps openGate projected from activeInteraction across resolveGate', () => {
+void test('run snapshot keeps interaction state on activeInteraction across resolveInteraction', () => {
   const registry = createAgentRunRegistry();
   registry.registerRun({
     runId: 'run-1',
     sessionId: 'session-1',
-    task: 'legacy approval bridge',
+    task: 'interaction approval bridge',
   });
 
-  const gate = registry.openGate({
+  const request = registry.openInteraction({
     runId: 'run-1',
     sessionId: 'session-1',
-    kind: 'approval',
-    reason: 'legacy runtime still opens approval gates',
-    deadlineAt: null,
-    payload: {
-      toolCallId: 'call-1',
-      toolName: 'session.run_command',
-      arguments: {
-        command: 'useradd ops-admin',
-      },
-      policy: {
-        action: 'require_approval',
-        matches: [],
-      },
-    },
+    request: createDangerConfirmRequest({
+      interactionKind: 'approval',
+      title: '操作审批',
+      message: '需要用户审批后继续执行。',
+      fields: [],
+      metadata: { source: 'policy_approval' },
+    }),
   });
 
   const waitingSnapshot = registry.getRun('run-1');
-  assert.equal(waitingSnapshot?.activeInteraction?.id, gate.id);
-  assert.equal(waitingSnapshot?.openGate?.id, gate.id);
-  assert.equal(waitingSnapshot?.openGate?.status, 'open');
-  assert.equal(waitingSnapshot?.openGate?.presentationMode, 'inline_ui_action');
+  assert.equal(waitingSnapshot?.activeInteraction?.id, request.id);
+  assert.equal(Object.hasOwn(waitingSnapshot ?? {}, 'openGate'), false);
+  assert.equal(waitingSnapshot?.activeInteraction?.status, 'open');
 
-  registry.resolveGate({ runId: 'run-1', gateId: gate.id });
+  registry.resolveInteraction({ runId: 'run-1', interactionId: request.id });
   const resolvedSnapshot = registry.getRun('run-1');
   assert.equal(resolvedSnapshot?.activeInteraction?.status, 'resolved');
-  assert.equal(resolvedSnapshot?.openGate?.status, 'resolved');
 });
 
 void test('expiring an interaction suspends the run instead of failing it', () => {
