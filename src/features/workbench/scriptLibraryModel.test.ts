@@ -47,6 +47,7 @@ void test('filterScriptLibraryItems matches title, key, and tags case-insensitiv
     {
       id: 'script-1',
       key: 'restart-nginx',
+      alias: 'restart-nginx',
       scope: 'global',
       nodeId: null,
       title: '重启 Nginx',

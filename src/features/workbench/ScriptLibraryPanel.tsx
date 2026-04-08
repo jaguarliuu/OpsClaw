@@ -69,6 +69,7 @@ const EMPTY_VARIABLE: ScriptVariableDefinition = {
 function createEmptyScriptDraft(activeNodeId: string | null): ScriptLibraryUpsertInput {
   return {
     key: '',
+    alias: '',
     scope: 'global',
     nodeId: activeNodeId,
     title: '',
@@ -97,6 +98,7 @@ function buildEditorStateFromItem(item: ScriptLibraryItem): EditorState {
     itemId: item.id,
     draft: {
       key: item.key,
+      alias: item.alias,
       scope: item.scope,
       nodeId: item.nodeId,
       title: item.title,
@@ -123,6 +125,7 @@ function buildUpsertInput(editorState: EditorState, activeNodeId: string | null)
 
   return {
     ...draft,
+    alias: draft.alias || draft.key,
     nodeId: scope === 'node' ? (draft.nodeId ?? activeNodeId) : null,
     tags: parseTags(editorState.tagsText),
   };
