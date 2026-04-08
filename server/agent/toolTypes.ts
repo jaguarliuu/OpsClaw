@@ -1,13 +1,13 @@
 import type { Static, Tool, TSchema } from '@mariozechner/pi-ai';
 
 import type { AgentApprovalMode, AgentStreamEvent, ToolExecutionEnvelope } from './agentTypes.js';
-import type { EffectiveOpsClawRules, ProtectedParameterName } from './controlledExecutionTypes.js';
-import type { FileMemoryStore } from './fileMemoryStore.js';
 import type {
-  ApprovalGatePayload,
-  ParameterConfirmationGatePayload,
-  TerminalInputGatePayload,
-} from './humanGateTypes.js';
+  EffectiveOpsClawRules,
+  OpsClawIntentKind,
+} from './controlledExecutionTypes.js';
+import type { FileMemoryStore } from './fileMemoryStore.js';
+import type { AgentPolicySummary } from './agentTypes.js';
+import type { ParameterConfirmationField } from './humanGateTypes.js';
 import type { SessionRegistry } from './sessionRegistry.js';
 
 export type ToolRiskLevel = 'safe' | 'caution' | 'dangerous';
@@ -102,38 +102,66 @@ export type ToolPolicyDecision =
   | { kind: 'deny'; reason: string; matches: ToolPolicyMatch[] }
   | { kind: 'require_approval'; reason: string; matches: ToolPolicyMatch[] };
 
+export type InteractionSource =
+  | {
+      source: 'policy_approval';
+      context: {
+        toolCallId: string;
+        toolName: string;
+        arguments: Record<string, unknown>;
+        policy: AgentPolicySummary;
+      };
+    }
+  | {
+      source: 'parameter_collection';
+      context: {
+        toolCallId: string;
+        toolName: 'session.run_command';
+        command: string;
+        intentKind: OpsClawIntentKind;
+        fields: ParameterConfirmationField[];
+      };
+    }
+  | {
+      source: 'danger_confirmation';
+      context: {
+        toolCallId: string;
+        toolName: string;
+        title: string;
+        message: string;
+        confirmLabel: string;
+        commandPreview?: string;
+      };
+    }
+  | {
+      source: 'terminal_wait';
+      context: {
+        toolCallId: string;
+        toolName: 'session.run_command';
+        command: string;
+        timeoutMs: number;
+        sessionLabel?: string;
+      };
+    }
+  | {
+      source: 'informational_notice';
+      context: {
+        title: string;
+        message: string;
+      };
+    };
+
 export type ToolPauseOutcome =
   | {
       kind: 'pause';
-      gateKind: 'terminal_input';
-      reason: string;
-      payload: TerminalInputGatePayload;
+      interaction: InteractionSource;
       continuation: {
-        waitForCompletion: (signal?: AbortSignal) => Promise<ToolExecutionEnvelope>;
-        getSettledEnvelope: () => ToolExecutionEnvelope | null;
-      };
-    }
-  | {
-      kind: 'pause';
-      gateKind: 'approval';
-      reason: string;
-      payload: ApprovalGatePayload;
-      continuation: {
-        resume: (signal?: AbortSignal) => Promise<ToolExecutionEnvelope | ToolPauseOutcome>;
-        reject: () => ToolExecutionEnvelope;
-      };
-    }
-  | {
-      kind: 'pause';
-      gateKind: 'parameter_confirmation';
-      reason: string;
-      payload: ParameterConfirmationGatePayload;
-      continuation: {
-        resume: (
-          fields: Partial<Record<ProtectedParameterName, string>>,
-          signal?: AbortSignal
+        waitForCompletion?: (signal?: AbortSignal) => Promise<ToolExecutionEnvelope>;
+        resume?: (
+          ...args: unknown[]
         ) => Promise<ToolExecutionEnvelope | ToolPauseOutcome>;
-        reject: () => ToolExecutionEnvelope;
+        reject?: () => ToolExecutionEnvelope;
+        getSettledEnvelope?: () => ToolExecutionEnvelope | null;
       };
     };
 

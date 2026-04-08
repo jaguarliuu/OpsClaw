@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { AssistantMessage, AssistantMessageEventStream, Context } from '@mariozechner/pi-ai';
 
 import type { StoredLlmProvider } from '../llmProviderStore.js';
+import type { AgentStreamEvent, CreateAgentRunInput } from './agentTypes.js';
 import { createAgentRunRegistry } from './agentRunRegistry.js';
 import { createToolRegistry } from './toolRegistry.js';
 import { ToolExecutor } from './toolExecutor.js';
@@ -38,6 +39,113 @@ function createAssistantMessage(message: Partial<AssistantMessage>): AssistantMe
     ...message,
   } as AssistantMessage;
 }
+
+function createRunInput(): CreateAgentRunInput {
+  return {
+    providerId: 'provider-1',
+    provider: createProvider(),
+    model: 'qwen-plus',
+    task: '创建一个 root 权限用户',
+    sessionId: 'session-1',
+    approvalMode: 'manual-sensitive',
+  };
+}
+
+function createRuntimeForParameterPause() {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  let completionCalls = 0;
+
+  return new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      async executeCommand(_sessionId: string, command: string) {
+        return {
+          sessionId: 'session-1',
+          command,
+          exitCode: 0,
+          output: 'user created',
+          truncated: false,
+          startedAt: Date.now(),
+          completedAt: Date.now(),
+          durationMs: 5,
+        };
+      },
+    } as never,
+    completeAgentContext: async () => {
+      completionCalls += 1;
+      if (completionCalls === 1) {
+        return createAssistantMessage({
+          stopReason: 'toolUse',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'call-1',
+              name: 'session.run_command',
+              arguments: {
+                sessionId: 'session-1',
+                command: 'sudo adduser adminuser',
+              },
+            },
+          ],
+        });
+      }
+
+      return createAssistantMessage({
+        stopReason: 'stop',
+        content: [{ type: 'text', text: '用户已创建。' }],
+      });
+    },
+  });
+}
+
+test('parameter collection pause opens a collect_input interaction', async () => {
+  const runtime = createRuntimeForParameterPause();
+  const events: AgentStreamEvent[] = [];
+
+  await runtime.run(createRunInput(), event => {
+    events.push(event);
+  }, AbortSignal.timeout(5_000));
+
+  const opened = events.find((event) => event.type === 'interaction_requested');
+  assert.ok(opened && opened.type === 'interaction_requested');
+  assert.equal(opened.request.interactionKind, 'collect_input');
+  assert.equal(opened.request.actions.map((action) => action.kind).join(','), 'submit,reject');
+});
 
 test('任务完成后会将稳定观察整理后自动沉淀到节点记忆', async () => {
   const registry = createToolRegistry();
@@ -1163,6 +1271,22 @@ test('交互式 session 输入会打开 terminal_input gate 并在超时后挂�
     new AbortController().signal
   );
 
+  const interactionRequested = events.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'interaction_requested'
+  ) as
+    | {
+        request?: {
+          interactionKind?: unknown;
+          fields?: Array<{ key?: unknown; value?: unknown }>;
+          metadata?: { sessionLabel?: unknown };
+        };
+      }
+    | undefined;
+
   const gateOpened = events.find(
     event =>
       typeof event === 'object' &&
@@ -1180,6 +1304,14 @@ test('交互式 session 输入会打开 terminal_input gate 并在超时后挂�
         };
       }
     | undefined;
+
+  const interactionExpired = events.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'interaction_expired'
+  ) as { request?: { status?: unknown } } | undefined;
 
   const gateExpired = events.find(
     event =>
@@ -1212,12 +1344,17 @@ test('交互式 session 输入会打开 terminal_input gate 并在超时后挂�
       }
     | undefined;
 
+  assert.equal(interactionRequested?.request?.interactionKind, 'terminal_wait');
+  assert.equal(interactionRequested?.request?.fields?.[0]?.key, 'command');
+  assert.equal(interactionRequested?.request?.fields?.[0]?.value, 'sudo passwd root');
+  assert.equal(interactionRequested?.request?.metadata?.sessionLabel, 'ubuntu@10.0.0.8:22');
   assert.equal(gateOpened?.gate?.kind, 'terminal_input');
   assert.equal(gateOpened?.gate?.payload?.command, 'sudo passwd root');
   assert.equal(gateOpened?.gate?.payload?.sessionLabel, 'ubuntu@10.0.0.8:22');
+  assert.equal(interactionExpired?.request?.status, 'expired');
   assert.equal(gateExpired?.gate?.status, 'expired');
   assert.equal(waitingStateEvent?.executionState, 'blocked_by_terminal');
-  assert.equal(waitingStateEvent?.blockingMode, 'terminal_input');
+  assert.equal(waitingStateEvent?.blockingMode, 'terminal_wait');
   assert.deepEqual(runStates, ['running', 'waiting_for_human', 'suspended']);
   assert.equal(
     events.some(
@@ -1490,8 +1627,8 @@ test('命中敏感命令策略时 approval gate 会打开并等待而不是产�
   assert.equal(approvalEvent.gate?.payload?.policy?.matches?.[0]?.ruleId, 'service.restart');
   assert.equal(approvalEvent.gate?.payload?.policy?.matches?.[0]?.title, '服务重启');
   assert.equal(waitingStateEvent !== undefined, true);
-  assert.equal(waitingStateEvent?.executionState, 'blocked_by_ui_gate');
-  assert.equal(waitingStateEvent?.blockingMode, 'ui_gate');
+  assert.equal(waitingStateEvent?.executionState, 'blocked_by_interaction');
+  assert.equal(waitingStateEvent?.blockingMode, 'interaction');
   assert.equal(approvalRequiredEvent === undefined, true);
   assert.equal(toolStartedEvent === undefined, true);
   assert.equal(toolResultEvent === undefined, true);
@@ -1596,6 +1733,13 @@ test('open approval gate keeps mutation blocked until resolveGate is called', as
     new AbortController().signal
   );
 
+  const openedInteractionEvent = events.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'interaction_requested'
+  ) as { runId?: unknown; request?: { id?: unknown; interactionKind?: unknown } } | undefined;
   const openedGateEvent = events.find(
     event =>
       typeof event === 'object' &&
@@ -1606,8 +1750,9 @@ test('open approval gate keeps mutation blocked until resolveGate is called', as
   const runId = typeof openedGateEvent?.runId === 'string' ? openedGateEvent.runId : null;
 
   assert.ok(runId);
-  assert.equal(runtime.getRunSnapshot(runId)?.executionState, 'blocked_by_ui_gate');
-  assert.equal(runtime.getRunSnapshot(runId)?.blockingMode, 'ui_gate');
+  assert.equal(openedInteractionEvent?.request?.interactionKind, 'approval');
+  assert.equal(runtime.getRunSnapshot(runId)?.executionState, 'blocked_by_interaction');
+  assert.equal(runtime.getRunSnapshot(runId)?.blockingMode, 'interaction');
   assert.equal(executeCalls, 0);
   await assert.rejects(
     runtime.streamContinuation(

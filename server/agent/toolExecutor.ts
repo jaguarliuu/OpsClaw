@@ -1,12 +1,7 @@
 import type { ToolCall } from '@mariozechner/pi-ai';
 
 import type { AgentPolicySummary, ToolExecutionEnvelope } from './agentTypes.js';
-import type {
-  ApprovalGatePayload,
-  ParameterConfirmationField,
-  ParameterConfirmationGatePayload,
-  TerminalInputGatePayload,
-} from './humanGateTypes.js';
+import type { ParameterConfirmationField } from './humanGateTypes.js';
 import { logAgent } from './logger.js';
 import { buildSessionCommandPlan } from './sessionCommandPlanner.js';
 import { evaluateSessionCommandPolicy } from './commandPolicy.js';
@@ -22,8 +17,6 @@ import type {
 
 const TERMINAL_INPUT_POLL_INTERVAL_MS = 25;
 const DEFAULT_TERMINAL_INPUT_TIMEOUT_MS = 300_000;
-const PARAMETER_CONFIRMATION_REASON = '该变更缺少已确认的关键参数，需先由用户确认。';
-
 const PARAMETER_LABELS: Record<ProtectedParameterName, string> = {
   username: '用户名',
   password: '密码',
@@ -186,6 +179,10 @@ function shouldDeferPlannerApprovalToTerminalInput(input: {
   );
 }
 
+function asAbortSignal(value: unknown): AbortSignal | undefined {
+  return value instanceof AbortSignal ? value : undefined;
+}
+
 type SessionCommandExecutionState = {
   confirmedFields?: Partial<Record<ProtectedParameterName, string>>;
   plannerApprovalGranted?: boolean;
@@ -330,22 +327,22 @@ export class ToolExecutor {
     onApproved: (signal: AbortSignal) => Promise<ToolExecutionEnvelope | ToolPauseOutcome>;
   }): ToolPauseOutcome {
     const continuationSignal = createContinuationSignalController(options.ctx.signal);
-    const payload: ApprovalGatePayload = {
-      toolCallId: options.toolCallId,
-      toolName: options.handler.definition.name,
-      arguments: (options.args ?? {}) as Record<string, unknown>,
-      policy: options.policy,
-    };
     continuationSignal.release();
 
     return {
       kind: 'pause',
-      gateKind: 'approval',
-      reason: options.reason,
-      payload,
+      interaction: {
+        source: 'policy_approval',
+        context: {
+          toolCallId: options.toolCallId,
+          toolName: options.handler.definition.name,
+          arguments: (options.args ?? {}) as Record<string, unknown>,
+          policy: options.policy,
+        },
+      },
       continuation: {
         resume: async (signal) => {
-          continuationSignal.bind(signal);
+          continuationSignal.bind(asAbortSignal(signal));
           try {
             return await options.onApproved(continuationSignal.signal);
           } finally {
@@ -399,26 +396,26 @@ export class ToolExecutor {
 
     if (sessionPlan.decision.kind === 'require_parameter_confirmation') {
       const fields = sessionPlan.parameters.map(toParameterConfirmationField);
-      const payload: ParameterConfirmationGatePayload = {
-        toolCallId,
-        toolName: 'session.run_command',
-        command: confirmedCommand,
-        intentKind: sessionPlan.intent.kind,
-        fields,
-      };
       const continuationSignal = createContinuationSignalController(ctx.signal);
       continuationSignal.release();
 
       return {
         kind: 'pause',
-        gateKind: 'parameter_confirmation',
-        reason: PARAMETER_CONFIRMATION_REASON,
-        payload,
-      continuation: {
-        resume: async (fieldsInput, signal) => {
-          continuationSignal.bind(signal);
-          try {
-            return await this.executePlannedSessionCommand(
+        interaction: {
+          source: 'parameter_collection',
+          context: {
+            toolCallId,
+            toolName: 'session.run_command',
+            command: confirmedCommand,
+            intentKind: sessionPlan.intent.kind,
+            fields,
+          },
+        },
+        continuation: {
+          resume: async (fieldsInput, signal) => {
+            continuationSignal.bind(asAbortSignal(signal));
+            try {
+              return await this.executePlannedSessionCommand(
                 handler,
                 toolCallId,
                 { ...args, command: confirmedCommand },
@@ -426,7 +423,8 @@ export class ToolExecutor {
                 Date.now(),
                 {
                   ...state,
-                  confirmedFields: fieldsInput,
+                  confirmedFields:
+                    (fieldsInput ?? {}) as Partial<Record<ProtectedParameterName, string>>,
                 }
               );
             } finally {
@@ -635,20 +633,20 @@ export class ToolExecutor {
         continue;
       }
 
-      const payload: TerminalInputGatePayload = {
-        toolCallId,
-        toolName: 'session.run_command',
-        command,
-        sessionLabel: ctx.sessionLabel,
-        timeoutMs: DEFAULT_TERMINAL_INPUT_TIMEOUT_MS,
-      };
       continuationSignal.release();
 
       return {
         kind: 'pause',
-        gateKind: 'terminal_input',
-        reason: '命令正在等待你在终端中继续输入。',
-        payload,
+        interaction: {
+          source: 'terminal_wait',
+          context: {
+            toolCallId,
+            toolName: 'session.run_command',
+            command,
+            sessionLabel: ctx.sessionLabel,
+            timeoutMs: DEFAULT_TERMINAL_INPUT_TIMEOUT_MS,
+          },
+        },
         continuation: {
           waitForCompletion: async (signal) => {
             continuationSignal.bind(signal);

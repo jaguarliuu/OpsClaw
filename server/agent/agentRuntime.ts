@@ -17,7 +17,8 @@ import {
 } from './agentLoop.js';
 import { createAgentRunRegistry } from './agentRunRegistry.js';
 import type { FileMemoryStore } from './fileMemoryStore.js';
-import type { HumanGateRecord } from './humanGateTypes.js';
+import { createInteractionRequest } from './interactionFactory.js';
+import type { InteractionRequest } from './interactionTypes.js';
 import { logAgent } from './logger.js';
 import type { StoredNodeDetail } from '../nodeStore.js';
 import { loadOpsClawRules, resolveEffectiveOpsClawRules } from './opsclawRules.js';
@@ -56,12 +57,10 @@ type AgentRuntimeDependencies = {
   completeAgentContext?: typeof completeAgentContext;
 };
 
-type PendingRunAction =
-  | { kind: 'resume_waiting' }
-  | { kind: 'resolve_approval' }
-  | { kind: 'reject_approval' }
-  | { kind: 'resolve_parameter_confirmation'; fields: Record<string, string> }
-  | { kind: 'reject_parameter_confirmation' };
+type PendingRunAction = {
+  selectedAction: 'approve' | 'reject' | 'submit' | 'continue_waiting';
+  payload: Record<string, unknown>;
+};
 
 type PausedRunHandle = {
   pause: ToolPauseOutcome;
@@ -243,33 +242,10 @@ export class OpsAgentRuntime {
     if (snapshot.openGate.status !== 'expired') {
       throw new Error('只有 suspended 的 terminal_input gate 才能继续等待。');
     }
-    const pausedRun = this.pausedRuns.get(runId);
-    if (!pausedRun) {
-      throw new Error('当前 run 没有可恢复的执行上下文。');
-    }
-    if (pausedRun.pause.gateKind !== 'terminal_input') {
-      throw new Error('当前 run 没有 terminal_input 恢复上下文。');
-    }
-
-    const settledEnvelope = pausedRun.pause.continuation.getSettledEnvelope();
-    const pendingExecution = this.dependencies.sessions.getPendingExecutionDebug?.(snapshot.sessionId);
-    if (!settledEnvelope && pendingExecution !== null) {
-      if (!this.dependencies.sessions.resumePendingExecutionWait) {
-        throw new Error('当前运行环境不支持恢复等待中的命令。');
-      }
-
-      this.dependencies.sessions.resumePendingExecutionWait(
-        snapshot.sessionId,
-        snapshot.openGate.payload.timeoutMs
-      );
-    }
-    this.agentRunRegistry.markGateReopened({
-      runId,
-      gateId,
-      deadlineAt: Date.now() + snapshot.openGate.payload.timeoutMs,
+    return this.submitInteraction(runId, gateId, {
+      selectedAction: 'continue_waiting',
+      payload: {},
     });
-    pausedRun.pendingAction = { kind: 'resume_waiting' };
-    return this.agentRunRegistry.getRun(runId);
   }
 
   resolveGate(
@@ -288,20 +264,10 @@ export class OpsAgentRuntime {
       throw new Error('只有 approval 或 parameter_confirmation gate 支持批准。');
     }
 
-    const pausedRun = this.pausedRuns.get(runId);
-    if (!pausedRun) {
-      throw new Error('当前 run 没有可恢复的执行上下文。');
-    }
-
-    this.agentRunRegistry.resolveGate({ runId, gateId });
-    pausedRun.pendingAction =
-      snapshot.openGate.kind === 'approval'
-        ? { kind: 'resolve_approval' }
-        : {
-            kind: 'resolve_parameter_confirmation',
-            fields: input?.fields ?? {},
-          };
-    return this.agentRunRegistry.getRun(runId);
+    return this.submitInteraction(runId, gateId, {
+      selectedAction: snapshot.openGate.kind === 'approval' ? 'approve' : 'submit',
+      payload: input?.fields ? { fields: input.fields } : {},
+    });
   }
 
   rejectGate(runId: string, gateId: string) {
@@ -316,17 +282,74 @@ export class OpsAgentRuntime {
       throw new Error('只有 approval 或 parameter_confirmation gate 支持拒绝。');
     }
 
+    return this.submitInteraction(runId, gateId, {
+      selectedAction: 'reject',
+      payload: {},
+    });
+  }
+
+  submitInteraction(
+    runId: string,
+    requestId: string,
+    submission: { selectedAction: PendingRunAction['selectedAction']; payload: Record<string, unknown> }
+  ) {
+    const snapshot = this.agentRunRegistry.getRun(runId);
+    if (!snapshot?.activeInteraction || snapshot.activeInteraction.id !== requestId) {
+      throw new Error('指定 interaction 不存在。');
+    }
+
     const pausedRun = this.pausedRuns.get(runId);
     if (!pausedRun) {
       throw new Error('当前 run 没有可恢复的执行上下文。');
     }
 
-    this.agentRunRegistry.rejectGate({ runId, gateId });
-    pausedRun.pendingAction =
-      snapshot.openGate.kind === 'approval'
-        ? { kind: 'reject_approval' }
-        : { kind: 'reject_parameter_confirmation' };
-    return this.agentRunRegistry.getRun(runId);
+    if (submission.selectedAction === 'continue_waiting') {
+      if (snapshot.activeInteraction.interactionKind !== 'terminal_wait') {
+        throw new Error('只有 terminal_wait interaction 支持继续等待。');
+      }
+      if (snapshot.activeInteraction.status !== 'expired') {
+        throw new Error('只有 suspended 的 terminal_wait interaction 才能继续等待。');
+      }
+
+      const timeoutMs =
+        typeof snapshot.activeInteraction.metadata.timeoutMs === 'number'
+          ? snapshot.activeInteraction.metadata.timeoutMs
+          : 0;
+      const settledEnvelope = pausedRun.pause.continuation.getSettledEnvelope?.() ?? null;
+      const pendingExecution = this.dependencies.sessions.getPendingExecutionDebug?.(snapshot.sessionId);
+      if (!settledEnvelope && pendingExecution !== null) {
+        if (!this.dependencies.sessions.resumePendingExecutionWait) {
+          throw new Error('当前运行环境不支持恢复等待中的命令。');
+        }
+
+        this.dependencies.sessions.resumePendingExecutionWait(snapshot.sessionId, timeoutMs);
+      }
+
+      this.agentRunRegistry.markInteractionReopened({
+        runId,
+        interactionId: requestId,
+        deadlineAt: Date.now() + timeoutMs,
+      });
+      pausedRun.pendingAction = {
+        selectedAction: 'continue_waiting',
+        payload: {},
+      };
+      return this.agentRunRegistry.getRun(runId);
+    }
+
+    if (submission.selectedAction === 'reject') {
+      this.agentRunRegistry.rejectInteraction({ runId, interactionId: requestId });
+      pausedRun.pendingAction = submission;
+      return this.agentRunRegistry.getRun(runId);
+    }
+
+    if (submission.selectedAction === 'approve' || submission.selectedAction === 'submit') {
+      this.agentRunRegistry.resolveInteraction({ runId, interactionId: requestId });
+      pausedRun.pendingAction = submission;
+      return this.agentRunRegistry.getRun(runId);
+    }
+
+    throw new Error('不支持的 interaction 提交动作。');
   }
 
   async streamContinuation(
@@ -625,15 +648,10 @@ export class OpsAgentRuntime {
           resumedSignal,
           resumedEmit
         );
-        if (
-          action.kind === 'resolve_approval' ||
-          action.kind === 'reject_approval' ||
-          action.kind === 'resolve_parameter_confirmation' ||
-          action.kind === 'reject_parameter_confirmation'
-        ) {
+        if (action.selectedAction !== 'continue_waiting') {
           this.agentRunRegistry.markRunRunning({
             runId,
-            clearGate: true,
+            clearInteraction: true,
           });
         }
         await processLoopOutcome(nextResult.outcome, currentLoopState, resumedEmit, resumedSignal);
@@ -680,53 +698,54 @@ export class OpsAgentRuntime {
     signal: AbortSignal;
     pause: ToolPauseOutcome;
   }): Promise<PauseResolution> {
-    const deadlineAt =
-      options.pause.gateKind === 'terminal_input'
-        ? Date.now() + options.pause.payload.timeoutMs
-        : null;
-
-    const gate = this.agentRunRegistry.openGate({
+    const request = createInteractionRequest({
       runId: options.runId,
       sessionId: options.sessionId,
-      kind: options.pause.gateKind,
-      reason: options.pause.reason,
-      deadlineAt,
-      payload: options.pause.payload as never,
+      source: options.pause.interaction,
+    });
+    const openedRequest = this.agentRunRegistry.openInteraction({
+      runId: options.runId,
+      sessionId: options.sessionId,
+      request,
     });
 
     options.emit({
-      type: 'human_gate_opened',
+      type: 'interaction_requested',
       runId: options.runId,
-      gate,
+      request: openedRequest,
       timestamp: Date.now(),
     });
+    if (this.agentRunRegistry.getRun(options.runId)?.openGate) {
+      options.emit({
+        type: 'human_gate_opened',
+        runId: options.runId,
+        gate: this.agentRunRegistry.getRun(options.runId)?.openGate as never,
+        timestamp: Date.now(),
+      });
+    }
     this.emitRunStateChanged(options.runId, options.emit);
 
-    if (
-      options.pause.gateKind === 'approval' ||
-      options.pause.gateKind === 'parameter_confirmation'
-    ) {
+    if (options.pause.interaction.source !== 'terminal_wait') {
       return { kind: 'paused', pause: options.pause };
     }
 
-    const terminalPause = options.pause as Extract<ToolPauseOutcome, { gateKind: 'terminal_input' }>;
-    return this.waitForTerminalInputGate({
+    return this.waitForTerminalInputInteraction({
       runId: options.runId,
       sessionId: options.sessionId,
-      gate,
+      request: openedRequest,
       emit: options.emit,
-      pause: terminalPause,
-      waitForCompletion: () => terminalPause.continuation.waitForCompletion(),
-      command: terminalPause.payload.command,
+      pause: options.pause,
+      waitForCompletion: () => options.pause.continuation.waitForCompletion?.() as Promise<ToolExecutionEnvelope>,
+      command: options.pause.interaction.context.command,
     });
   }
 
-  private async waitForTerminalInputGate(options: {
+  private async waitForTerminalInputInteraction(options: {
     runId: string;
     sessionId: string;
-    gate: HumanGateRecord;
+    request: InteractionRequest;
     emit: (event: AgentStreamEvent) => void;
-    pause: Extract<ToolPauseOutcome, { gateKind: 'terminal_input' }>;
+    pause: ToolPauseOutcome;
     waitForCompletion: () => Promise<ToolExecutionEnvelope>;
     command: string;
   }): Promise<PauseResolution> {
@@ -745,16 +764,24 @@ export class OpsAgentRuntime {
 
       if (result.kind === 'completed') {
         if (!result.envelope.ok) {
-          const rejectedGate = this.agentRunRegistry.rejectGate({
+          const rejectedRequest = this.agentRunRegistry.rejectInteraction({
             runId: options.runId,
-            gateId: options.gate.id,
+            interactionId: options.request.id,
           });
           options.emit({
-            type: 'human_gate_rejected',
+            type: 'interaction_rejected',
             runId: options.runId,
-            gate: rejectedGate,
+            request: rejectedRequest,
             timestamp: Date.now(),
           });
+          if (this.agentRunRegistry.getRun(options.runId)?.openGate) {
+            options.emit({
+              type: 'human_gate_rejected',
+              runId: options.runId,
+              gate: this.agentRunRegistry.getRun(options.runId)?.openGate as never,
+              timestamp: Date.now(),
+            });
+          }
           this.agentRunRegistry.markRunFailed(options.runId);
           options.emit({
             type: 'run_failed',
@@ -766,19 +793,27 @@ export class OpsAgentRuntime {
         }
 
         options.emit({
-          type: 'human_gate_resolved',
+          type: 'interaction_resolved',
           runId: options.runId,
-          gate: this.agentRunRegistry.resolveGate({
+          request: this.agentRunRegistry.resolveInteraction({
             runId: options.runId,
-            gateId: options.gate.id,
-        }),
-        timestamp: Date.now(),
-      });
-      this.agentRunRegistry.markRunRunning({
-        runId: options.runId,
-        clearGate: true,
-      });
-      this.emitRunStateChanged(options.runId, options.emit);
+            interactionId: options.request.id,
+          }),
+          timestamp: Date.now(),
+        });
+        if (this.agentRunRegistry.getRun(options.runId)?.openGate) {
+          options.emit({
+            type: 'human_gate_resolved',
+            runId: options.runId,
+            gate: this.agentRunRegistry.getRun(options.runId)?.openGate as never,
+            timestamp: Date.now(),
+          });
+        }
+        this.agentRunRegistry.markRunRunning({
+          runId: options.runId,
+          clearInteraction: true,
+        });
+        this.emitRunStateChanged(options.runId, options.emit);
         return result;
       }
 
@@ -791,10 +826,19 @@ export class OpsAgentRuntime {
         continue;
       }
 
-      this.agentRunRegistry.expireGate({
+      this.agentRunRegistry.expireInteraction({
         runId: options.runId,
-        gateId: options.gate.id,
+        interactionId: options.request.id,
       });
+      const expiredRequest = this.agentRunRegistry.getRun(options.runId)?.activeInteraction;
+      if (expiredRequest) {
+        options.emit({
+          type: 'interaction_expired',
+          runId: options.runId,
+          request: expiredRequest,
+          timestamp: Date.now(),
+        });
+      }
       const expiredGate = this.agentRunRegistry.getRun(options.runId)?.openGate;
       if (expiredGate) {
         options.emit({
@@ -817,155 +861,108 @@ export class OpsAgentRuntime {
     pause: ToolPauseOutcome;
   }): Promise<PauseResolution> {
     const snapshot = this.agentRunRegistry.getRun(options.runId);
-    if (!snapshot?.openGate) {
-      throw new Error('指定 run 当前没有待处理的 human gate。');
+    if (!snapshot?.activeInteraction) {
+      throw new Error('指定 run 当前没有待处理的 interaction。');
+    }
+    if (options.pause.interaction.source === 'terminal_wait') {
+      if (options.action.selectedAction !== 'continue_waiting') {
+        throw new Error('terminal_wait interaction 只能继续等待。');
+      }
+      if (snapshot.activeInteraction.status !== 'open') {
+        throw new Error('terminal_wait interaction 当前不处于等待状态。');
+      }
+
+      return this.waitForTerminalInputInteraction({
+        runId: options.runId,
+        sessionId: snapshot.sessionId,
+        request: snapshot.activeInteraction,
+        emit: options.emit,
+        pause: options.pause,
+        waitForCompletion: () =>
+          options.pause.continuation.waitForCompletion?.(options.signal) as Promise<ToolExecutionEnvelope>,
+        command: options.pause.interaction.context.command,
+      });
     }
 
-    if (options.pause.gateKind === 'approval') {
-      if (snapshot.openGate.kind !== 'approval') {
-        throw new Error('当前 gate 与待恢复的 approval 操作不匹配。');
+    if (
+      options.pause.interaction.source !== 'policy_approval' &&
+      options.pause.interaction.source !== 'parameter_collection'
+    ) {
+      throw new Error('当前 interaction 不支持恢复执行。');
+    }
+
+    if (options.action.selectedAction === 'reject') {
+      if (snapshot.activeInteraction.status !== 'rejected') {
+        throw new Error('interaction 尚未被拒绝。');
       }
 
-      if (options.action.kind === 'resolve_approval') {
-        if (snapshot.openGate.status !== 'resolved') {
-          throw new Error('approval gate 尚未被批准。');
-        }
-
-        options.emit({
-          type: 'human_gate_resolved',
-          runId: options.runId,
-          gate: snapshot.openGate,
-          timestamp: Date.now(),
-        });
-        this.agentRunRegistry.markRunRunning({
-          runId: options.runId,
-        });
-        this.emitRunStateChanged(options.runId, options.emit);
-        const resumed = await options.pause.continuation.resume(options.signal);
-        if (isPauseOutcome(resumed)) {
-          return this.handlePauseOutcome({
-            runId: options.runId,
-            sessionId: snapshot.sessionId,
-            emit: options.emit,
-            signal: options.signal,
-            pause: resumed,
-          });
-        }
-
-        return {
-          kind: 'completed',
-          envelope: resumed,
-        };
-      }
-
-      if (options.action.kind === 'reject_approval') {
-        if (snapshot.openGate.status !== 'rejected') {
-          throw new Error('approval gate 尚未被拒绝。');
-        }
-
+      options.emit({
+        type: 'interaction_rejected',
+        runId: options.runId,
+        request: snapshot.activeInteraction,
+        timestamp: Date.now(),
+      });
+      if (snapshot.openGate) {
         options.emit({
           type: 'human_gate_rejected',
           runId: options.runId,
           gate: snapshot.openGate,
           timestamp: Date.now(),
         });
-        this.agentRunRegistry.markRunRunning({
-          runId: options.runId,
-        });
-        this.emitRunStateChanged(options.runId, options.emit);
-        return {
-          kind: 'completed',
-          envelope: options.pause.continuation.reject(),
-        };
       }
-
-      throw new Error('approval gate 只能执行批准或拒绝操作。');
+      this.agentRunRegistry.markRunRunning({
+        runId: options.runId,
+      });
+      this.emitRunStateChanged(options.runId, options.emit);
+      return {
+        kind: 'completed',
+        envelope: options.pause.continuation.reject?.() as ToolExecutionEnvelope,
+      };
     }
 
-    if (options.pause.gateKind === 'parameter_confirmation') {
-      if (snapshot.openGate.kind !== 'parameter_confirmation') {
-        throw new Error('当前 gate 与待恢复的 parameter_confirmation 操作不匹配。');
-      }
-
-      if (options.action.kind === 'resolve_parameter_confirmation') {
-        if (snapshot.openGate.status !== 'resolved') {
-          throw new Error('parameter_confirmation gate 尚未被确认。');
-        }
-
-        options.emit({
-          type: 'human_gate_resolved',
-          runId: options.runId,
-          gate: snapshot.openGate,
-          timestamp: Date.now(),
-        });
-        this.agentRunRegistry.markRunRunning({
-          runId: options.runId,
-        });
-        this.emitRunStateChanged(options.runId, options.emit);
-
-        const resumed = await options.pause.continuation.resume(
-          options.action.fields,
-          options.signal
-        );
-        if (isPauseOutcome(resumed)) {
-          return this.handlePauseOutcome({
-            runId: options.runId,
-            sessionId: snapshot.sessionId,
-            emit: options.emit,
-            signal: options.signal,
-            pause: resumed,
-          });
-        }
-
-        return {
-          kind: 'completed',
-          envelope: resumed,
-        };
-      }
-
-      if (options.action.kind === 'reject_parameter_confirmation') {
-        if (snapshot.openGate.status !== 'rejected') {
-          throw new Error('parameter_confirmation gate 尚未被拒绝。');
-        }
-
-        options.emit({
-          type: 'human_gate_rejected',
-          runId: options.runId,
-          gate: snapshot.openGate,
-          timestamp: Date.now(),
-        });
-        this.agentRunRegistry.markRunRunning({
-          runId: options.runId,
-        });
-        this.emitRunStateChanged(options.runId, options.emit);
-        return {
-          kind: 'completed',
-          envelope: options.pause.continuation.reject(),
-        };
-      }
-
-      throw new Error('parameter_confirmation gate 只能执行确认或拒绝操作。');
+    if (snapshot.activeInteraction.status !== 'resolved') {
+      throw new Error('interaction 尚未被确认。');
     }
 
-    if (options.action.kind !== 'resume_waiting') {
-      throw new Error('terminal_input gate 只能继续等待。');
-    }
-    if (snapshot.openGate.kind !== 'terminal_input') {
-      throw new Error('当前 gate 与待恢复的 terminal_input 操作不匹配。');
-    }
-    if (snapshot.openGate.status !== 'open') {
-      throw new Error('terminal_input gate 当前不处于等待状态。');
-    }
-
-    const terminalPause = options.pause as Extract<ToolPauseOutcome, { gateKind: 'terminal_input' }>;
-    return this.waitForTerminalInputGate({
+    options.emit({
+      type: 'interaction_resolved',
       runId: options.runId,
-      sessionId: snapshot.sessionId,
-      gate: snapshot.openGate,
-      emit: options.emit,
-      pause: terminalPause,
-      waitForCompletion: () => terminalPause.continuation.waitForCompletion(options.signal),
-      command: terminalPause.payload.command,
+      request: snapshot.activeInteraction,
+      timestamp: Date.now(),
     });
+    if (snapshot.openGate) {
+      options.emit({
+        type: 'human_gate_resolved',
+        runId: options.runId,
+        gate: snapshot.openGate,
+        timestamp: Date.now(),
+      });
+    }
+    this.agentRunRegistry.markRunRunning({
+      runId: options.runId,
+    });
+    this.emitRunStateChanged(options.runId, options.emit);
+
+    const resumed =
+      options.action.selectedAction === 'submit'
+        ? await options.pause.continuation.resume?.(
+            (options.action.payload.fields ?? {}) as Record<string, string>,
+            options.signal
+          )
+        : await options.pause.continuation.resume?.(options.signal);
+    if (isPauseOutcome(resumed as ToolExecutionEnvelope | ToolPauseOutcome)) {
+      return this.handlePauseOutcome({
+        runId: options.runId,
+        sessionId: snapshot.sessionId,
+        emit: options.emit,
+        signal: options.signal,
+        pause: resumed as ToolPauseOutcome,
+      });
+    }
+
+    return {
+      kind: 'completed',
+      envelope: resumed as ToolExecutionEnvelope,
+    };
   }
 }

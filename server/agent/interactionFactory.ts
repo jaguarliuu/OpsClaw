@@ -1,0 +1,179 @@
+import { randomUUID } from 'node:crypto';
+
+import type { InteractionRequest } from './interactionTypes.js';
+import type { InteractionSource } from './toolTypes.js';
+
+const LEGACY_GATE_KIND_KEY = '__legacyGateKind';
+const LEGACY_GATE_PAYLOAD_KEY = '__legacyGatePayload';
+const LEGACY_GATE_REASON_KEY = '__legacyGateReason';
+
+export function createInteractionRequest(input: {
+  runId: string;
+  sessionId: string;
+  source: InteractionSource;
+}): InteractionRequest {
+  const openedAt = Date.now();
+
+  if (input.source.source === 'parameter_collection') {
+    return {
+      id: randomUUID(),
+      runId: input.runId,
+      sessionId: input.sessionId,
+      status: 'open',
+      interactionKind: 'collect_input',
+      riskLevel: 'medium',
+      blockingMode: 'soft_block',
+      title: '补全关键参数',
+      message: '继续执行前需要你确认或填写参数。',
+      schemaVersion: 'v1',
+      fields: input.source.context.fields.map((field) => ({
+        type: field.name === 'password' ? 'password' as const : 'text' as const,
+        key: field.name,
+        label: field.label,
+        required: field.required,
+        value: field.value,
+      })),
+      actions: [
+        { id: 'submit', label: '提交并继续', kind: 'submit', style: 'primary' },
+        { id: 'reject', label: '取消', kind: 'reject', style: 'secondary' },
+      ],
+      openedAt,
+      deadlineAt: null,
+      metadata: {
+        source: input.source.source,
+        intentKind: input.source.context.intentKind,
+        commandPreview: input.source.context.command,
+        [LEGACY_GATE_KIND_KEY]: 'parameter_confirmation',
+        [LEGACY_GATE_PAYLOAD_KEY]: input.source.context,
+        [LEGACY_GATE_REASON_KEY]: '该变更缺少已确认的关键参数，需先由用户确认。',
+      },
+    };
+  }
+
+  if (input.source.source === 'policy_approval') {
+    return {
+      id: randomUUID(),
+      runId: input.runId,
+      sessionId: input.sessionId,
+      status: 'open',
+      interactionKind: 'approval',
+      riskLevel: 'high',
+      blockingMode: 'hard_block',
+      title: '操作审批',
+      message: '该操作需要用户审批后执行。',
+      schemaVersion: 'v1',
+      fields: [],
+      actions: [
+        { id: 'approve', label: '继续执行', kind: 'approve', style: 'danger' },
+        { id: 'reject', label: '取消', kind: 'reject', style: 'secondary' },
+      ],
+      openedAt,
+      deadlineAt: null,
+      metadata: {
+        source: input.source.source,
+        commandPreview:
+          typeof input.source.context.arguments.command === 'string'
+            ? input.source.context.arguments.command
+            : undefined,
+        [LEGACY_GATE_KIND_KEY]: 'approval',
+        [LEGACY_GATE_PAYLOAD_KEY]: input.source.context,
+        [LEGACY_GATE_REASON_KEY]:
+          input.source.context.policy.matches.length > 0
+            ? '命令命中敏感操作策略，需要用户审批后执行。'
+            : '该操作需要用户审批后执行。',
+      },
+    };
+  }
+
+  if (input.source.source === 'danger_confirmation') {
+    return {
+      id: randomUUID(),
+      runId: input.runId,
+      sessionId: input.sessionId,
+      status: 'open',
+      interactionKind: 'danger_confirm',
+      riskLevel: 'critical',
+      blockingMode: 'hard_block',
+      title: input.source.context.title,
+      message: input.source.context.message,
+      schemaVersion: 'v1',
+      fields: input.source.context.commandPreview
+        ? [{ type: 'display', key: 'commandPreview', label: '命令', value: input.source.context.commandPreview }]
+        : [],
+      actions: [
+        {
+          id: 'approve',
+          label: input.source.context.confirmLabel,
+          kind: 'approve',
+          style: 'danger',
+        },
+        { id: 'reject', label: '取消', kind: 'reject', style: 'secondary' },
+      ],
+      openedAt,
+      deadlineAt: null,
+      metadata: {
+        source: input.source.source,
+      },
+    };
+  }
+
+  if (input.source.source === 'terminal_wait') {
+    return {
+      id: randomUUID(),
+      runId: input.runId,
+      sessionId: input.sessionId,
+      status: 'open',
+      interactionKind: 'terminal_wait',
+      riskLevel: 'medium',
+      blockingMode: 'hard_block',
+      title: '等待终端交互',
+      message: '命令正在等待你在终端中继续输入。',
+      schemaVersion: 'v1',
+      fields: [
+        { type: 'display', key: 'command', label: '命令', value: input.source.context.command },
+        ...(input.source.context.sessionLabel
+          ? [{ type: 'display' as const, key: 'sessionLabel', label: '会话', value: input.source.context.sessionLabel }]
+          : []),
+      ],
+      actions: [
+        {
+          id: 'continue_waiting',
+          label: '继续等待',
+          kind: 'continue_waiting',
+          style: 'primary',
+        },
+      ],
+      openedAt,
+      deadlineAt: openedAt + input.source.context.timeoutMs,
+      metadata: {
+        source: input.source.source,
+        timeoutMs: input.source.context.timeoutMs,
+        commandPreview: input.source.context.command,
+        sessionLabel: input.source.context.sessionLabel,
+        [LEGACY_GATE_KIND_KEY]: 'terminal_input',
+        [LEGACY_GATE_PAYLOAD_KEY]: input.source.context,
+        [LEGACY_GATE_REASON_KEY]: '命令正在等待你在终端中继续输入。',
+      },
+    };
+  }
+
+  return {
+    id: randomUUID(),
+    runId: input.runId,
+    sessionId: input.sessionId,
+    status: 'open',
+    interactionKind: 'inform',
+    riskLevel: 'low',
+    blockingMode: 'soft_block',
+    title: input.source.context.title,
+    message: input.source.context.message,
+    schemaVersion: 'v1',
+    fields: [],
+    actions: [{ id: 'acknowledge', label: '知道了', kind: 'acknowledge', style: 'primary' }],
+    openedAt,
+    deadlineAt: null,
+    metadata: {
+      source: input.source.source,
+    },
+  };
+}
