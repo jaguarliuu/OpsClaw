@@ -47,11 +47,17 @@ export async function streamAgentRun({
   await consumeAgentEventStream(response, onEvent);
 }
 
-export async function resumeAgentGate(runId: string, gateId: string) {
+export async function submitAgentInteraction(
+  runId: string,
+  requestId: string,
+  input: { selectedAction: string; payload: Record<string, unknown> }
+) {
   const response = await fetch(
-    `${buildServerHttpBaseUrl()}/api/agent/runs/${runId}/gates/${gateId}/resume-waiting`,
+    `${buildServerHttpBaseUrl()}/api/agent/runs/${runId}/interactions/${requestId}/submit`,
     {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
     }
   );
 
@@ -65,34 +71,6 @@ export async function getReattachableAgentRun(sessionId: string) {
 
   const payload = await readJson<{ item: AgentRunSnapshot | null }>(response);
   return payload.item;
-}
-
-export async function resolveAgentGate(
-  runId: string,
-  gateId: string,
-  input?: { fields?: Record<string, string> }
-) {
-  const response = await fetch(
-    `${buildServerHttpBaseUrl()}/api/agent/runs/${runId}/gates/${gateId}/resolve`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input ?? {}),
-    }
-  );
-
-  return readJson<AgentRunSnapshot>(response);
-}
-
-export async function rejectAgentGate(runId: string, gateId: string) {
-  const response = await fetch(
-    `${buildServerHttpBaseUrl()}/api/agent/runs/${runId}/gates/${gateId}/reject`,
-    {
-      method: 'POST',
-    }
-  );
-
-  return readJson<AgentRunSnapshot>(response);
 }
 
 export async function streamAgentRunContinuation({

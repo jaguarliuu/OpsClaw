@@ -9,6 +9,32 @@ import {
   mapAgentEventToTimelineItem,
 } from './useAgentRunModel.js';
 
+function makeInteractionRequest(
+  overrides: Partial<import('./types.agent.js').InteractionRequest> = {}
+): import('./types.agent.js').InteractionRequest {
+  return {
+    id: 'interaction-1',
+    runId: 'run-1',
+    sessionId: 'session-1',
+    status: 'open',
+    interactionKind: 'approval',
+    riskLevel: 'high',
+    blockingMode: 'hard_block',
+    title: '操作审批',
+    message: '该操作需要用户审批后执行。',
+    schemaVersion: 'v1',
+    fields: [],
+    actions: [
+      { id: 'approve', label: '继续执行', kind: 'approve', style: 'danger' },
+      { id: 'reject', label: '取消', kind: 'reject', style: 'secondary' },
+    ],
+    openedAt: 1,
+    deadlineAt: null,
+    metadata: {},
+    ...overrides,
+  };
+}
+
 void test('applyAgentEventToTimeline merges assistant_message_delta events into a single assistant item for the same step', () => {
   const firstPass = applyAgentEventToTimeline(
     [],
@@ -275,6 +301,31 @@ void test('applyAgentEventToTimeline appends human_gate status transitions as ti
   assert.equal(items[0]?.gate.status, 'expired');
 });
 
+void test('interaction_requested updates activeInteraction and pendingInteractions', () => {
+  const state = reduceAgentEventState(
+    {
+      runId: null,
+      runState: 'running',
+      executionState: 'running',
+      blockingMode: 'none',
+      activeInteraction: null,
+      pendingInteractions: [],
+      activeGate: null,
+      pendingUiGates: [],
+      error: null,
+    },
+    {
+      type: 'interaction_requested',
+      runId: 'run-1',
+      request: makeInteractionRequest({ interactionKind: 'approval' }),
+      timestamp: 1,
+    }
+  );
+
+  assert.equal(state.activeInteraction?.interactionKind, 'approval');
+  assert.equal(state.pendingInteractions.length, 1);
+});
+
 void test('reduceAgentEventState centralizes run state and gate projection for lifecycle events', () => {
   const waitingState = reduceAgentEventState(
     {
@@ -282,6 +333,8 @@ void test('reduceAgentEventState centralizes run state and gate projection for l
       runState: 'running',
       executionState: 'running',
       blockingMode: 'none',
+      activeInteraction: null,
+      pendingInteractions: [],
       activeGate: null,
       pendingUiGates: [],
       error: null,
@@ -326,6 +379,8 @@ void test('reduceAgentEventState centralizes run state and gate projection for l
     runState: 'failed',
     executionState: 'failed',
     blockingMode: 'none',
+    activeInteraction: null,
+    pendingInteractions: [],
     activeGate: null,
     pendingUiGates: [],
     error: 'Agent 执行失败',
@@ -339,6 +394,8 @@ void test('reduceAgentEventState tracks execution semantics from run_state_chang
       runState: 'running',
       executionState: 'running',
       blockingMode: 'none',
+      activeInteraction: null,
+      pendingInteractions: [],
       activeGate: null,
       pendingUiGates: [],
       error: 'old error',
@@ -358,6 +415,8 @@ void test('reduceAgentEventState tracks execution semantics from run_state_chang
     runState: 'waiting_for_human',
     executionState: 'blocked_by_interaction',
     blockingMode: 'interaction',
+    activeInteraction: null,
+    pendingInteractions: [],
     activeGate: null,
     pendingUiGates: [],
     error: 'old error',
@@ -371,6 +430,8 @@ void test('reduceAgentEventState maintains a pending UI gate queue from human ga
       runState: 'waiting_for_human',
       executionState: 'blocked_by_interaction',
       blockingMode: 'interaction',
+      activeInteraction: null,
+      pendingInteractions: [],
       activeGate: null,
       pendingUiGates: [],
       error: null,
@@ -447,6 +508,8 @@ void test('projectAgentSnapshotToEventState derives pending UI gates from an ope
       runState: null,
       executionState: null,
       blockingMode: null,
+      activeInteraction: null,
+      pendingInteractions: [],
       activeGate: null,
       pendingUiGates: [],
       error: 'old error',
@@ -519,6 +582,8 @@ void test('projectAgentSnapshotToEventState ignores non-open UI gates when rebui
       runState: 'waiting_for_human',
       executionState: 'blocked_by_interaction',
       blockingMode: 'interaction',
+      activeInteraction: null,
+      pendingInteractions: [],
       activeGate: null,
       pendingUiGates: [],
       error: null,

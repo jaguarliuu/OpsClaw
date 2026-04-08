@@ -6,6 +6,13 @@ import {
 } from './support.js';
 import { createAgentEventStream, serializeSseEvent } from './agentEventStream.js';
 
+const VALID_INTERACTION_ACTIONS = ['approve', 'reject', 'submit', 'continue_waiting'] as const;
+type InteractionSubmitAction = (typeof VALID_INTERACTION_ACTIONS)[number];
+
+function isInteractionSubmitAction(value: string): value is InteractionSubmitAction {
+  return VALID_INTERACTION_ACTIONS.includes(value as InteractionSubmitAction);
+}
+
 export function registerAgentRoutes(
   app: HttpRouteApp,
   { llmProviderStore, agentRuntime }: Pick<HttpApiDependencies, 'llmProviderStore' | 'agentRuntime'>
@@ -97,43 +104,27 @@ export function registerAgentRoutes(
     }
   });
 
-  app.post('/api/agent/runs/:runId/gates/:gateId/resume-waiting', (request, response) => {
-    try {
-      const snapshot = agentRuntime.resumeWaiting(request.params.runId, request.params.gateId);
-      response.json(snapshot);
-    } catch (error) {
-      console.error('[Agent] resume gate error:', error);
-      response.status(500).json({ message: '恢复等待中的 Agent gate 失败。' });
-    }
-  });
-
-  app.post('/api/agent/runs/:runId/gates/:gateId/resolve', (request, response) => {
+  app.post('/api/agent/runs/:runId/interactions/:requestId/submit', (request, response) => {
     try {
       const body = isRecord(request.body) ? request.body : {};
-      const fields = isRecord(body.fields)
-        ? Object.fromEntries(
-            Object.entries(body.fields).filter(
-              (entry): entry is [string, string] => typeof entry[1] === 'string'
-            )
-          )
-        : undefined;
-      const snapshot = agentRuntime.resolveGate(request.params.runId, request.params.gateId, {
-        fields,
-      });
+      const selectedAction = readRequiredString(body, 'selectedAction', '交互动作');
+      if (!isInteractionSubmitAction(selectedAction)) {
+        response.status(400).json({ message: '交互动作不合法。' });
+        return;
+      }
+      const payload = isRecord(body.payload) ? body.payload : {};
+      const snapshot = agentRuntime.submitInteraction(
+        request.params.runId,
+        request.params.requestId,
+        {
+          selectedAction,
+          payload,
+        }
+      );
       response.json(snapshot);
     } catch (error) {
-      console.error('[Agent] resolve gate error:', error);
-      response.status(500).json({ message: '批准 Agent gate 失败。' });
-    }
-  });
-
-  app.post('/api/agent/runs/:runId/gates/:gateId/reject', (request, response) => {
-    try {
-      const snapshot = agentRuntime.rejectGate(request.params.runId, request.params.gateId);
-      response.json(snapshot);
-    } catch (error) {
-      console.error('[Agent] reject gate error:', error);
-      response.status(500).json({ message: '拒绝 Agent gate 失败。' });
+      console.error('[Agent] submit interaction error:', error);
+      response.status(500).json({ message: '提交交互请求失败。' });
     }
   });
 
