@@ -31,6 +31,7 @@ import {
   extractTemplateVariableNames,
   filterScriptLibraryItems,
   renderScriptTemplate,
+  validateScriptAlias,
   validateScriptVariableValues,
 } from '@/features/workbench/scriptLibraryModel';
 import type {
@@ -119,12 +120,12 @@ function parseTags(value: string) {
     .filter(Boolean);
 }
 
-function buildUpsertInput(editorState: EditorState, activeNodeId: string | null): ScriptLibraryUpsertInput {
+function buildUpsertInput(editorState: EditorState): ScriptLibraryUpsertInput {
   return {
     key: editorState.draft.key.trim(),
     alias: editorState.draft.alias.trim(),
     scope: editorState.draft.scope,
-    nodeId: editorState.draft.scope === 'node' ? activeNodeId : null,
+    nodeId: editorState.draft.scope === 'node' ? editorState.draft.nodeId : null,
     title: editorState.draft.title.trim(),
     description: editorState.draft.description.trim(),
     kind: editorState.draft.kind,
@@ -185,7 +186,6 @@ function ScriptLibraryEditorDialog({
                   draft: {
                     ...current.draft,
                     scope: value,
-                    nodeId: value === 'node' ? activeNodeId : null,
                   },
                 }));
               }}
@@ -649,7 +649,13 @@ export function ScriptLibraryPanel({
     setIsSaving(true);
 
     try {
-      const payload = buildUpsertInput(editorState, activeNodeId);
+      const payload = buildUpsertInput(editorState);
+      const aliasValidation = validateScriptAlias(payload.alias);
+      if (!aliasValidation.ok) {
+        setEditorError(aliasValidation.message);
+        return;
+      }
+
       let nextSelectedId: string | null = editorState.itemId;
       if (editorState.mode === 'create') {
         const created = await createScript(payload);
