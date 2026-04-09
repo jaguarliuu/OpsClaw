@@ -35,6 +35,7 @@ type SessionTreeProps = {
   onToggleCollapse: () => void;
   onSelectProfile: (profile: SavedConnectionProfile) => void;
   onSelectSession: (sessionId: string) => void;
+  onOpenScripts: () => void;
   onOpenSettings: () => void;
 };
 
@@ -59,6 +60,7 @@ export function SessionTree({
   onToggleCollapse,
   onSelectProfile,
   onSelectSession,
+  onOpenScripts,
   onOpenSettings,
 }: SessionTreeProps) {
   const desktopWindowChrome = buildDesktopWindowChromeLayout({
@@ -150,6 +152,7 @@ export function SessionTree({
 
       <SessionTreeFooter
         onOpenNewConnection={onOpenNewConnection}
+        onOpenScripts={onOpenScripts}
         onOpenSettings={onOpenSettings}
         onToggleCollapse={onToggleCollapse}
       />

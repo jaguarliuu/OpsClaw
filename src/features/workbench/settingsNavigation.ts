@@ -1,4 +1,4 @@
-export const SETTINGS_PAGE_TABS = ['terminal', 'llm', 'memory'] as const;
+export const SETTINGS_PAGE_TABS = ['terminal', 'llm', 'memory', 'scripts'] as const;
 
 export type SettingsPageTab = (typeof SETTINGS_PAGE_TABS)[number];
 

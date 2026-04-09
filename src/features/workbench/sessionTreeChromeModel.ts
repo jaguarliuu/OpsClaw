@@ -4,8 +4,9 @@ export const SESSION_TREE_TITLE = 'OpsClaw';
 export function buildSessionTreeFooterActions() {
   return [
     { id: 'new-connection', label: '新建连接' },
-    { id: 'collapse-sidebar', label: '收起侧栏' },
+    { id: 'open-scripts', label: '脚本' },
     { id: 'open-settings', label: '设置' },
+    { id: 'collapse-sidebar', label: '收起侧栏' },
   ] as const;
 }
 

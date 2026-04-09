@@ -37,7 +37,8 @@ void test('buildSessionTreeSearchState derives the clear button visibility from 
 void test('buildSessionTreeFooterActions keeps sidebar actions in bottom-safe order', () => {
   assert.deepEqual(buildSessionTreeFooterActions(), [
     { id: 'new-connection', label: '新建连接' },
-    { id: 'collapse-sidebar', label: '收起侧栏' },
+    { id: 'open-scripts', label: '脚本' },
     { id: 'open-settings', label: '设置' },
+    { id: 'collapse-sidebar', label: '收起侧栏' },
   ]);
 });

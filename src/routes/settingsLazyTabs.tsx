@@ -14,3 +14,8 @@ export const LazyMemorySettings = lazy(async () => {
   const module = await import('@/features/workbench/MemorySettings');
   return { default: module.MemorySettings };
 });
+
+export const LazyScriptSettingsTab = lazy(async () => {
+  const module = await import('@/features/workbench/ScriptSettingsTab');
+  return { default: module.ScriptSettingsTab };
+});

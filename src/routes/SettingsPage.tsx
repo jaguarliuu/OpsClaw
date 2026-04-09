@@ -13,6 +13,7 @@ import { useDeferredMount } from '@/features/workbench/useDeferredMount';
 import {
   LazyLlmSettings,
   LazyMemorySettings,
+  LazyScriptSettingsTab,
   LazyTerminalSettingsTab,
 } from '@/routes/settingsLazyTabs';
 
@@ -30,6 +31,7 @@ export default function SettingsPage() {
   const shouldRenderTerminalTab = useDeferredMount(activeTab === 'terminal');
   const shouldRenderLlmTab = useDeferredMount(activeTab === 'llm');
   const shouldRenderMemoryTab = useDeferredMount(activeTab === 'memory');
+  const shouldRenderScriptsTab = useDeferredMount(activeTab === 'scripts');
 
   const handleTabChange = (nextTab: string) => {
     void navigate(buildSettingsPath(nextTab as SettingsPageTab), { replace: true });
@@ -56,7 +58,7 @@ export default function SettingsPage() {
             </Button>
             <div>
               <h1 className="text-xl font-semibold tracking-tight">设置</h1>
-              <p className="text-sm text-neutral-500 mt-0.5">配置终端和 AI 助手</p>
+              <p className="text-sm text-neutral-500 mt-0.5">统一管理终端、LLM、记忆和脚本能力</p>
             </div>
           </div>
         </div>
@@ -73,6 +75,9 @@ export default function SettingsPage() {
             </TabsTrigger>
             <TabsTrigger value="memory" className="data-[state=active]:bg-[#1e2025] data-[state=active]:shadow-sm transition-all" style={desktopWindowChrome.interactiveStyle}>
               记忆文档
+            </TabsTrigger>
+            <TabsTrigger value="scripts" className="data-[state=active]:bg-[#1e2025] data-[state=active]:shadow-sm transition-all" style={desktopWindowChrome.interactiveStyle}>
+              脚本
             </TabsTrigger>
           </TabsList>
 
@@ -108,6 +113,18 @@ export default function SettingsPage() {
             {shouldRenderMemoryTab ? (
               <Suspense fallback={null}>
                 <LazyMemorySettings />
+              </Suspense>
+            ) : null}
+          </TabsContent>
+
+          <TabsContent
+            value="scripts"
+            forceMount={shouldRenderScriptsTab ? true : undefined}
+            className="space-y-6 animate-in fade-in-50 duration-300"
+          >
+            {shouldRenderScriptsTab ? (
+              <Suspense fallback={null}>
+                <LazyScriptSettingsTab />
               </Suspense>
             ) : null}
           </TabsContent>

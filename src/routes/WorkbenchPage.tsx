@@ -68,7 +68,6 @@ export function WorkbenchPage() {
     isUtilityDrawerOpen,
     openCsvImport,
     openHelpDialog,
-    openSettingsPanel,
     toggleAiAssistant,
     toggleHistoryPanel,
     toggleQuickConnect,
@@ -262,7 +261,12 @@ export function WorkbenchPage() {
         onSelectProfile={handleSelectProfile}
         onSelectSession={setActiveSessionId}
         onToggleCollapse={() => setIsSidebarCollapsed((current) => !current)}
-        onOpenSettings={openSettingsPanel}
+        onOpenScripts={() => {
+          void navigate(buildSettingsPath('scripts'));
+        }}
+        onOpenSettings={() => {
+          void navigate(buildSettingsPath());
+        }}
         selectedProfileId={selectedProfileId}
         sessions={sessions}
       />
