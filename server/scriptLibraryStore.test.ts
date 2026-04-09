@@ -254,6 +254,64 @@ void test('listManagedScripts returns global and node scripts without resolved m
   );
 });
 
+void test('global script listings ignore inconsistent global rows with non-null node ids', async () => {
+  const { createScriptLibraryStore } = await import('./scriptLibraryStore.js');
+  const { getSqliteDatabase } = await import('./database.js');
+  const store = await createScriptLibraryStore();
+  const sqlite = await getSqliteDatabase();
+  const now = new Date().toISOString();
+
+  store.createScript({
+    key: 'healthy-global',
+    alias: 'healthy-global',
+    scope: 'global',
+    nodeId: null,
+    title: 'Healthy global',
+    description: '',
+    kind: 'plain',
+    content: 'echo healthy',
+    variables: [],
+    tags: [],
+  });
+
+  sqlite.database.run(
+    `
+      INSERT INTO script_library (
+        id, key, alias, scope, node_id, title, description, kind, content,
+        variables_json, tags_json, created_at, updated_at
+      ) VALUES (
+        'corrupt-global-row',
+        'corrupt-global',
+        'corrupt-global',
+        'global',
+        'node-legacy',
+        'Corrupt global',
+        '',
+        'plain',
+        'echo corrupt',
+        '[]',
+        '[]',
+        :createdAt,
+        :updatedAt
+      )
+    `,
+    {
+      ':createdAt': now,
+      ':updatedAt': now,
+    }
+  );
+
+  const resolvedAliases = store.listResolvedScripts().map((item) => item.alias);
+  const managedGlobalAliases = store
+    .listManagedScripts({ scope: 'global' })
+    .map((item) => item.alias);
+
+  assert.equal(resolvedAliases.includes('healthy-global'), true);
+  assert.equal(managedGlobalAliases.includes('healthy-global'), true);
+  assert.equal(resolvedAliases.includes('corrupt-global'), false);
+  assert.equal(managedGlobalAliases.includes('corrupt-global'), false);
+});
+
 void test('createScript rejects invalid alias format', async () => {
   const { createScriptLibraryStore } = await import('./scriptLibraryStore.js');
   const store = await createScriptLibraryStore();

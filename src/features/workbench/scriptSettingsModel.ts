@@ -91,16 +91,6 @@ export function validateTemplateScriptDefinition(
     };
   }
 
-  const unusedDefinitionName = normalizedVariableNames.find(
-    (name) => !placeholderNames.includes(name)
-  );
-  if (unusedDefinitionName) {
-    return {
-      ok: false as const,
-      message: `存在未使用的模板变量定义：${unusedDefinitionName}。`,
-    };
-  }
-
   return {
     ok: true as const,
     message: null,

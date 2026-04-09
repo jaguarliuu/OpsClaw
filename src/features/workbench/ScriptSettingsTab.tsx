@@ -166,6 +166,7 @@ function getManagedScriptScopeLabel(item: ManagedScriptLibraryItem) {
 function ScriptSettingsEditorDialog({
   errorMessage,
   isSaving,
+  nodeSelectionLocked,
   nodes,
   onClose,
   onSave,
@@ -174,6 +175,7 @@ function ScriptSettingsEditorDialog({
 }: {
   errorMessage: string | null;
   isSaving: boolean;
+  nodeSelectionLocked: boolean;
   nodes: NodeSummaryRecord[];
   onClose: () => void;
   onSave: () => void;
@@ -228,29 +230,35 @@ function ScriptSettingsEditorDialog({
           {state.draft.scope === 'node' ? (
             <div className="grid gap-2">
               <Label htmlFor="script-node">节点</Label>
-              <Select
-                onValueChange={(value) => {
-                  onStateChange((current) => ({
-                    ...current,
-                    draft: {
-                      ...current.draft,
-                      nodeId: value,
-                    },
-                  }));
-                }}
-                value={state.draft.nodeId ?? ''}
-              >
-                <SelectTrigger id="script-node">
-                  <SelectValue placeholder="选择节点" />
-                </SelectTrigger>
-                <SelectContent>
-                  {nodes.map((node) => (
-                    <SelectItem key={node.id} value={node.id}>
-                      {node.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {nodeSelectionLocked ? (
+                <div className="rounded-md border border-neutral-800 bg-neutral-950/40 px-3 py-2 text-sm text-neutral-300">
+                  {nodes[0]?.name ?? '当前节点'}
+                </div>
+              ) : (
+                <Select
+                  onValueChange={(value) => {
+                    onStateChange((current) => ({
+                      ...current,
+                      draft: {
+                        ...current.draft,
+                        nodeId: value,
+                      },
+                    }));
+                  }}
+                  value={state.draft.nodeId ?? ''}
+                >
+                  <SelectTrigger id="script-node">
+                    <SelectValue placeholder="选择节点" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {nodes.map((node) => (
+                      <SelectItem key={node.id} value={node.id}>
+                        {node.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           ) : null}
 
@@ -719,6 +727,13 @@ export function ScriptSettingsTab() {
     () => nodes.find((node) => node.id === selectedNodeId)?.name ?? '未选择节点',
     [nodes, selectedNodeId]
   );
+  const editorNodes = useMemo(() => {
+    if (scope !== 'node' || !selectedNodeId) {
+      return nodes;
+    }
+
+    return nodes.filter((node) => node.id === selectedNodeId);
+  }, [nodes, scope, selectedNodeId]);
   const emptyStateMessage = buildScriptSettingsEmptyState({
     scope,
     hasNodes: nodes.length > 0,
@@ -759,6 +774,9 @@ export function ScriptSettingsTab() {
 
     try {
       const payload = buildUpsertInput(editorState);
+      if (scope === 'node' && payload.scope === 'node') {
+        payload.nodeId = selectedNodeId || payload.nodeId;
+      }
       const aliasValidation = validateScriptAlias(payload.alias);
       if (!aliasValidation.ok) {
         setEditorError(aliasValidation.message);
@@ -1099,7 +1117,8 @@ export function ScriptSettingsTab() {
       <ScriptSettingsEditorDialog
         errorMessage={editorError}
         isSaving={isSaving}
-        nodes={nodes}
+        nodeSelectionLocked={scope === 'node'}
+        nodes={editorNodes}
         onClose={() => {
           setEditorError(null);
           setEditorState(createEditorState(scope, scope === 'node' ? selectedNodeId || null : null));

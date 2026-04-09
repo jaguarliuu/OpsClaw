@@ -367,7 +367,7 @@ export async function createScriptLibraryStore() {
   function listResolvedScripts(nodeId?: string): ResolvedScriptLibraryItem[] {
     const globalScripts = queryMany(
       database,
-      `SELECT * FROM script_library WHERE scope = 'global'`,
+      `SELECT * FROM script_library WHERE scope = 'global' AND node_id IS NULL`,
       mapScriptRow
     );
 
@@ -431,7 +431,7 @@ export async function createScriptLibraryStore() {
         `
           SELECT *
           FROM script_library
-          WHERE scope = 'global'
+          WHERE scope = 'global' AND node_id IS NULL
           ORDER BY alias COLLATE NOCASE ASC, created_at ASC
         `,
         mapScriptRow

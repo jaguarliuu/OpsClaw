@@ -131,7 +131,7 @@ void test('validateTemplateScriptDefinition rejects blank and duplicate variable
   assert.match(duplicateResult.message ?? '', /不能重复/);
 });
 
-void test('validateTemplateScriptDefinition rejects missing and unused placeholder definitions', () => {
+void test('validateTemplateScriptDefinition rejects missing placeholder definitions', () => {
   const missingResult = validateTemplateScriptDefinition('echo ${service} && echo ${region}', [
     {
       name: 'service',
@@ -145,8 +145,10 @@ void test('validateTemplateScriptDefinition rejects missing and unused placehold
 
   assert.equal(missingResult.ok, false);
   assert.match(missingResult.message ?? '', /缺少变量定义/);
+});
 
-  const unusedResult = validateTemplateScriptDefinition('echo ${service}', [
+void test('validateTemplateScriptDefinition allows extra variable definitions to match server behavior', () => {
+  const result = validateTemplateScriptDefinition('echo ${service}', [
     {
       name: 'service',
       label: '服务名',
@@ -165,8 +167,8 @@ void test('validateTemplateScriptDefinition rejects missing and unused placehold
     },
   ]);
 
-  assert.equal(unusedResult.ok, false);
-  assert.match(unusedResult.message ?? '', /未使用/);
+  assert.equal(result.ok, true);
+  assert.equal(result.message, null);
 });
 
 void test('validateTemplateScriptDefinition accepts variables that exactly match placeholders', () => {
