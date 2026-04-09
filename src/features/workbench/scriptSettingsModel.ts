@@ -1,3 +1,6 @@
+import { extractTemplateVariableNames } from './scriptLibraryModel.js';
+import type { ScriptVariableDefinition } from './types.js';
+
 export type ScriptSettingsScope = 'global' | 'node';
 
 export function buildManagedScriptQuery(input: {
@@ -11,9 +14,11 @@ export function buildManagedScriptQuery(input: {
     };
   }
 
+  const normalizedNodeId = input.selectedNodeId.trim();
+
   return {
     scope: 'node' as const,
-    nodeId: input.selectedNodeId || null,
+    nodeId: normalizedNodeId === '' ? null : normalizedNodeId,
   };
 }
 
@@ -40,4 +45,53 @@ export function buildScriptSettingsEmptyState(input: {
   }
 
   return '当前范围下还没有脚本。';
+}
+
+export function validateTemplateScriptDefinition(
+  content: string,
+  variables: ScriptVariableDefinition[]
+) {
+  const placeholderNames = extractTemplateVariableNames(content);
+  const normalizedVariableNames = variables.map((variable) => variable.name.trim());
+
+  if (normalizedVariableNames.some((name) => name === '')) {
+    return {
+      ok: false as const,
+      message: '模板变量名不能为空。',
+    };
+  }
+
+  const seenNames = new Set<string>();
+  for (const name of normalizedVariableNames) {
+    if (seenNames.has(name)) {
+      return {
+        ok: false as const,
+        message: `模板变量名不能重复：${name}。`,
+      };
+    }
+    seenNames.add(name);
+  }
+
+  const missingDefinitionName = placeholderNames.find((name) => !seenNames.has(name));
+  if (missingDefinitionName) {
+    return {
+      ok: false as const,
+      message: `模板占位符缺少变量定义：${missingDefinitionName}。`,
+    };
+  }
+
+  const unusedDefinitionName = normalizedVariableNames.find(
+    (name) => !placeholderNames.includes(name)
+  );
+  if (unusedDefinitionName) {
+    return {
+      ok: false as const,
+      message: `存在未使用的模板变量定义：${unusedDefinitionName}。`,
+    };
+  }
+
+  return {
+    ok: true as const,
+    message: null,
+  };
 }

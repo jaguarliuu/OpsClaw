@@ -42,6 +42,7 @@ import {
   buildScriptSettingsEmptyState,
   buildScriptSettingsIntro,
   type ScriptSettingsScope,
+  validateTemplateScriptDefinition,
 } from '@/features/workbench/scriptSettingsModel';
 import type {
   ManagedScriptLibraryItem,
@@ -410,7 +411,7 @@ function ScriptSettingsEditorDialog({
                       ...current,
                       draft: {
                         ...current.draft,
-                        variables: [...current.draft.variables, EMPTY_VARIABLE],
+                        variables: [...current.draft.variables, { ...EMPTY_VARIABLE }],
                       },
                     }));
                   }}
@@ -763,6 +764,16 @@ export function ScriptSettingsTab() {
         setEditorError('节点脚本必须绑定节点，请先选择节点后再保存。');
         return;
       }
+      if (payload.kind === 'template') {
+        const templateValidation = validateTemplateScriptDefinition(
+          payload.content,
+          payload.variables
+        );
+        if (!templateValidation.ok) {
+          setEditorError(templateValidation.message);
+          return;
+        }
+      }
 
       let nextSelectedId: string | null = editorState.itemId;
       if (editorState.mode === 'create') {
@@ -787,7 +798,9 @@ export function ScriptSettingsTab() {
       return;
     }
 
-    const confirmed = window.confirm(`确认删除脚本「${selectedScript.title}」吗？`);
+    const confirmed = window.confirm(
+      `确认删除脚本「${selectedScript.title || selectedScript.alias}」吗？`
+    );
     if (!confirmed) {
       return;
     }

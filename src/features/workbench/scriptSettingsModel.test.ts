@@ -5,6 +5,7 @@ import {
   buildScriptSettingsEmptyState,
   buildManagedScriptQuery,
   buildScriptSettingsIntro,
+  validateTemplateScriptDefinition,
 } from './scriptSettingsModel.js';
 
 void test('buildManagedScriptQuery maps global and node scope to fetch params', () => {
@@ -27,6 +28,28 @@ void test('buildManagedScriptQuery maps global and node scope to fetch params', 
     {
       scope: 'node',
       nodeId: 'node-1',
+    }
+  );
+
+  assert.deepEqual(
+    buildManagedScriptQuery({
+      scope: 'node',
+      selectedNodeId: '',
+    }),
+    {
+      scope: 'node',
+      nodeId: null,
+    }
+  );
+
+  assert.deepEqual(
+    buildManagedScriptQuery({
+      scope: 'node',
+      selectedNodeId: '   ',
+    }),
+    {
+      scope: 'node',
+      nodeId: null,
     }
   );
 });
@@ -67,4 +90,104 @@ void test('buildScriptSettingsEmptyState distinguishes empty library from empty 
     }),
     '没有匹配当前搜索条件的脚本。'
   );
+});
+
+void test('validateTemplateScriptDefinition rejects blank and duplicate variable names', () => {
+  const blankResult = validateTemplateScriptDefinition('echo ${service}', [
+    {
+      name: ' ',
+      label: '服务名',
+      inputType: 'text',
+      required: true,
+      defaultValue: '',
+      placeholder: '',
+    },
+  ]);
+
+  assert.equal(blankResult.ok, false);
+  assert.match(blankResult.message ?? '', /变量名不能为空/);
+
+  const duplicateResult = validateTemplateScriptDefinition('echo ${service}', [
+    {
+      name: 'service',
+      label: '服务名',
+      inputType: 'text',
+      required: true,
+      defaultValue: '',
+      placeholder: '',
+    },
+    {
+      name: 'service',
+      label: '服务名',
+      inputType: 'text',
+      required: false,
+      defaultValue: '',
+      placeholder: '',
+    },
+  ]);
+
+  assert.equal(duplicateResult.ok, false);
+  assert.match(duplicateResult.message ?? '', /不能重复/);
+});
+
+void test('validateTemplateScriptDefinition rejects missing and unused placeholder definitions', () => {
+  const missingResult = validateTemplateScriptDefinition('echo ${service} && echo ${region}', [
+    {
+      name: 'service',
+      label: '服务名',
+      inputType: 'text',
+      required: true,
+      defaultValue: '',
+      placeholder: '',
+    },
+  ]);
+
+  assert.equal(missingResult.ok, false);
+  assert.match(missingResult.message ?? '', /缺少变量定义/);
+
+  const unusedResult = validateTemplateScriptDefinition('echo ${service}', [
+    {
+      name: 'service',
+      label: '服务名',
+      inputType: 'text',
+      required: true,
+      defaultValue: '',
+      placeholder: '',
+    },
+    {
+      name: 'region',
+      label: '区域',
+      inputType: 'text',
+      required: false,
+      defaultValue: '',
+      placeholder: '',
+    },
+  ]);
+
+  assert.equal(unusedResult.ok, false);
+  assert.match(unusedResult.message ?? '', /未使用/);
+});
+
+void test('validateTemplateScriptDefinition accepts variables that exactly match placeholders', () => {
+  const result = validateTemplateScriptDefinition('echo ${service} && echo ${region}', [
+    {
+      name: 'service',
+      label: '服务名',
+      inputType: 'text',
+      required: true,
+      defaultValue: '',
+      placeholder: '',
+    },
+    {
+      name: 'region',
+      label: '区域',
+      inputType: 'text',
+      required: false,
+      defaultValue: '',
+      placeholder: '',
+    },
+  ]);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.message, null);
 });
