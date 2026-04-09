@@ -41,6 +41,7 @@ import {
   buildManagedScriptQuery,
   buildScriptSettingsEmptyState,
   buildScriptSettingsIntro,
+  normalizeTemplateVariableDefinitions,
   type ScriptSettingsScope,
   validateTemplateScriptDefinition,
 } from '@/features/workbench/scriptSettingsModel';
@@ -126,8 +127,8 @@ function buildEditorStateFromItem(item: ManagedScriptLibraryItem): EditorState {
       description: item.description,
       kind: item.kind,
       content: item.content,
-      variables: item.variables,
-      tags: item.tags,
+      variables: item.variables.map((variable) => ({ ...variable })),
+      tags: [...item.tags],
     },
     tagsText: item.tags.join(', '),
   };
@@ -150,7 +151,10 @@ function buildUpsertInput(editorState: EditorState): ScriptLibraryUpsertInput {
     description: editorState.draft.description.trim(),
     kind: editorState.draft.kind,
     content: editorState.draft.content,
-    variables: editorState.draft.variables,
+    variables:
+      editorState.draft.kind === 'template'
+        ? normalizeTemplateVariableDefinitions(editorState.draft.variables)
+        : [],
     tags: parseTags(editorState.tagsText),
   };
 }
@@ -798,8 +802,12 @@ export function ScriptSettingsTab() {
       return;
     }
 
+    const scopeDetail =
+      selectedScript.scope === 'node'
+        ? `节点脚本 · ${nodes.find((node) => node.id === selectedScript.nodeId)?.name ?? selectedScript.nodeId}`
+        : '全局脚本';
     const confirmed = window.confirm(
-      `确认删除脚本「${selectedScript.title || selectedScript.alias}」吗？`
+      `确认删除脚本「${selectedScript.title || selectedScript.alias}」(${selectedScript.alias} · ${scopeDetail}) 吗？`
     );
     if (!confirmed) {
       return;

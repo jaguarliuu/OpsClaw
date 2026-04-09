@@ -47,12 +47,23 @@ export function buildScriptSettingsEmptyState(input: {
   return '当前范围下还没有脚本。';
 }
 
+export function normalizeTemplateVariableDefinitions(
+  variables: ScriptVariableDefinition[]
+) {
+  return variables.map((variable) => ({
+    ...variable,
+    name: variable.name.trim(),
+  }));
+}
+
 export function validateTemplateScriptDefinition(
   content: string,
   variables: ScriptVariableDefinition[]
 ) {
   const placeholderNames = extractTemplateVariableNames(content);
-  const normalizedVariableNames = variables.map((variable) => variable.name.trim());
+  const normalizedVariableNames = normalizeTemplateVariableDefinitions(variables).map(
+    (variable) => variable.name
+  );
 
   if (normalizedVariableNames.some((name) => name === '')) {
     return {

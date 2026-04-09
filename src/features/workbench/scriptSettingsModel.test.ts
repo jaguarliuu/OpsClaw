@@ -5,6 +5,7 @@ import {
   buildScriptSettingsEmptyState,
   buildManagedScriptQuery,
   buildScriptSettingsIntro,
+  normalizeTemplateVariableDefinitions,
   validateTemplateScriptDefinition,
 } from './scriptSettingsModel.js';
 
@@ -190,4 +191,28 @@ void test('validateTemplateScriptDefinition accepts variables that exactly match
 
   assert.equal(result.ok, true);
   assert.equal(result.message, null);
+});
+
+void test('normalizeTemplateVariableDefinitions trims variable names before persistence', () => {
+  const result = normalizeTemplateVariableDefinitions([
+    {
+      name: ' service ',
+      label: '服务名',
+      inputType: 'text',
+      required: true,
+      defaultValue: '',
+      placeholder: '',
+    },
+  ]);
+
+  assert.deepEqual(result, [
+    {
+      name: 'service',
+      label: '服务名',
+      inputType: 'text',
+      required: true,
+      defaultValue: '',
+      placeholder: '',
+    },
+  ]);
 });
