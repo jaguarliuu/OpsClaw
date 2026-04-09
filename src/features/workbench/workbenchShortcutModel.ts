@@ -3,7 +3,6 @@ export type WorkbenchShortcutAction =
   | 'toggleCommandHistory'
   | 'toggleLlmSettings'
   | 'toggleAiAssistant'
-  | 'toggleUtilityDrawer'
   | 'closeActiveTab'
   | 'openNewConnection'
   | 'switchToPrevTab'
@@ -23,8 +22,6 @@ export function resolveWorkbenchShortcutAction(input: { key: string; mod: boolea
       return 'toggleLlmSettings' as const;
     case 'a':
       return 'toggleAiAssistant' as const;
-    case ';':
-      return 'toggleUtilityDrawer' as const;
     case 'w':
       return 'closeActiveTab' as const;
     case 't':
@@ -43,8 +40,6 @@ export function formatWorkbenchShortcutLabel(
   isMac: boolean
 ) {
   switch (action) {
-    case 'toggleUtilityDrawer':
-      return isMac ? '⌘;' : 'Ctrl+;';
     case 'toggleAiAssistant':
       return isMac ? '⌘A' : 'Ctrl+A';
     case 'toggleQuickConnect':
@@ -64,8 +59,4 @@ export function formatWorkbenchShortcutLabel(
     default:
       return '';
   }
-}
-
-export function formatUtilityDrawerShortcutLabel(isMac: boolean) {
-  return formatWorkbenchShortcutLabel('toggleUtilityDrawer', isMac);
 }

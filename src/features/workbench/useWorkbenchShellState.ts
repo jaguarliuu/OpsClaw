@@ -5,10 +5,6 @@ import {
   openOverlayState,
   toggleBooleanState,
 } from './workbenchShellModel';
-import {
-  getDefaultUtilityDrawerOpenState as getDefaultUtilityDrawerState,
-  nextUtilityDrawerOpenState,
-} from './utilityDrawerModel';
 
 export function useWorkbenchShellState() {
   const [isQuickConnectOpen, setIsQuickConnectOpen] = useState(false);
@@ -16,10 +12,6 @@ export function useWorkbenchShellState() {
   const [isAiAssistantOpen, setIsAiAssistantOpen] = useState(false);
   const [isHelpDialogOpen, setIsHelpDialogOpen] = useState(false);
   const [isCsvImportOpen, setIsCsvImportOpen] = useState(false);
-  const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
-  const [isUtilityDrawerOpen, setIsUtilityDrawerOpen] = useState(
-    getDefaultUtilityDrawerState()
-  );
 
   const toggleQuickConnect = () => {
     setIsQuickConnectOpen((current) => toggleBooleanState(current));
@@ -49,14 +41,6 @@ export function useWorkbenchShellState() {
     setIsCsvImportOpen(closeOverlayState());
   };
 
-  const openSettingsPanel = () => {
-    setIsSettingsPanelOpen(openOverlayState());
-  };
-
-  const closeSettingsPanel = () => {
-    setIsSettingsPanelOpen(closeOverlayState());
-  };
-
   const closeQuickConnect = () => {
     setIsQuickConnectOpen(closeOverlayState());
   };
@@ -69,40 +53,21 @@ export function useWorkbenchShellState() {
     setIsAiAssistantOpen(closeOverlayState());
   };
 
-  const toggleUtilityDrawer = () => {
-    setIsUtilityDrawerOpen((current) => nextUtilityDrawerOpenState(current, 'toggle'));
-  };
-
-  const openUtilityDrawer = () => {
-    setIsUtilityDrawerOpen((current) => nextUtilityDrawerOpenState(current, 'open'));
-  };
-
-  const closeUtilityDrawer = () => {
-    setIsUtilityDrawerOpen((current) => nextUtilityDrawerOpenState(current, 'close'));
-  };
-
   return {
     closeAiAssistant,
     closeCsvImport,
     closeHelpDialog,
     closeHistoryPanel,
     closeQuickConnect,
-    closeSettingsPanel,
-    closeUtilityDrawer,
     isAiAssistantOpen,
     isCsvImportOpen,
     isHelpDialogOpen,
     isHistoryPanelOpen,
     isQuickConnectOpen,
-    isSettingsPanelOpen,
-    isUtilityDrawerOpen,
     openCsvImport,
     openHelpDialog,
-    openSettingsPanel,
-    openUtilityDrawer,
     toggleAiAssistant,
     toggleHistoryPanel,
     toggleQuickConnect,
-    toggleUtilityDrawer,
   };
 }

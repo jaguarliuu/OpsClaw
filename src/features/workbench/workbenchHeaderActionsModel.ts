@@ -1,12 +1,12 @@
 import { formatWorkbenchShortcutLabel } from './workbenchShortcutModel';
 import type { SplitLayout } from './workbenchTerminalWorkspaceModel';
 
-export type WorkbenchToolActionId = 'helpDialog' | 'utilityDrawer' | 'aiAssistant';
+export type WorkbenchToolActionId = 'helpDialog' | 'aiAssistant';
 export type WorkbenchLayoutActionId = SplitLayout;
 export type WorkbenchActionTone = 'active' | 'idle' | 'accent';
 
 export type WorkbenchToolAction = {
-  behavior: 'openHelpDialog' | 'toggleUtilityDrawer' | 'openAiAssistant';
+  behavior: 'openHelpDialog' | 'openAiAssistant';
   display: 'label' | 'icon';
   icon: 'sparkles' | null;
   id: WorkbenchToolActionId;
@@ -15,7 +15,7 @@ export type WorkbenchToolAction = {
   shortcutLabel: string;
   tone: WorkbenchActionTone;
   title: string;
-  variant: 'ghost' | 'secondary';
+  variant: 'ghost';
 };
 
 export type WorkbenchLayoutAction = {
@@ -30,12 +30,7 @@ export type WorkbenchLayoutAction = {
 
 export function buildWorkbenchToolActions(input: {
   isMacShortcutPlatform: boolean;
-  isUtilityDrawerOpen: boolean;
 }): WorkbenchToolAction[] {
-  const utilityDrawerShortcutLabel = formatWorkbenchShortcutLabel(
-    'toggleUtilityDrawer',
-    input.isMacShortcutPlatform
-  );
   const aiAssistantShortcutLabel = formatWorkbenchShortcutLabel(
     'toggleAiAssistant',
     input.isMacShortcutPlatform
@@ -53,18 +48,6 @@ export function buildWorkbenchToolActions(input: {
       tone: 'idle',
       title: '帮助与快捷键',
       variant: 'ghost',
-    },
-    {
-      behavior: 'toggleUtilityDrawer',
-      display: 'label',
-      icon: null,
-      id: 'utilityDrawer',
-      isActive: input.isUtilityDrawerOpen,
-      label: '脚本库',
-      shortcutLabel: utilityDrawerShortcutLabel,
-      tone: input.isUtilityDrawerOpen ? 'active' : 'idle',
-      title: `脚本库 (${utilityDrawerShortcutLabel})`,
-      variant: input.isUtilityDrawerOpen ? 'secondary' : 'ghost',
     },
     {
       behavior: 'openAiAssistant',
@@ -132,16 +115,10 @@ export function performWorkbenchToolAction(
   handlers: {
     onOpenAiAssistant: () => void;
     onOpenHelpDialog: () => void;
-    onToggleUtilityDrawer: () => void;
   }
 ) {
   if (action.behavior === 'openHelpDialog') {
     handlers.onOpenHelpDialog();
-    return;
-  }
-
-  if (action.behavior === 'toggleUtilityDrawer') {
-    handlers.onToggleUtilityDrawer();
     return;
   }
 

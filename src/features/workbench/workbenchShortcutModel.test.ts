@@ -3,15 +3,11 @@ import test from 'node:test';
 
 import {
   formatWorkbenchShortcutLabel,
-  formatUtilityDrawerShortcutLabel,
   resolveWorkbenchShortcutAction,
 } from './workbenchShortcutModel.js';
 
-void test('resolveWorkbenchShortcutAction maps mod:semicolon to utility drawer toggle', () => {
-  assert.equal(
-    resolveWorkbenchShortcutAction({ key: ';', mod: true }),
-    'toggleUtilityDrawer'
-  );
+void test('resolveWorkbenchShortcutAction no longer maps mod:semicolon to a script drawer', () => {
+  assert.equal(resolveWorkbenchShortcutAction({ key: ';', mod: true }), null);
 });
 
 void test('resolveWorkbenchShortcutAction keeps existing quick connect and ai shortcuts', () => {
@@ -25,12 +21,6 @@ void test('resolveWorkbenchShortcutAction keeps existing quick connect and ai sh
   );
 });
 
-void test('formatUtilityDrawerShortcutLabel adapts to platform', () => {
-  assert.equal(formatUtilityDrawerShortcutLabel(true), '⌘;');
-  assert.equal(formatUtilityDrawerShortcutLabel(false), 'Ctrl+;');
-});
-
-void test('formatWorkbenchShortcutLabel supports ai assistant and utility drawer labels', () => {
+void test('formatWorkbenchShortcutLabel still supports ai assistant labels', () => {
   assert.equal(formatWorkbenchShortcutLabel('toggleAiAssistant', true), '⌘A');
-  assert.equal(formatWorkbenchShortcutLabel('toggleUtilityDrawer', false), 'Ctrl+;');
 });

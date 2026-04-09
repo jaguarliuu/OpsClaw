@@ -26,7 +26,6 @@ import {
   LazyHelpDialog,
   LazyMoveProfileDialog,
   LazyQuickConnectModal,
-  LazyTerminalSettingsPanel,
 } from '@/features/workbench/workbenchLazyPanels';
 import { createAgentSessionModel } from '@/features/workbench/agentSessionModel';
 import { useWorkbenchProfileActions } from '@/features/workbench/useWorkbenchProfileActions';
@@ -37,8 +36,6 @@ import { useWorkbenchWorkspaceData } from '@/features/workbench/useWorkbenchWork
 import { TerminalWorkspace, type TerminalWorkspaceHandle } from '@/features/workbench/TerminalWorkspace';
 
 import { SessionTree } from '@/features/workbench/SessionTree';
-import { UtilityDrawer } from '@/features/workbench/UtilityDrawer';
-import { getWorkbenchContentGridClassName } from '@/features/workbench/utilityDrawerModel';
 import type {
   SavedConnectionProfile,
 } from '@/features/workbench/types';
@@ -57,28 +54,22 @@ export function WorkbenchPage() {
     closeHelpDialog,
     closeHistoryPanel,
     closeQuickConnect,
-    closeSettingsPanel,
-    closeUtilityDrawer,
     isAiAssistantOpen,
     isCsvImportOpen,
     isHelpDialogOpen,
     isHistoryPanelOpen,
     isQuickConnectOpen,
-    isSettingsPanelOpen,
-    isUtilityDrawerOpen,
     openCsvImport,
     openHelpDialog,
     toggleAiAssistant,
     toggleHistoryPanel,
     toggleQuickConnect,
-    toggleUtilityDrawer,
   } = useWorkbenchShellState();
   const shouldRenderQuickConnect = useDeferredMount(isQuickConnectOpen);
   const shouldRenderHistoryPanel = useDeferredMount(isHistoryPanelOpen);
   const shouldRenderAiAssistant = useDeferredMount(isAiAssistantOpen);
   const shouldRenderHelpDialog = useDeferredMount(isHelpDialogOpen);
   const shouldRenderCsvImport = useDeferredMount(isCsvImportOpen);
-  const shouldRenderSettingsPanel = useDeferredMount(isSettingsPanelOpen);
   const shouldRenderPendingGatePanel = useDeferredMount(isPendingGatePanelOpen);
   const {
     isLoadingNodes,
@@ -116,7 +107,6 @@ export function WorkbenchPage() {
     activeInteraction: agentRun.activeInteraction,
     pendingContinuationRunId: agentRun.pendingContinuationRunId,
   }).sessionLock;
-  const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
   const {
     closeConnectionPanel,
     closeDeleteProfileDialog,
@@ -210,7 +200,6 @@ export function WorkbenchPage() {
       void navigate(buildSettingsPath('llm'));
     },
     onToggleAiAssistant: toggleAiAssistant,
-    onToggleUtilityDrawer: toggleUtilityDrawer,
     onCloseActiveTab: () => {
       if (activeSessionId) handleCloseSession(activeSessionId);
     },
@@ -271,38 +260,23 @@ export function WorkbenchPage() {
         sessions={sessions}
       />
 
-      <div className={getWorkbenchContentGridClassName(isUtilityDrawerOpen)}>
-        <TerminalWorkspace
-          ref={terminalWorkspaceRef}
-          activeSessionId={activeSessionId}
-          agentSessionLock={agentSessionLock}
-          isUtilityDrawerOpen={isUtilityDrawerOpen}
-          isMacShortcutPlatform={typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)}
-          pendingInteractionCount={agentRun.pendingInteractions.length}
-          onCloseSession={handleCloseSession}
-          onOpenPendingGates={() => setIsPendingGatePanelOpen(true)}
-          onOpenNewConnection={openNewConnection}
-          onToggleUtilityDrawer={toggleUtilityDrawer}
-          onSelectSession={setActiveSessionId}
-          onSessionStatusChange={handleSessionStatusChange}
-          onToggleSidebar={() => setIsSidebarCollapsed((current) => !current)}
-          onOpenAiAssistant={handleOpenAiAssistant}
-          onOpenHelpDialog={openHelpDialog}
-          sidebarCollapsed={isSidebarCollapsed}
-          sessions={sessions}
-        />
-
-        <UtilityDrawer
-          activeNodeId={activeSession?.nodeId ?? null}
-          activeSessionId={activeSessionId}
-          activeSessionLabel={activeSession?.label ?? null}
-          onClose={closeUtilityDrawer}
-          open={isUtilityDrawerOpen}
-          onExecuteCommand={(command) => {
-            terminalWorkspaceRef.current?.sendCommandToActive(command);
-          }}
-        />
-      </div>
+      <TerminalWorkspace
+        ref={terminalWorkspaceRef}
+        activeSessionId={activeSessionId}
+        agentSessionLock={agentSessionLock}
+        isMacShortcutPlatform={typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)}
+        pendingInteractionCount={agentRun.pendingInteractions.length}
+        onCloseSession={handleCloseSession}
+        onOpenPendingGates={() => setIsPendingGatePanelOpen(true)}
+        onOpenNewConnection={openNewConnection}
+        onSelectSession={setActiveSessionId}
+        onSessionStatusChange={handleSessionStatusChange}
+        onToggleSidebar={() => setIsSidebarCollapsed((current) => !current)}
+        onOpenAiAssistant={handleOpenAiAssistant}
+        onOpenHelpDialog={openHelpDialog}
+        sidebarCollapsed={isSidebarCollapsed}
+        sessions={sessions}
+      />
 
       {shouldRenderPendingGatePanel ? (
         <PendingInteractionPanel
@@ -483,15 +457,6 @@ export function WorkbenchPage() {
             open={isCsvImportOpen}
             onClose={closeCsvImport}
             onSuccess={refreshWorkspaceDataInBackground}
-          />
-        </Suspense>
-      ) : null}
-
-      {shouldRenderSettingsPanel ? (
-        <Suspense fallback={null}>
-          <LazyTerminalSettingsPanel
-            open={isSettingsPanelOpen}
-            onClose={closeSettingsPanel}
           />
         </Suspense>
       ) : null}

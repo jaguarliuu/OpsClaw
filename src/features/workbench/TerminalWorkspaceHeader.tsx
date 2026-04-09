@@ -19,7 +19,6 @@ type TerminalWorkspaceHeaderProps = {
   activeSession: LiveSession | null;
   desktopTopBarStyle?: React.CSSProperties;
   desktopWindowControlsInsetStyle?: React.CSSProperties;
-  isUtilityDrawerOpen: boolean;
   isMacShortcutPlatform: boolean;
   sessions: LiveSession[];
   sidebarCollapsed: boolean;
@@ -32,7 +31,6 @@ type TerminalWorkspaceHeaderProps = {
   onOpenHelpDialog: () => void;
   onOpenPendingGates: () => void;
   onOpenNewConnection: () => void;
-  onToggleUtilityDrawer: () => void;
   onSelectSession: (sessionId: string) => void;
   onToggleSidebar: () => void;
 };
@@ -83,7 +81,6 @@ export function TerminalWorkspaceHeader({
   desktopInteractiveStyle,
   desktopTopBarStyle,
   desktopWindowControlsInsetStyle,
-  isUtilityDrawerOpen,
   isMacShortcutPlatform,
   pendingInteractionCount,
   sessions,
@@ -96,14 +93,12 @@ export function TerminalWorkspaceHeader({
   onOpenHelpDialog,
   onOpenPendingGates,
   onOpenNewConnection,
-  onToggleUtilityDrawer,
   onSelectSession,
   onToggleSidebar,
 }: TerminalWorkspaceHeaderProps) {
   const layoutActions = buildWorkbenchLayoutActions(splitLayout);
-  const [helpDialogAction, utilityDrawerAction, aiAssistantAction] = buildWorkbenchToolActions({
+  const [helpDialogAction, aiAssistantAction] = buildWorkbenchToolActions({
     isMacShortcutPlatform,
-    isUtilityDrawerOpen,
   });
 
   return (
@@ -203,7 +198,6 @@ export function TerminalWorkspaceHeader({
               performWorkbenchToolAction(helpDialogAction, {
                 onOpenAiAssistant,
                 onOpenHelpDialog,
-                onToggleUtilityDrawer,
               });
             }}
             size="sm"
@@ -212,24 +206,6 @@ export function TerminalWorkspaceHeader({
             title={helpDialogAction.title}
           >
             {renderToolActionContent(helpDialogAction)}
-          </Button>
-
-          <Button
-            key={utilityDrawerAction.id}
-            className={cn('transition-colors', getWorkbenchActionClassName(utilityDrawerAction.tone))}
-            onClick={() => {
-              performWorkbenchToolAction(utilityDrawerAction, {
-                onOpenAiAssistant,
-                onOpenHelpDialog,
-                onToggleUtilityDrawer,
-              });
-            }}
-            size="sm"
-            type="button"
-            variant={utilityDrawerAction.variant}
-            title={utilityDrawerAction.title}
-          >
-            {renderToolActionContent(utilityDrawerAction)}
           </Button>
 
           <PendingInteractionIndicator
@@ -244,7 +220,6 @@ export function TerminalWorkspaceHeader({
               performWorkbenchToolAction(aiAssistantAction, {
                 onOpenAiAssistant,
                 onOpenHelpDialog,
-                onToggleUtilityDrawer,
               });
             }}
             size="sm"

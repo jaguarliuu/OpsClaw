@@ -31,7 +31,6 @@ export type TerminalWorkspaceHandle = {
 type TerminalWorkspaceProps = {
   activeSessionId: string | null;
   agentSessionLock: AgentSessionLock | null;
-  isUtilityDrawerOpen: boolean;
   isMacShortcutPlatform: boolean;
   pendingInteractionCount: number;
   sessions: LiveSession[];
@@ -39,7 +38,6 @@ type TerminalWorkspaceProps = {
   onCloseSession: (sessionId: string) => void;
   onOpenNewConnection: () => void;
   onOpenPendingGates: () => void;
-  onToggleUtilityDrawer: () => void;
   onToggleSidebar: () => void;
   onSelectSession: (sessionId: string) => void;
   onSessionStatusChange: (sessionId: string, status: ConnectionStatus, errorMessage?: string) => void;
@@ -51,7 +49,6 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
   function TerminalWorkspace({
   activeSessionId,
   agentSessionLock,
-  isUtilityDrawerOpen,
   isMacShortcutPlatform,
   pendingInteractionCount,
   sessions,
@@ -59,7 +56,6 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
   onCloseSession,
   onOpenNewConnection,
   onOpenPendingGates,
-  onToggleUtilityDrawer,
   onToggleSidebar,
   onSelectSession,
   onSessionStatusChange,
@@ -207,7 +203,6 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
         desktopInteractiveStyle={desktopWindowChrome.interactiveStyle}
         desktopTopBarStyle={desktopWindowChrome.topBarStyle}
         desktopWindowControlsInsetStyle={desktopWindowChrome.windowControlsInsetStyle}
-        isUtilityDrawerOpen={isUtilityDrawerOpen}
         isMacShortcutPlatform={isMacShortcutPlatform}
         pendingInteractionCount={pendingInteractionCount}
         sessions={sessions}
@@ -220,7 +215,6 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
         onOpenHelpDialog={onOpenHelpDialog}
         onOpenPendingGates={onOpenPendingGates}
         onOpenNewConnection={onOpenNewConnection}
-        onToggleUtilityDrawer={onToggleUtilityDrawer}
         onSelectSession={onSelectSession}
         onToggleSidebar={onToggleSidebar}
       />

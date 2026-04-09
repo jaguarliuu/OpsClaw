@@ -20,7 +20,7 @@ export function buildHelpDialogContent(isMacShortcutPlatform: boolean): HelpDial
     description: '在一个地方快速了解 OpsClaw 的核心能力、常用入口和全局快捷键。',
     introduction: [
       'OpsClaw 是一个 AI-native 运维工作台，把连接管理、终端执行、脚本库和 AI 协作收在同一个桌面应用里。',
-      '第一次使用时，建议先从新建连接开始，再结合 AI 助手、脚本库和会话标签完成日常操作。',
+      '第一次使用时，建议先从新建连接开始，再结合 AI 助手、设置页中的脚本能力和会话标签完成日常操作。',
     ],
     coreFeatures: [
       '连接管理：统一维护节点、分组和跳板机配置。',
@@ -36,10 +36,6 @@ export function buildHelpDialogContent(isMacShortcutPlatform: boolean): HelpDial
       {
         key: formatWorkbenchShortcutLabel('toggleAiAssistant', isMacShortcutPlatform),
         label: '打开 AI 助手',
-      },
-      {
-        key: formatWorkbenchShortcutLabel('toggleUtilityDrawer', isMacShortcutPlatform),
-        label: '打开脚本库',
       },
       {
         key: formatWorkbenchShortcutLabel('toggleCommandHistory', isMacShortcutPlatform),

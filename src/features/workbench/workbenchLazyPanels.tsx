@@ -30,11 +30,6 @@ export const LazyCsvImportModal = lazy(async () => {
   return { default: module.CsvImportModal };
 });
 
-export const LazyTerminalSettingsPanel = lazy(async () => {
-  const module = await import('./TerminalSettingsPanel');
-  return { default: module.TerminalSettingsPanel };
-});
-
 export const LazyConfirmDialog = lazy(async () => {
   const module = await import('@/components/ui/confirm-dialog');
   return { default: module.ConfirmDialog };

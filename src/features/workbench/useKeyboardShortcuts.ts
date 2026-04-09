@@ -12,7 +12,6 @@ type ShortcutHandlers = {
   onToggleCommandHistory: () => void;
   onToggleLlmSettings: () => void;
   onToggleAiAssistant: () => void;
-  onToggleUtilityDrawer: () => void;
 };
 
 export function useKeyboardShortcuts(handlers: ShortcutHandlers): void {
@@ -50,9 +49,6 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): void {
           return;
         case 'toggleAiAssistant':
           handlersRef.current.onToggleAiAssistant();
-          return;
-        case 'toggleUtilityDrawer':
-          handlersRef.current.onToggleUtilityDrawer();
           return;
         case 'closeActiveTab':
           handlersRef.current.onCloseActiveTab();
