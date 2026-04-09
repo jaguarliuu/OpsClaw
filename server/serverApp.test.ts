@@ -232,8 +232,25 @@ void test('script management route returns raw node scripts for settings page', 
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        key: 'restart-global-manage',
+        alias: 'restart-manage',
+        scope: 'global',
+        nodeId: null,
+        title: '全局脚本',
+        description: '',
+        kind: 'plain',
+        content: 'echo global',
+        variables: [],
+        tags: [],
+      }),
+    });
+
+    await fetch(`http://127.0.0.1:${port}/api/scripts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         key: 'restart-node-manage',
-        alias: 'restart-node-manage',
+        alias: 'restart-manage',
         scope: 'node',
         nodeId: 'node-1',
         title: '节点脚本',
@@ -248,13 +265,46 @@ void test('script management route returns raw node scripts for settings page', 
     const response = await fetch(
       `http://127.0.0.1:${port}/api/scripts/manage?scope=node&nodeId=node-1`
     );
-    const payload = (await response.json()) as { items: Array<{ scope: string; nodeId: string | null }> };
+    const payload = (await response.json()) as {
+      items: Array<{
+        alias: string;
+        nodeId: string | null;
+        resolvedFrom?: string;
+        overridesGlobal?: boolean;
+        scope: string;
+      }>;
+    };
 
     assert.equal(response.status, 200);
-    assert.equal(
-      payload.items.some((item) => item.scope === 'node' && item.nodeId === 'node-1'),
-      true
+    assert.deepEqual(payload.items.map((item) => item.alias), ['restart-manage']);
+    assert.equal(payload.items[0]?.scope, 'node');
+    assert.equal(payload.items[0]?.nodeId, 'node-1');
+    assert.equal('resolvedFrom' in (payload.items[0] ?? {}), false);
+    assert.equal('overridesGlobal' in (payload.items[0] ?? {}), false);
+  } finally {
+    await close(runtime.server);
+  }
+});
+
+void test('script management route rejects invalid query combinations', async () => {
+  const { createOpsClawServerApp } = await import('./serverApp.js');
+  const runtime = await createOpsClawServerApp();
+  const port = await listen(runtime.server);
+
+  try {
+    const invalidScopeResponse = await fetch(
+      `http://127.0.0.1:${port}/api/scripts/manage?scope=invalid`
     );
+    const invalidScopePayload = (await invalidScopeResponse.json()) as { message: string };
+    assert.equal(invalidScopeResponse.status, 400);
+    assert.match(invalidScopePayload.message, /scope 参数不合法/);
+
+    const missingNodeIdResponse = await fetch(
+      `http://127.0.0.1:${port}/api/scripts/manage?scope=node`
+    );
+    const missingNodeIdPayload = (await missingNodeIdResponse.json()) as { message: string };
+    assert.equal(missingNodeIdResponse.status, 400);
+    assert.match(missingNodeIdPayload.message, /必须提供 nodeId/);
   } finally {
     await close(runtime.server);
   }

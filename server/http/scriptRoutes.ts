@@ -16,9 +16,19 @@ export function registerScriptRoutes(
       const nodeId =
         typeof request.query['nodeId'] === 'string' ? request.query['nodeId'] : undefined;
 
+      if (scope !== undefined && scope !== 'global' && scope !== 'node') {
+        response.status(400).json({ message: '脚本管理 scope 参数不合法。' });
+        return;
+      }
+
+      if (scope === 'node' && !nodeId) {
+        response.status(400).json({ message: '节点脚本管理查询必须提供 nodeId。' });
+        return;
+      }
+
       response.json({
         items: scriptLibraryStore.listManagedScripts({
-          scope: scope === 'global' || scope === 'node' ? scope : undefined,
+          scope,
           nodeId,
         }),
       });
