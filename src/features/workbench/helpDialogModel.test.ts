@@ -11,8 +11,8 @@ void test('buildHelpDialogContent returns app intro, feature bullets, tips, and 
   assert.ok(content.introduction.length >= 2);
   assert.ok(content.coreFeatures.length >= 4);
   assert.ok(content.usageTips.length >= 3);
-  assert.match(content.usageTips.join('\n'), /\bx alias\b/);
-  assert.ok(content.coreFeatures.some((item) => item.startsWith('脚本库：')));
+  assert.ok(content.coreFeatures.includes('脚本库：沉淀全局脚本、节点覆盖脚本和脚本别名（alias）。'));
+  assert.ok(content.usageTips.includes('脚本支持 alias，终端中输入 x alias 并回车，可快速执行对应脚本。'));
   assert.deepEqual(content.shortcuts.slice(0, 3), [
     { key: '⌘T', label: '新建连接' },
     { key: '⌘A', label: '打开 AI 助手' },
