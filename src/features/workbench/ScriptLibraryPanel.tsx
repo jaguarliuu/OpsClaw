@@ -31,6 +31,7 @@ import {
   extractTemplateVariableNames,
   filterScriptLibraryItems,
   renderScriptTemplate,
+  validateScriptAlias,
   validateScriptVariableValues,
 } from '@/features/workbench/scriptLibraryModel';
 import type {
@@ -69,7 +70,8 @@ const EMPTY_VARIABLE: ScriptVariableDefinition = {
 function createEmptyScriptDraft(activeNodeId: string | null): ScriptLibraryUpsertInput {
   return {
     key: '',
-    scope: 'global',
+    alias: '',
+    scope: activeNodeId ? 'node' : 'global',
     nodeId: activeNodeId,
     title: '',
     description: '',
@@ -97,6 +99,7 @@ function buildEditorStateFromItem(item: ScriptLibraryItem): EditorState {
     itemId: item.id,
     draft: {
       key: item.key,
+      alias: item.alias,
       scope: item.scope,
       nodeId: item.nodeId,
       title: item.title,
@@ -117,13 +120,17 @@ function parseTags(value: string) {
     .filter(Boolean);
 }
 
-function buildUpsertInput(editorState: EditorState, activeNodeId: string | null): ScriptLibraryUpsertInput {
-  const draft = editorState.draft;
-  const scope = draft.scope;
-
+function buildUpsertInput(editorState: EditorState): ScriptLibraryUpsertInput {
   return {
-    ...draft,
-    nodeId: scope === 'node' ? (draft.nodeId ?? activeNodeId) : null,
+    key: editorState.draft.key.trim(),
+    alias: editorState.draft.alias.trim(),
+    scope: editorState.draft.scope,
+    nodeId: editorState.draft.scope === 'node' ? editorState.draft.nodeId : null,
+    title: editorState.draft.title.trim(),
+    description: editorState.draft.description.trim(),
+    kind: editorState.draft.kind,
+    content: editorState.draft.content,
+    variables: editorState.draft.variables,
     tags: parseTags(editorState.tagsText),
   };
 }
@@ -179,7 +186,9 @@ function ScriptLibraryEditorDialog({
                   draft: {
                     ...current.draft,
                     scope: value,
-                    nodeId: value === 'node' ? activeNodeId : null,
+                    nodeId: value === 'node'
+                      ? (current.draft.nodeId ?? activeNodeId)
+                      : current.draft.nodeId,
                   },
                 }));
               }}
@@ -216,23 +225,42 @@ function ScriptLibraryEditorDialog({
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="script-title">标题</Label>
+              <Label htmlFor="script-alias">脚本别名</Label>
               <Input
-                id="script-title"
-                onChange={(event) => {
-                  const value = event.target.value;
+                id="script-alias"
+                value={state.draft.alias}
+                onChange={(event) =>
                   onStateChange((current) => ({
                     ...current,
                     draft: {
                       ...current.draft,
-                      title: value,
+                      alias: event.target.value,
                     },
-                  }));
-                }}
-                placeholder="重启 Nginx"
-                value={state.draft.title}
+                  }))
+                }
+                placeholder="例如 nginx-restart"
               />
+              <p className="text-xs text-neutral-500">终端中输入 x {state.draft.alias || '<alias>'} 可快捷执行。</p>
             </div>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="script-title">标题</Label>
+            <Input
+              id="script-title"
+              onChange={(event) => {
+                const value = event.target.value;
+                onStateChange((current) => ({
+                  ...current,
+                  draft: {
+                    ...current.draft,
+                    title: value,
+                  },
+                }));
+              }}
+              placeholder="重启 Nginx"
+              value={state.draft.title}
+            />
           </div>
 
           <div className="grid gap-2">
@@ -624,7 +652,17 @@ export function ScriptLibraryPanel({
     setIsSaving(true);
 
     try {
-      const payload = buildUpsertInput(editorState, activeNodeId);
+      const payload = buildUpsertInput(editorState);
+      const aliasValidation = validateScriptAlias(payload.alias);
+      if (!aliasValidation.ok) {
+        setEditorError(aliasValidation.message);
+        return;
+      }
+      if (payload.scope === 'node' && !payload.nodeId) {
+        setEditorError('节点脚本必须绑定节点，请先选择节点后再保存。');
+        return;
+      }
+
       let nextSelectedId: string | null = editorState.itemId;
       if (editorState.mode === 'create') {
         const created = await createScript(payload);
@@ -728,7 +766,7 @@ export function ScriptLibraryPanel({
           <div className="mt-4 space-y-3">
             <Input
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索标题、key、描述、标签"
+              placeholder="搜索 alias、标题、key、描述、标签"
               value={query}
             />
             <div className="flex flex-wrap gap-2 text-xs text-[var(--app-text-secondary)]">
@@ -743,28 +781,35 @@ export function ScriptLibraryPanel({
         </header>
 
         <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,260px)_minmax(0,1fr)]">
-          <div className="overflow-y-auto border-b border-[var(--app-border-default)] px-3 py-3">
+          <div className="overflow-y-auto border-b border-[var(--app-border-default)]">
             {isLoading ? (
-              <div className="rounded-md border border-dashed border-neutral-800 px-3 py-6 text-sm text-neutral-400">
+              <div className="px-3 py-6 text-sm text-neutral-400">
                 脚本列表加载中...
               </div>
             ) : errorMessage ? (
-              <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-3 text-sm text-red-200">
+              <div className="px-3 py-3 text-sm text-red-200">
                 {errorMessage}
               </div>
             ) : filteredItems.length === 0 ? (
-              <div className="rounded-md border border-dashed border-neutral-800 px-3 py-6 text-sm text-neutral-400">
+              <div className="px-3 py-6 text-sm text-neutral-400">
                 当前没有可见脚本。
               </div>
             ) : (
-              <div className="space-y-2">
+              <>
+                <div className="grid grid-cols-[minmax(0,120px)_minmax(0,1fr)_90px_90px] gap-3 px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+                  <span>Alias</span>
+                  <span>标题</span>
+                  <span>作用域</span>
+                  <span>类型</span>
+                </div>
+                <div className="divide-y divide-neutral-900/80">
                 {filteredItems.map((item) => (
                   <button
                     className={cn(
-                      'w-full rounded-lg border px-3 py-3 text-left transition-colors',
+                      'grid w-full grid-cols-[minmax(0,120px)_minmax(0,1fr)_90px_90px] gap-3 px-3 py-2.5 text-left transition-colors',
                       item.id === selectedScript?.id
-                        ? 'border-blue-500/60 bg-blue-500/10'
-                        : 'border-neutral-800 bg-neutral-950/20 hover:border-neutral-700 hover:bg-neutral-900/60'
+                        ? 'bg-blue-500/10 text-neutral-100'
+                        : 'text-neutral-300 hover:bg-neutral-900/60'
                     )}
                     key={item.id}
                     onClick={() => {
@@ -773,35 +818,14 @@ export function ScriptLibraryPanel({
                     }}
                     type="button"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 space-y-1">
-                        <div className="truncate text-sm font-medium text-neutral-100">
-                          {item.title}
-                        </div>
-                        <div className="truncate text-xs text-neutral-400">{item.key}</div>
-                      </div>
-                      <span className="rounded-full border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300">
-                        {getScriptScopeLabel(item)}
-                      </span>
-                    </div>
-                    {item.description ? (
-                      <p className="mt-2 line-clamp-2 text-xs text-neutral-400">{item.description}</p>
-                    ) : null}
-                    {item.tags.length > 0 ? (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {item.tags.map((tag) => (
-                          <span
-                            className="rounded-full bg-neutral-800 px-2 py-0.5 text-[11px] text-neutral-300"
-                            key={tag}
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
+                    <span className="truncate font-mono text-[12px] text-blue-300">{item.alias}</span>
+                    <span className="truncate text-sm">{item.title}</span>
+                    <span className="text-xs text-neutral-400">{getScriptScopeLabel(item)}</span>
+                    <span className="text-xs text-neutral-400">{item.kind}</span>
                   </button>
                 ))}
-              </div>
+                </div>
+              </>
             )}
           </div>
 

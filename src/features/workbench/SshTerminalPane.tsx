@@ -3,10 +3,17 @@ import type { SearchAddon } from '@xterm/addon-search';
 import type { FitAddon } from '@xterm/addon-fit';
 import type { Terminal } from '@xterm/xterm';
 
+import { TerminalQuickScriptDialog } from '@/features/workbench/TerminalQuickScriptDialog';
 import { SshTerminalContextMenu } from '@/features/workbench/SshTerminalContextMenu';
 import { SshTerminalPasteOverlay } from '@/features/workbench/SshTerminalPasteOverlay';
 import { SshTerminalSearchOverlay } from '@/features/workbench/SshTerminalSearchOverlay';
 import { SshTerminalSuggestionOverlay } from '@/features/workbench/SshTerminalSuggestionOverlay';
+import { fetchScripts } from '@/features/workbench/scriptApi';
+import {
+  buildScriptVariableInitialValues,
+  renderScriptTemplate,
+  validateScriptVariableValues,
+} from '@/features/workbench/scriptLibraryModel';
 import {
   resolveSshTerminalSuggestionOverlayPosition,
   type SshTerminalSuggestionOverlayPlacement,
@@ -28,6 +35,7 @@ import type {
   AgentSessionLock,
   ConnectionStatus,
   LiveSession,
+  ScriptLibraryItem,
   TerminalCommandExecutionResult,
 } from '@/features/workbench/types';
 
@@ -75,7 +83,13 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
     const inputBufferRef = useRef('');
     const transcriptRef = useRef('');
     const suggestionOverlayRef = useRef<HTMLDivElement | null>(null);
+    const quickScriptsRef = useRef<ScriptLibraryItem[]>([]);
     const [isRuntimeReady, setIsRuntimeReady] = useState(false);
+    const [quickScripts, setQuickScripts] = useState<ScriptLibraryItem[]>([]);
+    const [quickScriptsError, setQuickScriptsError] = useState<string | null>(null);
+    const [activeQuickScript, setActiveQuickScript] = useState<ScriptLibraryItem | null>(null);
+    const [quickScriptVariableValues, setQuickScriptVariableValues] = useState<Record<string, string>>({});
+    const [quickScriptError, setQuickScriptError] = useState<string | null>(null);
     const [suggestionOverlayPosition, setSuggestionOverlayPosition] = useState<{
       placement: SshTerminalSuggestionOverlayPlacement;
       top: number;
@@ -140,6 +154,80 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
       websocketRef,
     });
 
+    const handleCloseQuickScriptDialog = useCallback(() => {
+      setActiveQuickScript(null);
+      setQuickScriptError(null);
+    }, []);
+
+    const handleConfirmQuickScript = useCallback(() => {
+      if (!activeQuickScript) {
+        return;
+      }
+
+      const validation = validateScriptVariableValues(
+        activeQuickScript.variables,
+        quickScriptVariableValues
+      );
+      if (!validation.ok) {
+        setQuickScriptError(validation.message);
+        return;
+      }
+
+      controllerHandle.sendCommand(
+        renderScriptTemplate(activeQuickScript.content, quickScriptVariableValues)
+      );
+      setActiveQuickScript(null);
+      setQuickScriptError(null);
+    }, [activeQuickScript, controllerHandle, quickScriptVariableValues]);
+
+    const handleExecuteQuickScript = useCallback((script: ScriptLibraryItem) => {
+      if (script.kind === 'plain') {
+        setQuickScriptError(null);
+        controllerHandle.sendCommand(script.content);
+        return;
+      }
+
+      setQuickScriptVariableValues(buildScriptVariableInitialValues(script.variables));
+      setQuickScriptError(null);
+      setActiveQuickScript(script);
+    }, [controllerHandle]);
+
+    useEffect(() => {
+      quickScriptsRef.current = quickScripts;
+    }, [quickScripts]);
+
+    useEffect(() => {
+      let cancelled = false;
+
+      void fetchScripts(session.nodeId ?? null)
+        .then((items) => {
+          if (!cancelled) {
+            setQuickScripts(items);
+            setQuickScriptsError(null);
+          }
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setQuickScripts([]);
+            setQuickScriptsError(error instanceof Error ? error.message : '快捷脚本加载失败。');
+          }
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }, [session.nodeId]);
+
+    useEffect(() => {
+      if (!quickScriptsError) {
+        return;
+      }
+      console.error('[SshTerminalPane] quick-script:load_error', {
+        sessionId: session.id,
+        message: quickScriptsError,
+      });
+    }, [quickScriptsError, session.id]);
+
     const {
       closeContextMenu,
       contextMenuRef,
@@ -155,6 +243,8 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
       dismissPendingPaste,
       pendingPaste,
       pasteFromClipboard,
+      quickScriptItems,
+      quickScriptVisible,
       selectAll,
       suggestion,
       suggestionVisible,
@@ -175,6 +265,11 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
       settingsRef,
       terminalRef,
       toggleSearch,
+      quickScriptsRef,
+      onExecuteQuickScript: handleExecuteQuickScript,
+      onQuickScriptNotFound: (query) => {
+        setQuickScriptError(`未找到别名为 "${query}" 的快捷脚本。`);
+      },
       websocketRef,
     });
 
@@ -236,7 +331,9 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
     }, [settings, sendResize]);
 
     useEffect(() => {
-      if (!suggestionVisible || !suggestion) {
+      const hasOverlay =
+        (quickScriptVisible && quickScriptItems.length > 0) || (suggestionVisible && suggestion);
+      if (!hasOverlay) {
         return;
       }
 
@@ -273,7 +370,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
       return () => {
         window.removeEventListener('resize', updateSuggestionOverlayPosition);
       };
-    }, [suggestion, suggestionVisible]);
+    }, [quickScriptItems.length, quickScriptVisible, suggestion, suggestionVisible]);
 
     return (
       <div
@@ -316,20 +413,62 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
           />
         )}
 
-        {suggestionVisible && suggestion && (
+        {quickScriptVisible && quickScriptItems.length > 0 ? (
           <SshTerminalSuggestionOverlay
             ref={suggestionOverlayRef}
             placement={suggestionOverlayPosition.placement}
-            suggestion={suggestion}
             top={suggestionOverlayPosition.top}
+            title="快捷脚本"
+            hint="输入 x alias 继续筛选"
+            items={quickScriptItems}
           />
-        )}
+        ) : suggestionVisible && suggestion ? (
+          <SshTerminalSuggestionOverlay
+            ref={suggestionOverlayRef}
+            placement={suggestionOverlayPosition.placement}
+            top={suggestionOverlayPosition.top}
+            title="命令建议"
+            hint="按 Tab 接受"
+            items={[
+              {
+                id: 'history-suggestion',
+                label: suggestion,
+                detail: '按 Tab 接受',
+                highlighted: true,
+              },
+            ]}
+          />
+        ) : null}
 
         {copyFeedbackVisible ? (
           <div className="pointer-events-none absolute bottom-4 right-4 z-20 rounded-md border border-emerald-500/20 bg-[var(--app-bg-elevated2)] px-3 py-2 text-xs font-medium text-emerald-400 shadow-[0_10px_30px_rgba(0,0,0,0.28)]">
             {copyFeedbackText}
           </div>
         ) : null}
+
+        {quickScriptError && !activeQuickScript ? (
+          <div className="pointer-events-none absolute bottom-4 left-4 z-20 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200 shadow-[0_10px_30px_rgba(0,0,0,0.28)]">
+            {quickScriptError}
+          </div>
+        ) : null}
+
+        <TerminalQuickScriptDialog
+          errorMessage={activeQuickScript ? quickScriptError : null}
+          onChange={(name, value) => {
+            setQuickScriptVariableValues((current) => ({
+              ...current,
+              [name]: value,
+            }));
+            if (quickScriptError) {
+              setQuickScriptError(null);
+            }
+          }}
+          onClose={handleCloseQuickScriptDialog}
+          onConfirm={handleConfirmQuickScript}
+          open={activeQuickScript !== null}
+          script={activeQuickScript}
+          values={quickScriptVariableValues}
+        />
 
         {contextMenuState ? (
           <SshTerminalContextMenu

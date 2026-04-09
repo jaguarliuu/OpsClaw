@@ -161,6 +161,7 @@ void test('createOpsClawServerApp wires core API endpoints without starting the 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         key: 'disk-usage',
+        alias: 'disk-usage',
         scope: 'global',
         nodeId: null,
         title: '磁盘占用',
@@ -181,6 +182,41 @@ void test('createOpsClawServerApp wires core API endpoints without starting the 
     assert.equal(scriptsPayload.items.length, 1);
     assert.equal(scriptsPayload.items[0]?.key, 'disk-usage');
     assert.equal(scriptsPayload.items[0]?.resolvedFrom, 'global');
+  } finally {
+    await close(runtime.server);
+  }
+});
+
+void test('script routes round-trip alias for create and list', async () => {
+  const { createOpsClawServerApp } = await import('./serverApp.js');
+  const runtime = await createOpsClawServerApp();
+  const port = await listen(runtime.server);
+
+  try {
+    const createResponse = await fetch(`http://127.0.0.1:${port}/api/scripts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        key: 'disk-usage-alias-roundtrip',
+        alias: 'disk-roundtrip',
+        scope: 'global',
+        nodeId: null,
+        title: '查看磁盘',
+        description: '',
+        kind: 'plain',
+        content: 'df -h',
+        variables: [],
+        tags: [],
+      }),
+    });
+
+    assert.equal(createResponse.status, 201);
+    const createdPayload = (await createResponse.json()) as { item: { alias: string } };
+    assert.equal(createdPayload.item.alias, 'disk-roundtrip');
+
+    const listResponse = await fetch(`http://127.0.0.1:${port}/api/scripts`);
+    const listPayload = (await listResponse.json()) as { items: Array<{ alias: string }> };
+    assert.equal(listPayload.items.some((item) => item.alias === 'disk-roundtrip'), true);
   } finally {
     await close(runtime.server);
   }

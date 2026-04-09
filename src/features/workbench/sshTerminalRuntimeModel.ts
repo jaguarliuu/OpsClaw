@@ -1,3 +1,5 @@
+import type { TerminalSuggestionItem } from './sshTerminalSuggestionOverlayModel.js';
+
 type TerminalShortcutEvent = {
   ctrlKey: boolean;
   isComposing?: boolean;
@@ -31,6 +33,12 @@ export type ResolvedSshTerminalInput = {
   nextInputBuffer: string;
   nextSuggestion: string | null;
   suggestionQuery: string | null;
+};
+
+export type SshTerminalQuickScriptOverlayState = {
+  quickScriptItems: TerminalSuggestionItem[];
+  quickScriptVisible: boolean;
+  quickScriptSelectedIndex: number;
 };
 
 export function shouldToggleSshTerminalSearchShortcut(

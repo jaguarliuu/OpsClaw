@@ -1,17 +1,23 @@
 import { forwardRef } from 'react';
+import { cn } from '@/lib/utils';
 
-import type { SshTerminalSuggestionOverlayPlacement } from '@/features/workbench/sshTerminalSuggestionOverlayModel';
+import type {
+  SshTerminalSuggestionOverlayPlacement,
+  TerminalSuggestionItem,
+} from '@/features/workbench/sshTerminalSuggestionOverlayModel';
 
 type SshTerminalSuggestionOverlayProps = {
+  hint?: string;
   placement: SshTerminalSuggestionOverlayPlacement;
-  suggestion: string;
+  items: TerminalSuggestionItem[];
+  title: string;
   top: number;
 };
 
 export const SshTerminalSuggestionOverlay = forwardRef<
   HTMLDivElement,
   SshTerminalSuggestionOverlayProps
->(function SshTerminalSuggestionOverlay({ placement, suggestion, top }, ref) {
+>(function SshTerminalSuggestionOverlay({ hint, placement, items, title, top }, ref) {
   return (
     <div
       ref={ref}
@@ -19,10 +25,23 @@ export const SshTerminalSuggestionOverlay = forwardRef<
       data-placement={placement}
       style={{ top }}
     >
-      <div className="flex items-center gap-2 overflow-hidden">
-        <span className="shrink-0 text-[11px] text-neutral-500">建议:</span>
-        <span className="truncate font-mono text-[12px] text-neutral-300">{suggestion}</span>
-        <span className="shrink-0 text-[10px] text-neutral-600">按 Tab 接受</span>
+      <div className="space-y-1">
+        <div className="flex items-center justify-between text-[11px] text-neutral-500">
+          <span>{title}</span>
+          {hint ? <span>{hint}</span> : null}
+        </div>
+        {items.map((item) => (
+          <div
+            key={item.id}
+            className={cn(
+              'grid grid-cols-[minmax(0,140px)_minmax(0,1fr)] gap-3 rounded-md px-2 py-1.5 text-[12px]',
+              item.highlighted ? 'bg-blue-500/15 text-neutral-100' : 'text-neutral-300'
+            )}
+          >
+            <span className="truncate font-mono text-blue-300">{item.label}</span>
+            <span className="truncate text-neutral-400">{item.detail}</span>
+          </div>
+        ))}
       </div>
     </div>
   );

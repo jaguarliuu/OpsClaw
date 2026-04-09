@@ -26,7 +26,7 @@ export function buildHelpDialogContent(isMacShortcutPlatform: boolean): HelpDial
       '连接管理：统一维护节点、分组和跳板机配置。',
       '多会话终端：同时打开多个 SSH 会话，并支持单屏和分屏切换。',
       'AI 协作：在 Agent / Chat 里分析问题、生成命令和推进排障。',
-      '脚本库：沉淀全局脚本和节点覆盖脚本，直接在当前会话执行。',
+      '脚本库：沉淀全局脚本、节点覆盖脚本和脚本别名（alias）。',
     ],
     shortcuts: [
       {
@@ -66,6 +66,7 @@ export function buildHelpDialogContent(isMacShortcutPlatform: boolean): HelpDial
       '终端区支持右键菜单、复制粘贴和命令历史调用。',
       '输入命令时，Tab 可接受当前命令补全建议。',
       '复杂操作优先使用 Agent 模式，让 AI 持续推进任务。',
+      '脚本支持 alias，终端中输入 x alias 并回车，可快速执行对应脚本。',
       '脚本库支持全局脚本和节点覆盖脚本，适合沉淀固定操作。',
     ],
   };

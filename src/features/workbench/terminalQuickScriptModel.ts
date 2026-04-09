@@ -3,6 +3,13 @@ import type { ScriptLibraryItem } from './types.js';
 export const TERMINAL_QUICK_SCRIPT_PREFIX = 'x ';
 export const TERMINAL_QUICK_SCRIPT_DELAY_MS = 300;
 
+export type TerminalQuickScriptSuggestionItem = {
+  id: string;
+  label: string;
+  detail: string;
+  highlighted: boolean;
+};
+
 export function detectTerminalQuickScriptQuery(input: string) {
   if (!input.startsWith(TERMINAL_QUICK_SCRIPT_PREFIX)) {
     return null;
@@ -11,7 +18,7 @@ export function detectTerminalQuickScriptQuery(input: string) {
   return input.slice(TERMINAL_QUICK_SCRIPT_PREFIX.length);
 }
 
-export function rankQuickScriptCandidates(items: ScriptLibraryItem[], query: string) {
+export function rankQuickScriptCandidates(items: readonly ScriptLibraryItem[], query: string) {
   const normalized = query.trim().toLowerCase();
   const ranked = items.filter((item) => {
     if (!normalized) {
@@ -35,9 +42,46 @@ export function rankQuickScriptCandidates(items: ScriptLibraryItem[], query: str
   });
 }
 
-export function findExactQuickScriptMatch(items: ScriptLibraryItem[], query: string) {
+export function findExactQuickScriptMatch(items: readonly ScriptLibraryItem[], query: string) {
   const normalized = query.trim().toLowerCase();
   return rankQuickScriptCandidates(items, normalized).find(
     (item) => item.alias.toLowerCase() === normalized
   ) ?? null;
+}
+
+export function buildQuickScriptSuggestionItems(
+  items: ScriptLibraryItem[],
+  selectedIndex: number
+): TerminalQuickScriptSuggestionItem[] {
+  return items.map((item, index) => ({
+    id: item.id,
+    label: item.alias,
+    detail: `${item.title} · ${item.resolvedFrom} · ${item.kind}`,
+    highlighted: index === selectedIndex,
+  }));
+}
+
+export function isQuickScriptQueryStillCurrent(inputBuffer: string, expectedQuery: string) {
+  const currentQuery = detectTerminalQuickScriptQuery(inputBuffer);
+  return currentQuery !== null && currentQuery === expectedQuery;
+}
+
+export function resolveQuickScriptExecutionTarget(input: {
+  query: string;
+  items: readonly ScriptLibraryItem[];
+  rankedQuery: string | null;
+  rankedItems: readonly ScriptLibraryItem[];
+  selectedIndex: number;
+}) {
+  const normalizedQuery = input.query.trim().toLowerCase();
+  const normalizedRankedQuery = input.rankedQuery?.trim().toLowerCase() ?? null;
+  const rankedMatchesCurrent = normalizedQuery === normalizedRankedQuery;
+  const rankedCandidates = rankedMatchesCurrent
+    ? input.rankedItems
+    : rankQuickScriptCandidates(input.items, input.query);
+
+  const selectedIndex = rankedMatchesCurrent ? input.selectedIndex : 0;
+  const selectedMatch = rankedCandidates[selectedIndex] ?? null;
+  const exactMatch = findExactQuickScriptMatch(input.items, input.query);
+  return selectedMatch ?? exactMatch;
 }

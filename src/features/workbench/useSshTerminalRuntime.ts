@@ -17,11 +17,21 @@ import {
   shouldConfirmSshTerminalPaste,
   shouldToggleSshTerminalSearchShortcut,
   resolveSshTerminalInput,
+  type SshTerminalQuickScriptOverlayState,
 } from '@/features/workbench/sshTerminalRuntimeModel';
+import type { TerminalSuggestionItem } from '@/features/workbench/sshTerminalSuggestionOverlayModel';
+import {
+  buildQuickScriptSuggestionItems,
+  detectTerminalQuickScriptQuery,
+  isQuickScriptQueryStillCurrent,
+  rankQuickScriptCandidates,
+  resolveQuickScriptExecutionTarget,
+  TERMINAL_QUICK_SCRIPT_DELAY_MS,
+} from '@/features/workbench/terminalQuickScriptModel';
 import { isAgentSessionLocked } from '@/features/workbench/agentSessionModel';
 import { loadTerminalRuntime } from '@/features/workbench/terminalRuntimeLoader';
 import { TERMINAL_THEMES } from '@/features/workbench/terminalSettings';
-import type { AgentSessionLock, ConnectionStatus } from '@/features/workbench/types';
+import type { AgentSessionLock, ConnectionStatus, ScriptLibraryItem } from '@/features/workbench/types';
 
 type UseSshTerminalRuntimeOptions = {
   agentSessionLock: AgentSessionLock | null;
@@ -46,6 +56,9 @@ type UseSshTerminalRuntimeOptions = {
   }>;
   terminalRef: MutableRefObject<Terminal | null>;
   toggleSearch: () => void;
+  quickScriptsRef: MutableRefObject<ScriptLibraryItem[]>;
+  onExecuteQuickScript: (item: ScriptLibraryItem) => void;
+  onQuickScriptNotFound: (query: string) => void;
   websocketRef: MutableRefObject<WebSocket | null>;
 };
 
@@ -72,20 +85,65 @@ export function useSshTerminalRuntime({
   settingsRef,
   terminalRef,
   toggleSearch,
+  quickScriptsRef,
+  onExecuteQuickScript,
+  onQuickScriptNotFound,
   websocketRef,
 }: UseSshTerminalRuntimeOptions) {
   const [copyFeedbackVisible, setCopyFeedbackVisible] = useState(false);
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [quickScriptItems, setQuickScriptItems] = useState<TerminalSuggestionItem[]>([]);
+  const [quickScriptVisible, setQuickScriptVisible] = useState(false);
+  const [quickScriptSelectedIndex, setQuickScriptSelectedIndex] = useState(0);
   const copyFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isAgentLockedRef = useRef(false);
   const imeStateRef = useRef(createSshTerminalImeState());
+  const quickScriptSelectedIndexRef = useRef(0);
+  const rankedQuickScriptsQueryRef = useRef<string | null>(null);
+  const rankedQuickScriptsRef = useRef<ScriptLibraryItem[]>([]);
+  const quickScriptRequestIdRef = useRef(0);
   const suggestionRef = useRef<string | null>(null);
+  const executeQuickScriptRef = useRef(onExecuteQuickScript);
+  const quickScriptNotFoundRef = useRef(onQuickScriptNotFound);
+  const quickScriptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     suggestionRef.current = suggestion;
   }, [suggestion]);
+
+  useEffect(() => {
+    executeQuickScriptRef.current = onExecuteQuickScript;
+  }, [onExecuteQuickScript]);
+
+  useEffect(() => {
+    quickScriptNotFoundRef.current = onQuickScriptNotFound;
+  }, [onQuickScriptNotFound]);
+
+  useEffect(() => {
+    quickScriptSelectedIndexRef.current = quickScriptSelectedIndex;
+    setQuickScriptItems(
+      buildQuickScriptSuggestionItems(
+        rankedQuickScriptsRef.current,
+        quickScriptSelectedIndexRef.current
+      )
+    );
+  }, [quickScriptSelectedIndex]);
+
+  const clearQuickScriptSuggestions = useCallback(() => {
+    quickScriptRequestIdRef.current += 1;
+    if (quickScriptTimerRef.current) {
+      clearTimeout(quickScriptTimerRef.current);
+      quickScriptTimerRef.current = null;
+    }
+    rankedQuickScriptsRef.current = [];
+    rankedQuickScriptsQueryRef.current = null;
+    quickScriptSelectedIndexRef.current = 0;
+    setQuickScriptItems([]);
+    setQuickScriptSelectedIndex(0);
+    setQuickScriptVisible(false);
+  }, []);
 
   const isAgentLocked = isAgentSessionLocked(agentSessionLock);
 
@@ -102,8 +160,9 @@ export function useSshTerminalRuntime({
       clearTimeout(suggestionTimerRef.current);
       suggestionTimerRef.current = null;
     }
+    clearQuickScriptSuggestions();
     setSuggestion(null);
-  }, [isAgentLocked]);
+  }, [clearQuickScriptSuggestions, isAgentLocked]);
 
   const readClipboardText = useCallback(async () => {
     if (window.__OPSCLAW_CLIPBOARD__) {
@@ -177,6 +236,59 @@ export function useSshTerminalRuntime({
         });
     }, SUGGESTION_QUERY_DELAY_MS);
   }, [sessionNodeIdRef]);
+
+  const fetchQuickScriptSuggestions = useCallback((inputBuffer: string) => {
+    if (isAgentLockedRef.current) {
+      clearQuickScriptSuggestions();
+      return;
+    }
+
+    const query = detectTerminalQuickScriptQuery(inputBuffer);
+    if (query === null) {
+      clearQuickScriptSuggestions();
+      return;
+    }
+
+    // Invalidate any inflight/queued result immediately for newer quick-script input.
+    quickScriptRequestIdRef.current += 1;
+
+    if (quickScriptTimerRef.current) {
+      clearTimeout(quickScriptTimerRef.current);
+    }
+
+    if (suggestionTimerRef.current) {
+      clearTimeout(suggestionTimerRef.current);
+      suggestionTimerRef.current = null;
+    }
+    setSuggestion(null);
+
+    quickScriptTimerRef.current = setTimeout(() => {
+      const requestId = quickScriptRequestIdRef.current;
+      if (!isQuickScriptQueryStillCurrent(inputBufferRef.current, query)) {
+        return;
+      }
+
+      if (quickScriptRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      const ranked = rankQuickScriptCandidates(quickScriptsRef.current, query).slice(0, 8);
+      rankedQuickScriptsQueryRef.current = query;
+      rankedQuickScriptsRef.current = ranked;
+
+      if (ranked.length === 0) {
+        setQuickScriptItems([]);
+        setQuickScriptVisible(false);
+        return;
+      }
+
+      const selectedIndex = 0;
+      quickScriptSelectedIndexRef.current = selectedIndex;
+      setQuickScriptSelectedIndex(selectedIndex);
+      setQuickScriptItems(buildQuickScriptSuggestionItems(ranked, selectedIndex));
+      setQuickScriptVisible(true);
+    }, TERMINAL_QUICK_SCRIPT_DELAY_MS);
+  }, [clearQuickScriptSuggestions, quickScriptsRef, inputBufferRef]);
 
   const confirmPendingPaste = useCallback(() => {
     if (pendingPaste === null) {
@@ -337,11 +449,40 @@ export function useSshTerminalRuntime({
         container.addEventListener('paste', handlePaste, { capture: true });
 
         const dataDisposable = terminal.onData((data) => {
+          const currentInputBuffer = inputBufferRef.current;
           const resolution = resolveSshTerminalInput({
             currentSuggestion: suggestionRef.current,
             data,
-            inputBuffer: inputBufferRef.current,
+            inputBuffer: currentInputBuffer,
           });
+
+          const quickQuery = detectTerminalQuickScriptQuery(currentInputBuffer);
+          if (quickQuery !== null && resolution.commandToRecord) {
+            const websocket = websocketRef.current;
+            if (websocket?.readyState === WebSocket.OPEN) {
+              // Clear the pending "x alias" line before injecting the real command.
+              websocket.send(JSON.stringify({ type: 'input', payload: '\x15' }));
+            }
+
+            const targetScript = resolveQuickScriptExecutionTarget({
+              query: quickQuery,
+              items: quickScriptsRef.current,
+              rankedQuery: rankedQuickScriptsQueryRef.current,
+              rankedItems: rankedQuickScriptsRef.current,
+              selectedIndex: quickScriptSelectedIndexRef.current,
+            });
+
+            if (targetScript) {
+              executeQuickScriptRef.current(targetScript);
+            } else {
+              quickScriptNotFoundRef.current(quickQuery);
+            }
+
+            inputBufferRef.current = '';
+            clearQuickScriptSuggestions();
+            setSuggestion(null);
+            return;
+          }
 
           const websocket = websocketRef.current;
           if (websocket?.readyState === WebSocket.OPEN) {
@@ -349,7 +490,15 @@ export function useSshTerminalRuntime({
           }
 
           inputBufferRef.current = resolution.nextInputBuffer;
-          setSuggestion(resolution.nextSuggestion);
+          const quickScriptQuery = detectTerminalQuickScriptQuery(inputBufferRef.current);
+          const isQuickScriptMode = quickScriptQuery !== null;
+          if (isQuickScriptMode) {
+            if (suggestionRef.current !== null) {
+              setSuggestion(null);
+            }
+          } else {
+            setSuggestion(resolution.nextSuggestion);
+          }
 
           if (!isAgentLockedRef.current && resolution.commandToRecord) {
             void recordCommand({
@@ -360,8 +509,15 @@ export function useSshTerminalRuntime({
             });
           }
 
-          if (!isAgentLockedRef.current && resolution.suggestionQuery !== null) {
-            fetchSuggestion(resolution.suggestionQuery);
+          if (!isAgentLockedRef.current) {
+            if (isQuickScriptMode) {
+              fetchQuickScriptSuggestions(inputBufferRef.current);
+            } else {
+              clearQuickScriptSuggestions();
+              if (resolution.suggestionQuery !== null) {
+                fetchSuggestion(resolution.suggestionQuery);
+              }
+            }
           }
         });
 
@@ -396,6 +552,10 @@ export function useSshTerminalRuntime({
             clearTimeout(suggestionTimerRef.current);
             suggestionTimerRef.current = null;
           }
+          if (quickScriptTimerRef.current) {
+            clearTimeout(quickScriptTimerRef.current);
+            quickScriptTimerRef.current = null;
+          }
           if (copyFeedbackTimerRef.current) {
             clearTimeout(copyFeedbackTimerRef.current);
             copyFeedbackTimerRef.current = null;
@@ -403,6 +563,7 @@ export function useSshTerminalRuntime({
           setCopyFeedbackVisible(false);
           imeStateRef.current = createSshTerminalImeState();
           inputBufferRef.current = '';
+          clearQuickScriptSuggestions();
           setSuggestion(null);
           setPendingPaste(null);
           rejectPendingExecution('终端已销毁，未完成的 Agent 命令已取消。');
@@ -439,7 +600,9 @@ export function useSshTerminalRuntime({
     };
   }, [
     containerRef,
+    clearQuickScriptSuggestions,
     disposeViewport,
+    fetchQuickScriptSuggestions,
     fetchSuggestion,
     fitAddonRef,
     initializedRef,
@@ -447,6 +610,7 @@ export function useSshTerminalRuntime({
     inputBufferRef,
     onRuntimeReadyChange,
     onRuntimeLoadError,
+    quickScriptsRef,
     rejectPendingExecution,
     readClipboardText,
     scheduleFitAndResize,
@@ -462,6 +626,12 @@ export function useSshTerminalRuntime({
     writeClipboardText,
   ]);
 
+  const quickScriptOverlayState: SshTerminalQuickScriptOverlayState = {
+    quickScriptItems,
+    quickScriptVisible,
+    quickScriptSelectedIndex,
+  };
+
   return {
     copyFeedbackText: buildSshTerminalCopyFeedbackText(),
     copyFeedbackVisible,
@@ -470,6 +640,9 @@ export function useSshTerminalRuntime({
     dismissPendingPaste,
     pendingPaste,
     pasteFromClipboard,
+    quickScriptItems: quickScriptOverlayState.quickScriptItems,
+    quickScriptSelectedIndex: quickScriptOverlayState.quickScriptSelectedIndex,
+    quickScriptVisible: quickScriptOverlayState.quickScriptVisible,
     selectAll,
     suggestion,
     suggestionVisible: !isAgentLocked && suggestion !== null && inputBufferRef.current !== '',
