@@ -1,4 +1,10 @@
 import { Button } from '@/components/ui/button';
+import {
+  SETTINGS_PANEL_CLASS,
+  SETTINGS_TEXT_PRIMARY_CLASS,
+  SETTINGS_TEXT_SECONDARY_CLASS,
+  SETTINGS_TEXT_TERTIARY_CLASS,
+} from './settingsTheme';
 
 import type { LlmProvider } from './types';
 
@@ -32,9 +38,9 @@ export function LlmProviderListSection({
 
   if (viewModel.items.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-neutral-800/50 bg-[#0a0b0d]/30 py-12 text-center text-sm text-neutral-400">
-        <div className="mb-2 text-neutral-600">{viewModel.emptyTitle}</div>
-        <div className="text-xs text-neutral-600">{viewModel.emptyDescription}</div>
+      <div className="rounded-xl border border-dashed border-[var(--app-border-default)] bg-[var(--app-bg-base)] py-12 text-center text-sm text-[var(--app-text-secondary)]">
+        <div className={`mb-2 ${SETTINGS_TEXT_TERTIARY_CLASS}`}>{viewModel.emptyTitle}</div>
+        <div className={`text-xs ${SETTINGS_TEXT_TERTIARY_CLASS}`}>{viewModel.emptyDescription}</div>
       </div>
     );
   }
@@ -50,12 +56,12 @@ export function LlmProviderListSection({
         return (
           <div
             key={item.id}
-            className="group rounded-xl border border-neutral-800/50 bg-[#17181b] p-5 transition-all duration-200 hover:border-[var(--app-border-strong)]/50"
+            className={`${SETTINGS_PANEL_CLASS} group p-5 transition-all duration-200 hover:border-[var(--app-border-strong)]/50`}
           >
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
                 <div className="mb-2 flex items-center gap-3">
-                  <span className="truncate text-sm font-medium text-neutral-100">
+                  <span className={`truncate text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>
                     {item.name}
                   </span>
                   {item.showDefaultProviderBadge ? (
@@ -64,18 +70,18 @@ export function LlmProviderListSection({
                     </span>
                   ) : null}
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+                <div className={`flex flex-wrap items-center gap-2 text-xs ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
                   <span className="rounded bg-[var(--app-bg-elevated3)]/50 px-2 py-0.5">
                     {item.providerLabel}
                   </span>
-                  <span className="text-neutral-700">·</span>
+                  <span className={SETTINGS_TEXT_TERTIARY_CLASS}>·</span>
                   <span className="font-mono">{item.baseUrlLabel}</span>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {item.models.map((model) => (
                     <span
                       key={model.name}
-                      className="rounded-md border border-neutral-800 bg-[#0a0b0d] px-2.5 py-1 text-xs text-neutral-300"
+                      className="rounded-md border border-[var(--app-border-default)] bg-[var(--app-bg-base)] px-2.5 py-1 text-xs text-[var(--app-text-secondary)]"
                     >
                       {model.label}
                     </span>

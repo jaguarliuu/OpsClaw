@@ -1,9 +1,14 @@
 import { Suspense, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { buildDesktopWindowChromeLayout } from '@/features/workbench/desktopWindowChromeModel';
+import {
+  SETTINGS_PANEL_CLASS,
+  SETTINGS_TEXT_SECONDARY_CLASS,
+} from '@/features/workbench/settingsTheme';
 import {
   buildSettingsPath,
   isSettingsPageTab,
@@ -41,11 +46,14 @@ export default function SettingsPage() {
     void navigate(buildSettingsPath(nextTab), { replace: true });
   };
 
+  const settingsTabClassName =
+    'text-[var(--app-text-secondary)] data-[state=active]:bg-[var(--app-bg-elevated3)] data-[state=active]:text-[var(--app-text-primary)] data-[state=active]:shadow-sm transition-all';
+
   return (
-    <div className="min-h-screen bg-[#0a0b0d] text-neutral-100">
-      <div className="border-b border-neutral-800/50 bg-[#111214]/80 backdrop-blur-sm sticky top-0 z-10">
+    <div className="min-h-screen bg-[var(--app-bg-base)] text-[var(--app-text-primary)]">
+      <div className="sticky top-0 z-10 border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated)]/95 backdrop-blur-sm">
         <div
-          className="max-w-6xl mx-auto px-8 py-5"
+          className="mx-auto max-w-6xl px-8 py-5"
           style={desktopWindowChrome.topBarStyle}
         >
           <div className="flex items-center gap-4">
@@ -55,32 +63,53 @@ export default function SettingsPage() {
               onClick={() => {
                 void navigate('/');
               }}
-              className="hover:bg-neutral-800/50 transition-colors"
+              className="transition-colors hover:bg-[var(--app-bg-elevated3)]"
               style={desktopWindowChrome.interactiveStyle}
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="h-5 w-5" />
             </Button>
             <div>
               <h1 className="text-xl font-semibold tracking-tight">设置</h1>
-              <p className="text-sm text-neutral-500 mt-0.5">统一管理终端、LLM、记忆和脚本能力</p>
+              <p className={`mt-0.5 text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
+                统一管理终端、LLM、记忆和脚本能力
+              </p>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-8 py-8">
+      <div className="mx-auto max-w-6xl px-8 py-8">
         <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-8">
-          <TabsList className="bg-[#17181b] border border-neutral-800/50 p-1.5" style={desktopWindowChrome.interactiveStyle}>
-            <TabsTrigger value="terminal" className="data-[state=active]:bg-[#1e2025] data-[state=active]:shadow-sm transition-all" style={desktopWindowChrome.interactiveStyle}>
+          <TabsList
+            className={`${SETTINGS_PANEL_CLASS} p-1.5`}
+            style={desktopWindowChrome.interactiveStyle}
+          >
+            <TabsTrigger
+              value="terminal"
+              className={settingsTabClassName}
+              style={desktopWindowChrome.interactiveStyle}
+            >
               终端配置
             </TabsTrigger>
-            <TabsTrigger value="llm" className="data-[state=active]:bg-[#1e2025] data-[state=active]:shadow-sm transition-all" style={desktopWindowChrome.interactiveStyle}>
+            <TabsTrigger
+              value="llm"
+              className={settingsTabClassName}
+              style={desktopWindowChrome.interactiveStyle}
+            >
               LLM 配置
             </TabsTrigger>
-            <TabsTrigger value="memory" className="data-[state=active]:bg-[#1e2025] data-[state=active]:shadow-sm transition-all" style={desktopWindowChrome.interactiveStyle}>
+            <TabsTrigger
+              value="memory"
+              className={settingsTabClassName}
+              style={desktopWindowChrome.interactiveStyle}
+            >
               记忆文档
             </TabsTrigger>
-            <TabsTrigger value="scripts" className="data-[state=active]:bg-[#1e2025] data-[state=active]:shadow-sm transition-all" style={desktopWindowChrome.interactiveStyle}>
+            <TabsTrigger
+              value="scripts"
+              className={settingsTabClassName}
+              style={desktopWindowChrome.interactiveStyle}
+            >
               脚本
             </TabsTrigger>
           </TabsList>

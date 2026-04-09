@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type CSSProperties } from 'react';
 import type { SearchAddon } from '@xterm/addon-search';
 import type { FitAddon } from '@xterm/addon-fit';
 import type { Terminal } from '@xterm/xterm';
@@ -374,7 +374,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
 
     return (
       <div
-        className={(show ?? active) ? 'relative block h-full w-full' : 'hidden h-full w-full'}
+        className={(show ?? active) ? 'relative block h-full w-full px-3 pt-3 pb-1' : 'hidden h-full w-full px-3 pt-3 pb-1'}
         onContextMenu={(event) => {
           event.preventDefault();
           openContextMenu(
@@ -382,104 +382,113 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
             { canCopySelection: terminalRef.current?.hasSelection() === true }
           );
         }}
-      >
-        <div className="xterm-pane h-full w-full" ref={containerRef} />
-
-        {agentSessionLock ? (
-          <div className="pointer-events-none absolute left-3 right-3 top-3 z-20 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200 shadow-[0_10px_30px_rgba(0,0,0,0.28)] backdrop-blur-sm">
-            <div>{getAgentSessionLockBannerText(agentSessionLock)}</div>
-            <div className="mt-1 font-mono text-[11px] text-amber-100/80">
-              {agentSessionLock.command}
-            </div>
-          </div>
-        ) : null}
-
-        {isSearchOpen && (
-          <SshTerminalSearchOverlay
-            onCloseSearch={closeSearch}
-            onFindNext={findNext}
-            onFindPrev={findPrev}
-            onSearchQueryChange={handleSearchQueryChange}
-            searchInputRef={searchInputRef}
-            searchQuery={searchQuery}
-          />
-        )}
-
-        {pendingPaste !== null && (
-          <SshTerminalPasteOverlay
-            pendingPaste={pendingPaste}
-            onCancel={dismissPendingPaste}
-            onConfirm={confirmPendingPaste}
-          />
-        )}
-
-        {quickScriptVisible && quickScriptItems.length > 0 ? (
-          <SshTerminalSuggestionOverlay
-            ref={suggestionOverlayRef}
-            placement={suggestionOverlayPosition.placement}
-            top={suggestionOverlayPosition.top}
-            title="快捷脚本"
-            hint="输入 x alias 继续筛选"
-            items={quickScriptItems}
-          />
-        ) : suggestionVisible && suggestion ? (
-          <SshTerminalSuggestionOverlay
-            ref={suggestionOverlayRef}
-            placement={suggestionOverlayPosition.placement}
-            top={suggestionOverlayPosition.top}
-            title="命令建议"
-            hint="按 Tab 接受"
-            items={[
+        >
+          <div
+            className="relative h-full w-full overflow-hidden rounded-xl bg-[var(--app-bg-elevated2)]"
+            style={
               {
-                id: 'history-suggestion',
-                label: suggestion,
-                detail: '按 Tab 接受',
-                highlighted: true,
-              },
-            ]}
-          />
-        ) : null}
-
-        {copyFeedbackVisible ? (
-          <div className="pointer-events-none absolute bottom-4 right-4 z-20 rounded-md border border-emerald-500/20 bg-[var(--app-bg-elevated2)] px-3 py-2 text-xs font-medium text-emerald-400 shadow-[0_10px_30px_rgba(0,0,0,0.28)]">
-            {copyFeedbackText}
-          </div>
-        ) : null}
-
-        {quickScriptError && !activeQuickScript ? (
-          <div className="pointer-events-none absolute bottom-4 left-4 z-20 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200 shadow-[0_10px_30px_rgba(0,0,0,0.28)]">
-            {quickScriptError}
-          </div>
-        ) : null}
-
-        <TerminalQuickScriptDialog
-          errorMessage={activeQuickScript ? quickScriptError : null}
-          onChange={(name, value) => {
-            setQuickScriptVariableValues((current) => ({
-              ...current,
-              [name]: value,
-            }));
-            if (quickScriptError) {
-              setQuickScriptError(null);
+                '--terminal-surface-bg': TERMINAL_THEMES[settings.themeName].background,
+              } as CSSProperties
             }
-          }}
-          onClose={handleCloseQuickScriptDialog}
-          onConfirm={handleConfirmQuickScript}
-          open={activeQuickScript !== null}
-          script={activeQuickScript}
-          values={quickScriptVariableValues}
-        />
+          >
+          <div className="xterm-pane h-full w-full" ref={containerRef} />
 
-        {contextMenuState ? (
-          <SshTerminalContextMenu
-            contextMenuRef={contextMenuRef}
-            contextMenuState={contextMenuState}
-            onCopySelection={copySelection}
-            onPasteFromClipboard={pasteFromClipboard}
-            onRequestClose={closeContextMenu}
-            onSelectAll={selectAll}
+          {agentSessionLock ? (
+            <div className="pointer-events-none absolute left-3 right-3 top-3 z-20 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200 shadow-[0_10px_30px_rgba(0,0,0,0.28)] backdrop-blur-sm">
+              <div>{getAgentSessionLockBannerText(agentSessionLock)}</div>
+              <div className="mt-1 font-mono text-[11px] text-amber-100/80">
+                {agentSessionLock.command}
+              </div>
+            </div>
+          ) : null}
+
+          {isSearchOpen ? (
+            <SshTerminalSearchOverlay
+              onCloseSearch={closeSearch}
+              onFindNext={findNext}
+              onFindPrev={findPrev}
+              onSearchQueryChange={handleSearchQueryChange}
+              searchInputRef={searchInputRef}
+              searchQuery={searchQuery}
+            />
+          ) : null}
+
+          {pendingPaste !== null ? (
+            <SshTerminalPasteOverlay
+              pendingPaste={pendingPaste}
+              onCancel={dismissPendingPaste}
+              onConfirm={confirmPendingPaste}
+            />
+          ) : null}
+
+          {quickScriptVisible && quickScriptItems.length > 0 ? (
+            <SshTerminalSuggestionOverlay
+              ref={suggestionOverlayRef}
+              placement={suggestionOverlayPosition.placement}
+              top={suggestionOverlayPosition.top}
+              title="快捷脚本"
+              hint="输入 x alias 继续筛选"
+              items={quickScriptItems}
+            />
+          ) : suggestionVisible && suggestion ? (
+            <SshTerminalSuggestionOverlay
+              ref={suggestionOverlayRef}
+              placement={suggestionOverlayPosition.placement}
+              top={suggestionOverlayPosition.top}
+              title="命令建议"
+              hint="按 Tab 接受"
+              items={[
+                {
+                  id: 'history-suggestion',
+                  label: suggestion,
+                  detail: '按 Tab 接受',
+                  highlighted: true,
+                },
+              ]}
+            />
+          ) : null}
+
+          {copyFeedbackVisible ? (
+            <div className="pointer-events-none absolute bottom-4 right-4 z-20 rounded-md border border-emerald-500/20 bg-[var(--app-bg-elevated2)] px-3 py-2 text-xs font-medium text-emerald-400 shadow-[0_10px_30px_rgba(0,0,0,0.28)]">
+              {copyFeedbackText}
+            </div>
+          ) : null}
+
+          {quickScriptError && !activeQuickScript ? (
+            <div className="pointer-events-none absolute bottom-4 left-4 z-20 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200 shadow-[0_10px_30px_rgba(0,0,0,0.28)]">
+              {quickScriptError}
+            </div>
+          ) : null}
+
+          <TerminalQuickScriptDialog
+            errorMessage={activeQuickScript ? quickScriptError : null}
+            onChange={(name, value) => {
+              setQuickScriptVariableValues((current) => ({
+                ...current,
+                [name]: value,
+              }));
+              if (quickScriptError) {
+                setQuickScriptError(null);
+              }
+            }}
+            onClose={handleCloseQuickScriptDialog}
+            onConfirm={handleConfirmQuickScript}
+            open={activeQuickScript !== null}
+            script={activeQuickScript}
+            values={quickScriptVariableValues}
           />
-        ) : null}
+
+          {contextMenuState ? (
+            <SshTerminalContextMenu
+              contextMenuRef={contextMenuRef}
+              contextMenuState={contextMenuState}
+              onCopySelection={copySelection}
+              onPasteFromClipboard={pasteFromClipboard}
+              onRequestClose={closeContextMenu}
+              onSelectAll={selectAll}
+            />
+          ) : null}
+        </div>
       </div>
     );
   }

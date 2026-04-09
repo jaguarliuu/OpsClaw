@@ -8,6 +8,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  SETTINGS_INPUT_CLASS,
+  SETTINGS_TEXT_PRIMARY_CLASS,
+  SETTINGS_TEXT_SECONDARY_CLASS,
+} from './settingsTheme';
 
 type LlmProviderModelSectionProps = {
   customModelInput: string;
@@ -39,7 +44,7 @@ export function LlmProviderModelSection({
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label className="text-sm font-medium text-neutral-300">预设候选</Label>
+        <Label className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>预设候选</Label>
         <div className="flex flex-wrap gap-2">
           {viewModel.presetModels.map((model) => (
             <Button
@@ -47,7 +52,7 @@ export function LlmProviderModelSection({
               type="button"
               variant={model.selected ? 'secondary' : 'ghost'}
               onClick={() => onPresetModelClick(model.name)}
-              className="h-8 rounded-md border border-neutral-800 px-3 text-xs"
+              className="h-8 rounded-md border border-[var(--app-border-default)] px-3 text-xs"
             >
               {model.name}
             </Button>
@@ -56,7 +61,7 @@ export function LlmProviderModelSection({
       </div>
 
       <div className="space-y-2">
-        <Label className="text-sm font-medium text-neutral-300">添加自定义模型</Label>
+        <Label className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>添加自定义模型</Label>
         <div className="flex gap-2">
           <Input
             placeholder="例如：gpt-4.1-nano"
@@ -68,7 +73,7 @@ export function LlmProviderModelSection({
                 onCustomModelInputEnter();
               }
             }}
-            className="h-10 border-neutral-800/50 bg-[#0a0b0d] font-mono text-sm transition-all focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
+            className={`h-10 font-mono text-sm ${SETTINGS_INPUT_CLASS}`}
           />
           <Button
             type="button"
@@ -82,9 +87,9 @@ export function LlmProviderModelSection({
       </div>
 
       <div className="space-y-2">
-        <Label className="text-sm font-medium text-neutral-300">已选模型</Label>
+        <Label className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>已选模型</Label>
         {viewModel.selectedModels.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-neutral-800 bg-[#0a0b0d]/60 px-3 py-4 text-sm text-neutral-500">
+          <div className={`rounded-lg border border-dashed border-[var(--app-border-default)] bg-[var(--app-bg-base)] px-3 py-4 text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
             {viewModel.emptyStateMessage}
           </div>
         ) : (
@@ -92,7 +97,7 @@ export function LlmProviderModelSection({
             {viewModel.selectedModels.map((model) => (
               <div
                 key={model.name}
-                className="inline-flex items-center gap-2 rounded-md border border-neutral-800 bg-[#0a0b0d] px-3 py-2 text-xs text-neutral-200"
+                className={`inline-flex items-center gap-2 rounded-md border border-[var(--app-border-default)] bg-[var(--app-bg-base)] px-3 py-2 text-xs ${SETTINGS_TEXT_PRIMARY_CLASS}`}
               >
                 <span className="font-mono">{model.label}</span>
                 {model.isDefaultModel ? (
@@ -101,7 +106,7 @@ export function LlmProviderModelSection({
                 <button
                   type="button"
                   onClick={() => onRemoveModel(model.name)}
-                  className="text-neutral-500 transition-colors hover:text-red-400"
+                  className={`transition-colors ${SETTINGS_TEXT_SECONDARY_CLASS} hover:text-red-400`}
                 >
                   删除
                 </button>
@@ -112,9 +117,9 @@ export function LlmProviderModelSection({
       </div>
 
       <div className="space-y-2">
-        <Label className="text-sm font-medium text-neutral-300">默认模型</Label>
+        <Label className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>默认模型</Label>
         <Select value={defaultModel} onValueChange={onDefaultModelChange}>
-          <SelectTrigger className="h-10 border-neutral-800/50 bg-[#0a0b0d] transition-all focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20">
+          <SelectTrigger className={`h-10 ${SETTINGS_INPUT_CLASS}`}>
             <SelectValue placeholder="请选择默认模型" />
           </SelectTrigger>
           <SelectContent>

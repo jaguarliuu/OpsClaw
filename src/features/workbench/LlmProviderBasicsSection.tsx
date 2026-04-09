@@ -7,6 +7,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  SETTINGS_INPUT_CLASS,
+  SETTINGS_TEXT_PRIMARY_CLASS,
+  SETTINGS_TEXT_SECONDARY_CLASS,
+} from './settingsTheme';
 
 import type { LlmProviderType } from './types';
 
@@ -37,19 +42,19 @@ export function LlmProviderBasicsSection({
     <>
       <div className="grid gap-5 md:grid-cols-2">
         <div className="space-y-2">
-          <Label className="text-sm font-medium text-neutral-300">名称</Label>
+          <Label className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>名称</Label>
           <Input
             placeholder="例如：我的智谱 GLM"
             value={name}
             onChange={(event) => onNameChange(event.target.value)}
-            className="h-10 border-neutral-800/50 bg-[#0a0b0d] transition-all focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
+            className={`h-10 ${SETTINGS_INPUT_CLASS}`}
           />
         </div>
 
         <div className="space-y-2">
-          <Label className="text-sm font-medium text-neutral-300">提供商</Label>
+          <Label className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>提供商</Label>
           <Select value={providerType} onValueChange={(value: string) => onProviderTypeChange(value as LlmProviderType)}>
-            <SelectTrigger className="h-10 border-neutral-800/50 bg-[#0a0b0d] transition-all focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20">
+            <SelectTrigger className={`h-10 ${SETTINGS_INPUT_CLASS}`}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -64,14 +69,14 @@ export function LlmProviderBasicsSection({
       </div>
 
       <div className="space-y-2">
-        <Label className="text-sm font-medium text-neutral-300">Base URL</Label>
+        <Label className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>Base URL</Label>
         <Input
           placeholder={viewModel.baseUrlPlaceholder}
           value={baseUrl}
           onChange={(event) => onBaseUrlChange(event.target.value)}
-          className="h-10 border-neutral-800/50 bg-[#0a0b0d] font-mono text-sm transition-all focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
+          className={`h-10 font-mono text-sm ${SETTINGS_INPUT_CLASS}`}
         />
-        <p className="text-xs text-neutral-500">{viewModel.baseUrlHint}</p>
+        <p className={`text-xs ${SETTINGS_TEXT_SECONDARY_CLASS}`}>{viewModel.baseUrlHint}</p>
       </div>
     </>
   );

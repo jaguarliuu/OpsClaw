@@ -45,6 +45,15 @@ import {
   type ScriptSettingsScope,
   validateTemplateScriptDefinition,
 } from '@/features/workbench/scriptSettingsModel';
+import {
+  SETTINGS_INPUT_CLASS,
+  SETTINGS_PANEL_CLASS,
+  SETTINGS_PANEL_MUTED_CLASS,
+  SETTINGS_SUBPANEL_CLASS,
+  SETTINGS_TEXT_PRIMARY_CLASS,
+  SETTINGS_TEXT_SECONDARY_CLASS,
+  SETTINGS_TEXT_TERTIARY_CLASS,
+} from '@/features/workbench/settingsTheme';
 import type {
   ManagedScriptLibraryItem,
   ScriptLibraryUpsertInput,
@@ -231,7 +240,7 @@ function ScriptSettingsEditorDialog({
             <div className="grid gap-2">
               <Label htmlFor="script-node">节点</Label>
               {nodeSelectionLocked ? (
-                <div className="rounded-md border border-neutral-800 bg-neutral-950/40 px-3 py-2 text-sm text-neutral-300">
+                <div className={`${SETTINGS_SUBPANEL_CLASS} px-3 py-2 text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
                   {nodes[0]?.name ?? '当前节点'}
                 </div>
               ) : (
@@ -299,7 +308,7 @@ function ScriptSettingsEditorDialog({
                 placeholder="例如 nginx-restart"
                 value={state.draft.alias}
               />
-              <p className="text-xs text-neutral-500">
+              <p className={`text-xs ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
                 终端中输入 x {state.draft.alias || '<alias>'} 可快捷执行。
               </p>
             </div>
@@ -402,18 +411,18 @@ function ScriptSettingsEditorDialog({
               value={state.draft.content}
             />
             {state.draft.kind === 'template' ? (
-              <p className="text-xs text-neutral-400">
+              <p className={`text-xs ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
                 当前识别到的占位符: {usedVariables.length > 0 ? usedVariables.join(', ') : '无'}
               </p>
             ) : null}
           </div>
 
           {state.draft.kind === 'template' ? (
-            <div className="grid gap-3 rounded-md border border-neutral-800 bg-neutral-950/40 p-4">
+            <div className={`${SETTINGS_SUBPANEL_CLASS} grid gap-3 p-4`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-medium text-neutral-100">模板变量</h3>
-                  <p className="text-xs text-neutral-400">
+                  <h3 className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>模板变量</h3>
+                  <p className={`text-xs ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
                     变量名要与 ${'{name}'} 占位一致。
                   </p>
                 </div>
@@ -439,7 +448,7 @@ function ScriptSettingsEditorDialog({
                 <div className="grid gap-3">
                   {state.draft.variables.map((variable, index) => (
                     <div
-                      className="grid gap-3 rounded-md border border-neutral-800/80 bg-neutral-900/60 p-3"
+                      className={`${SETTINGS_SUBPANEL_CLASS} grid gap-3 p-3`}
                       key={`${variable.name || 'var'}-${index}`}
                     >
                       <div className="grid gap-3 md:grid-cols-2">
@@ -551,10 +560,10 @@ function ScriptSettingsEditorDialog({
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <label className="flex items-center gap-2 text-sm text-neutral-300">
+                        <label className={`flex items-center gap-2 text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
                           <input
                             checked={variable.required}
-                            className="h-4 w-4 rounded border border-neutral-700 bg-neutral-800"
+                            className="h-4 w-4 rounded border border-[var(--app-border-default)] bg-[var(--app-bg-base)]"
                             onChange={(event) => {
                               const checked = event.target.checked;
                               onStateChange((current) => ({
@@ -595,7 +604,7 @@ function ScriptSettingsEditorDialog({
                   ))}
                 </div>
               ) : (
-                <div className="rounded-md border border-dashed border-neutral-800 px-3 py-4 text-sm text-neutral-400">
+                <div className={`rounded-md border border-dashed border-[var(--app-border-default)] px-3 py-4 text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
                   当前还没有变量定义。
                 </div>
               )}
@@ -848,13 +857,13 @@ export function ScriptSettingsTab() {
       <div className="space-y-8">
         <div className="mb-2">
           <h3 className="text-base font-semibold tracking-tight">脚本</h3>
-          <p className="mt-1 text-sm text-neutral-500">{buildScriptSettingsIntro()}</p>
+          <p className={`mt-1 text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>{buildScriptSettingsIntro()}</p>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="space-y-5 rounded-xl border border-neutral-800/50 bg-[#17181b] p-5">
+          <aside className={`${SETTINGS_PANEL_CLASS} space-y-5 p-5`}>
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-neutral-300">脚本范围</Label>
+              <Label className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>脚本范围</Label>
               <Select
                 value={scope}
                 onValueChange={(value) => {
@@ -862,7 +871,7 @@ export function ScriptSettingsTab() {
                   setQuery('');
                 }}
               >
-                <SelectTrigger className="h-10 bg-[#0a0b0d] border-neutral-800/50">
+                <SelectTrigger className={`h-10 ${SETTINGS_INPUT_CLASS}`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -874,9 +883,9 @@ export function ScriptSettingsTab() {
 
             {scope === 'node' ? (
               <div className="space-y-2">
-                <Label className="text-sm font-medium text-neutral-300">节点</Label>
+                <Label className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>节点</Label>
                 <Select value={selectedNodeId} onValueChange={setSelectedNodeId}>
-                  <SelectTrigger className="h-10 bg-[#0a0b0d] border-neutral-800/50">
+                  <SelectTrigger className={`h-10 ${SETTINGS_INPUT_CLASS}`}>
                     <SelectValue placeholder="选择节点" />
                   </SelectTrigger>
                   <SelectContent>
@@ -890,10 +899,10 @@ export function ScriptSettingsTab() {
               </div>
             ) : null}
 
-            <div className="rounded-lg border border-neutral-800/60 bg-[#0a0b0d]/70 px-3 py-3 text-xs text-neutral-400">
-              <div className="mb-1 text-neutral-200">当前视角</div>
+            <div className={`${SETTINGS_PANEL_MUTED_CLASS} px-3 py-3 text-xs ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
+              <div className={`mb-1 ${SETTINGS_TEXT_PRIMARY_CLASS}`}>当前视角</div>
               <div>{scope === 'global' ? '全局脚本资产' : `节点脚本 · ${selectedNodeName}`}</div>
-              <div className="mt-2 text-neutral-500">
+              <div className={`mt-2 ${SETTINGS_TEXT_TERTIARY_CLASS}`}>
                 {scope === 'global'
                   ? '全局脚本会在终端按 alias 直接解析。'
                   : '节点脚本只显示当前选中节点下维护的原始记录。'}
@@ -901,7 +910,7 @@ export function ScriptSettingsTab() {
             </div>
           </aside>
 
-          <section className="space-y-4 rounded-xl border border-neutral-800/50 bg-[#17181b] p-5">
+          <section className={`${SETTINGS_PANEL_CLASS} space-y-4 p-5`}>
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <Input
                 onChange={(event) => setQuery(event.target.value)}
@@ -930,8 +939,8 @@ export function ScriptSettingsTab() {
             </div>
 
             <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-              <div className="overflow-hidden rounded-xl border border-neutral-800/60 bg-[#0a0b0d]/70">
-                <div className="grid grid-cols-[minmax(0,120px)_minmax(0,1fr)_72px] gap-3 border-b border-neutral-800/80 px-4 py-3 text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+              <div className={`${SETTINGS_PANEL_MUTED_CLASS} overflow-hidden`}>
+                <div className={`grid grid-cols-[minmax(0,120px)_minmax(0,1fr)_72px] gap-3 border-b border-[var(--app-border-default)] px-4 py-3 text-[11px] uppercase tracking-[0.18em] ${SETTINGS_TEXT_TERTIARY_CLASS}`}>
                   <span>Alias</span>
                   <span>标题</span>
                   <span>类型</span>
@@ -939,20 +948,20 @@ export function ScriptSettingsTab() {
 
                 <div className="max-h-[560px] overflow-y-auto">
                   {isLoading ? (
-                    <div className="px-4 py-6 text-sm text-neutral-400">脚本列表加载中...</div>
+                    <div className={`px-4 py-6 text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>脚本列表加载中...</div>
                   ) : errorMessage ? (
                     <div className="px-4 py-6 text-sm text-red-200">{errorMessage}</div>
                   ) : filteredItems.length === 0 ? (
-                    <div className="px-4 py-6 text-sm text-neutral-400">{emptyStateMessage}</div>
+                    <div className={`px-4 py-6 text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>{emptyStateMessage}</div>
                   ) : (
-                    <div className="divide-y divide-neutral-900/80">
+                    <div className="divide-y divide-[var(--app-border-default)]">
                       {filteredItems.map((item) => (
                         <button
                           className={cn(
                             'grid w-full grid-cols-[minmax(0,120px)_minmax(0,1fr)_72px] gap-3 px-4 py-3 text-left transition-colors',
                             item.id === selectedScript?.id
-                              ? 'bg-blue-500/10 text-neutral-100'
-                              : 'text-neutral-300 hover:bg-neutral-900/60'
+                              ? 'bg-blue-500/10 text-[var(--app-text-primary)]'
+                              : 'text-[var(--app-text-secondary)] hover:bg-[var(--app-bg-elevated3)]'
                           )}
                           key={item.id}
                           onClick={() => setSelectedScriptId(item.id)}
@@ -963,12 +972,12 @@ export function ScriptSettingsTab() {
                           </span>
                           <span className="min-w-0">
                             <span className="block truncate text-sm">{item.title}</span>
-                            <span className="mt-1 block truncate text-xs text-neutral-500">
+                            <span className={`mt-1 block truncate text-xs ${SETTINGS_TEXT_TERTIARY_CLASS}`}>
                               {getManagedScriptScopeLabel(item)}
                               {item.tags.length > 0 ? ` · ${item.tags.join(', ')}` : ''}
                             </span>
                           </span>
-                          <span className="text-xs text-neutral-400">{item.kind}</span>
+                          <span className={`text-xs ${SETTINGS_TEXT_SECONDARY_CLASS}`}>{item.kind}</span>
                         </button>
                       ))}
                     </div>
@@ -1003,43 +1012,43 @@ export function ScriptSettingsTab() {
                         </Button>
                       </div>
                     }
-                    className="h-full border-neutral-800/60 bg-[#0a0b0d]/60"
+                    className={`h-full border-[var(--app-border-default)] bg-[var(--app-bg-base)]`}
                     description={selectedScript.description || '无额外说明'}
                     title={selectedScript.title}
                   >
                     <div className="space-y-4">
-                      <div className="flex flex-wrap gap-2 text-xs text-neutral-400">
-                        <span className="rounded-full border border-neutral-800 px-2 py-1">
+                      <div className={`flex flex-wrap gap-2 text-xs ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
+                        <span className="rounded-full border border-[var(--app-border-default)] px-2 py-1">
                           {selectedScript.kind === 'plain' ? '纯文本脚本' : '模板脚本'}
                         </span>
-                        <span className="rounded-full border border-neutral-800 px-2 py-1">
+                        <span className="rounded-full border border-[var(--app-border-default)] px-2 py-1">
                           {getManagedScriptScopeLabel(selectedScript)}
                         </span>
                         {selectedScript.scope === 'node' ? (
-                          <span className="rounded-full border border-neutral-800 px-2 py-1">
+                          <span className="rounded-full border border-[var(--app-border-default)] px-2 py-1">
                             节点: {nodes.find((node) => node.id === selectedScript.nodeId)?.name ?? selectedScript.nodeId}
                           </span>
                         ) : null}
                       </div>
 
-                      <div className="rounded-md border border-neutral-800 bg-neutral-950/50 p-3">
-                        <div className="mb-2 text-xs uppercase tracking-[0.18em] text-neutral-500">
+                      <div className={`${SETTINGS_SUBPANEL_CLASS} p-3`}>
+                        <div className={`mb-2 text-xs uppercase tracking-[0.18em] ${SETTINGS_TEXT_TERTIARY_CLASS}`}>
                           脚本内容
                         </div>
-                        <pre className="whitespace-pre-wrap break-words text-xs text-neutral-200">
+                        <pre className={`whitespace-pre-wrap break-words text-xs ${SETTINGS_TEXT_PRIMARY_CLASS}`}>
                           {selectedScript.content}
                         </pre>
                       </div>
 
                       {selectedScript.tags.length > 0 ? (
                         <div className="space-y-2">
-                          <div className="text-xs uppercase tracking-[0.18em] text-neutral-500">
+                          <div className={`text-xs uppercase tracking-[0.18em] ${SETTINGS_TEXT_TERTIARY_CLASS}`}>
                             标签
                           </div>
                           <div className="flex flex-wrap gap-2">
                             {selectedScript.tags.map((tag) => (
                               <span
-                                className="rounded-full border border-neutral-800 px-2 py-1 text-xs text-neutral-300"
+                                className="rounded-full border border-[var(--app-border-default)] px-2 py-1 text-xs text-[var(--app-text-secondary)]"
                                 key={tag}
                               >
                                 {tag}
@@ -1051,33 +1060,33 @@ export function ScriptSettingsTab() {
 
                       {selectedScript.kind === 'template' ? (
                         <div className="space-y-3">
-                          <div className="text-xs uppercase tracking-[0.18em] text-neutral-500">
+                          <div className={`text-xs uppercase tracking-[0.18em] ${SETTINGS_TEXT_TERTIARY_CLASS}`}>
                             模板变量
                           </div>
                           {selectedScript.variables.length > 0 ? (
                             <div className="grid gap-3">
                               {selectedScript.variables.map((variable) => (
                                 <div
-                                  className="rounded-lg border border-neutral-800/60 bg-[#111214] px-4 py-3"
+                                  className={`${SETTINGS_PANEL_MUTED_CLASS} px-4 py-3`}
                                   key={variable.name}
                                 >
                                   <div className="flex items-center justify-between gap-3">
                                     <div>
-                                      <div className="text-sm font-medium text-neutral-100">
+                                      <div className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>
                                         {variable.label || variable.name}
                                       </div>
-                                      <div className="mt-1 text-xs text-neutral-500">
+                                      <div className={`mt-1 text-xs ${SETTINGS_TEXT_TERTIARY_CLASS}`}>
                                         {variable.name}
                                         {variable.required ? ' · 必填' : ' · 选填'}
                                         {variable.placeholder ? ` · ${variable.placeholder}` : ''}
                                       </div>
                                     </div>
-                                    <span className="text-xs text-neutral-400">
+                                    <span className={`text-xs ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
                                       {variable.inputType === 'textarea' ? '多行' : '单行'}
                                     </span>
                                   </div>
                                   {variable.defaultValue ? (
-                                    <div className="mt-2 text-xs text-neutral-400">
+                                    <div className={`mt-2 text-xs ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
                                       默认值: {variable.defaultValue}
                                     </div>
                                   ) : null}
@@ -1085,7 +1094,7 @@ export function ScriptSettingsTab() {
                               ))}
                             </div>
                           ) : (
-                            <div className="rounded-md border border-dashed border-neutral-800 px-3 py-4 text-sm text-neutral-400">
+                            <div className={`rounded-md border border-dashed border-[var(--app-border-default)] px-3 py-4 text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
                               当前模板还没有变量定义。
                             </div>
                           )}
@@ -1095,13 +1104,13 @@ export function ScriptSettingsTab() {
                   </SectionCard>
                 ) : (
                   <SectionCard
-                    className="h-full border-neutral-800/60 bg-[#0a0b0d]/60"
+                    className="h-full border-[var(--app-border-default)] bg-[var(--app-bg-base)]"
                     description="脚本用于沉淀固定操作，在终端通过 x alias 调用执行。"
                     title="还没有选中脚本"
                   >
-                    <div className="space-y-3 text-sm text-neutral-400">
+                    <div className={`space-y-3 text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
                       <p>你可以在这里维护全局脚本，或切换到节点范围管理节点专属脚本。</p>
-                      <ul className="space-y-1 text-xs text-neutral-500">
+                      <ul className={`space-y-1 text-xs ${SETTINGS_TEXT_TERTIARY_CLASS}`}>
                         <li>plain: 直接保存固定命令内容</li>
                         <li>template: 保存带变量占位的脚本模板</li>
                       </ul>

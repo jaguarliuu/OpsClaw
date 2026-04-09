@@ -7,6 +7,13 @@ import {
   FONT_FAMILY_OPTIONS,
   TERMINAL_THEMES,
 } from '@/features/workbench/terminalSettings';
+import {
+  SETTINGS_INPUT_CLASS,
+  SETTINGS_PANEL_CLASS,
+  SETTINGS_TEXT_PRIMARY_CLASS,
+  SETTINGS_TEXT_SECONDARY_CLASS,
+  SETTINGS_TEXT_TERTIARY_CLASS,
+} from '@/features/workbench/settingsTheme';
 import type { TerminalThemeName } from '@/features/workbench/terminalSettings';
 import { cn } from '@/lib/utils';
 import {
@@ -34,7 +41,7 @@ export function TerminalSettingsTab() {
       <div>
         <div className="mb-6">
           <h3 className="text-base font-semibold tracking-tight">配色主题</h3>
-          <p className="text-sm text-neutral-500 mt-1">选择你喜欢的终端配色方案</p>
+          <p className={`mt-1 text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>选择你喜欢的终端配色方案</p>
         </div>
         <div className="grid grid-cols-1 gap-3">
           {THEME_NAMES.map((name) => {
@@ -48,8 +55,8 @@ export function TerminalSettingsTab() {
                 className={cn(
                   'group flex items-center gap-4 rounded-xl border px-5 py-4 text-left transition-all duration-200',
                   isActive
-                    ? 'border-blue-500/50 bg-[#1e2025] shadow-lg shadow-blue-500/5'
-                    : 'border-neutral-800/50 hover:border-[var(--app-border-strong)]/50 hover:bg-[#17181b]'
+                    ? 'border-blue-500/50 bg-[var(--app-bg-elevated3)] shadow-lg shadow-blue-500/5'
+                    : 'border-[var(--app-border-default)] hover:border-[var(--app-border-strong)]/50 hover:bg-[var(--app-bg-elevated2)]'
                 )}
               >
                 <div
@@ -72,8 +79,8 @@ export function TerminalSettingsTab() {
                   </div>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-neutral-100">{name}</div>
-                  <div className="text-xs text-neutral-500 mt-1 font-mono">
+                  <div className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>{name}</div>
+                  <div className={`mt-1 text-xs font-mono ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
                     {theme.background} · {theme.foreground}
                   </div>
                 </div>
@@ -91,14 +98,14 @@ export function TerminalSettingsTab() {
       <div className="space-y-6">
         <div className="mb-6">
           <h3 className="text-base font-semibold tracking-tight">显示设置</h3>
-          <p className="text-sm text-neutral-500 mt-1">调整字体、大小和行为</p>
+          <p className={`mt-1 text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>调整字体、大小和行为</p>
         </div>
 
-        <div className="p-6 bg-[#17181b] rounded-xl border border-neutral-800/50 space-y-6">
+        <div className={`${SETTINGS_PANEL_CLASS} space-y-6 p-6`}>
           <div className="space-y-2">
-            <Label htmlFor="font-family" className="text-sm font-medium text-neutral-300">字体</Label>
+            <Label htmlFor="font-family" className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>字体</Label>
             <Select value={settings.fontFamily} onValueChange={(v: string) => updateSettings({ fontFamily: v as typeof settings.fontFamily })}>
-              <SelectTrigger className="h-10 bg-[#0a0b0d] border-neutral-800/50 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all">
+              <SelectTrigger className={`h-10 ${SETTINGS_INPUT_CLASS}`}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -113,7 +120,7 @@ export function TerminalSettingsTab() {
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <Label htmlFor="font-size" className="text-sm font-medium text-neutral-300">字号</Label>
+              <Label htmlFor="font-size" className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>字号</Label>
               <span className="text-sm font-mono text-blue-400">{settings.fontSize}px</span>
             </div>
             <input
@@ -126,14 +133,14 @@ export function TerminalSettingsTab() {
               onChange={(e) => updateSettings({ fontSize: Number(e.target.value) })}
               className="w-full h-2 bg-[var(--app-bg-elevated3)]/50 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition-colors"
             />
-            <div className="flex justify-between text-xs text-neutral-600">
+            <div className={`flex justify-between text-xs ${SETTINGS_TEXT_TERTIARY_CLASS}`}>
               <span>10px</span><span>20px</span>
             </div>
           </div>
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <Label htmlFor="line-height" className="text-sm font-medium text-neutral-300">行高</Label>
+              <Label htmlFor="line-height" className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>行高</Label>
               <span className="text-sm font-mono text-blue-400">{settings.lineHeight.toFixed(2)}</span>
             </div>
             <input
@@ -146,13 +153,13 @@ export function TerminalSettingsTab() {
               onChange={(e) => updateSettings({ lineHeight: Math.round(parseFloat(e.target.value) * 100) / 100 })}
               className="w-full h-2 bg-[var(--app-bg-elevated3)]/50 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition-colors"
             />
-            <div className="flex justify-between text-xs text-neutral-600">
+            <div className={`flex justify-between text-xs ${SETTINGS_TEXT_TERTIARY_CLASS}`}>
               <span>1.0</span><span>1.8</span>
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="scrollback" className="text-sm font-medium text-neutral-300">滚动缓冲行数</Label>
+            <Label htmlFor="scrollback" className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>滚动缓冲行数</Label>
             <div className="flex items-center gap-3">
               <Input
                 id="scrollback"
@@ -169,9 +176,9 @@ export function TerminalSettingsTab() {
                   setScrollbackRaw(String(clamped));
                   updateSettings({ scrollback: clamped });
                 }}
-                className="w-32 h-10 bg-[#0a0b0d] border-neutral-800/50 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all font-mono"
+                className={`h-10 w-32 font-mono ${SETTINGS_INPUT_CLASS}`}
               />
-              <span className="text-xs text-neutral-500">500 – 50,000 行</span>
+              <span className={`text-xs ${SETTINGS_TEXT_SECONDARY_CLASS}`}>500 – 50,000 行</span>
             </div>
           </div>
         </div>

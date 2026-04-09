@@ -3,7 +3,7 @@ import { createBrowserRouter, createHashRouter } from 'react-router-dom';
 
 import { AppLayout } from '@/app/AppLayout';
 import { shouldUseHashRouter } from '@/app/routerMode';
-import { WorkbenchPage } from '@/routes/WorkbenchPage';
+import { WorkbenchShellRoute } from '@/routes/WorkbenchShellRoute';
 
 const LazyInspectionsPage = lazy(async () => {
   const module = await import('@/routes/InspectionsPage');
@@ -23,8 +23,21 @@ const routes = [
     element: <AppLayout />,
     children: [
       {
-        index: true,
-        element: <WorkbenchPage />,
+        element: <WorkbenchShellRoute />,
+        children: [
+          {
+            index: true,
+            element: null,
+          },
+          {
+            path: 'settings',
+            element: (
+              <Suspense fallback={null}>
+                <LazySettingsPage />
+              </Suspense>
+            ),
+          },
+        ],
       },
       {
         path: 'inspections',
@@ -39,14 +52,6 @@ const routes = [
         element: (
           <Suspense fallback={null}>
             <LazyAuditPage />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'settings',
-        element: (
-          <Suspense fallback={null}>
-            <LazySettingsPage />
           </Suspense>
         ),
       },

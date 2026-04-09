@@ -6,6 +6,14 @@ import { MarkdownContent } from '@/components/ui/MarkdownContent';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  SETTINGS_INPUT_CLASS,
+  SETTINGS_PANEL_CLASS,
+  SETTINGS_PANEL_MUTED_CLASS,
+  SETTINGS_TEXT_PRIMARY_CLASS,
+  SETTINGS_TEXT_SECONDARY_CLASS,
+  SETTINGS_TEXT_TERTIARY_CLASS,
+} from './settingsTheme';
+import {
   fetchGlobalMemory,
   fetchGroupMemory,
   fetchGroups,
@@ -138,17 +146,17 @@ export function MemorySettings() {
     <div className="space-y-8">
       <div className="mb-2">
         <h3 className="text-base font-semibold tracking-tight">记忆文档</h3>
-        <p className="mt-1 text-sm text-neutral-500">
+        <p className={`mt-1 text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
           全局记忆每次 Agent 运行都会加载；分组和节点记忆在需要时通过工具按需读取。
         </p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
-        <div className="space-y-5 rounded-xl border border-neutral-800/50 bg-[#17181b] p-5">
+        <div className={`${SETTINGS_PANEL_CLASS} space-y-5 p-5`}>
           <div className="space-y-2">
-            <Label className="text-sm font-medium text-neutral-300">记忆范围</Label>
+            <Label className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>记忆范围</Label>
             <Select value={scope} onValueChange={(value) => setScope(value as MemoryScopeTab)}>
-              <SelectTrigger className="h-10 bg-[#0a0b0d] border-neutral-800/50">
+              <SelectTrigger className={`h-10 ${SETTINGS_INPUT_CLASS}`}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -161,9 +169,9 @@ export function MemorySettings() {
 
           {scope === 'group' ? (
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-neutral-300">分组</Label>
+              <Label className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>分组</Label>
               <Select value={selectedGroupId} onValueChange={setSelectedGroupId}>
-                <SelectTrigger className="h-10 bg-[#0a0b0d] border-neutral-800/50">
+                <SelectTrigger className={`h-10 ${SETTINGS_INPUT_CLASS}`}>
                   <SelectValue placeholder="选择分组" />
                 </SelectTrigger>
                 <SelectContent>
@@ -179,9 +187,9 @@ export function MemorySettings() {
 
           {scope === 'node' ? (
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-neutral-300">节点</Label>
+              <Label className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>节点</Label>
               <Select value={selectedNodeId} onValueChange={setSelectedNodeId}>
-                <SelectTrigger className="h-10 bg-[#0a0b0d] border-neutral-800/50">
+                <SelectTrigger className={`h-10 ${SETTINGS_INPUT_CLASS}`}>
                   <SelectValue placeholder="选择节点" />
                 </SelectTrigger>
                 <SelectContent>
@@ -195,11 +203,11 @@ export function MemorySettings() {
             </div>
           ) : null}
 
-          <div className="rounded-lg border border-neutral-800/60 bg-[#0a0b0d]/70 px-3 py-3 text-xs text-neutral-400">
-            <div className="mb-1 text-neutral-200">当前文档</div>
+          <div className={`${SETTINGS_PANEL_MUTED_CLASS} px-3 py-3 text-xs ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
+            <div className={`mb-1 ${SETTINGS_TEXT_PRIMARY_CLASS}`}>当前文档</div>
             <div>{selectedTitle}</div>
-            <div className="mt-2 break-all text-neutral-500">{document?.path ?? '-'}</div>
-            <div className="mt-2 text-neutral-500">
+            <div className={`mt-2 break-all ${SETTINGS_TEXT_TERTIARY_CLASS}`}>{document?.path ?? '-'}</div>
+            <div className={`mt-2 ${SETTINGS_TEXT_TERTIARY_CLASS}`}>
               {document?.updatedAt ? `最近更新：${document.updatedAt}` : '文档尚未创建'}
             </div>
           </div>
@@ -220,31 +228,31 @@ export function MemorySettings() {
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <section className="space-y-3 rounded-xl border border-neutral-800/50 bg-[#17181b] p-5">
+          <section className={`${SETTINGS_PANEL_CLASS} space-y-3 p-5`}>
             <div>
-              <h4 className="text-sm font-medium text-neutral-100">编辑器</h4>
-              <p className="mt-1 text-xs text-neutral-500">使用 Markdown 编写记忆内容。</p>
+              <h4 className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>编辑器</h4>
+              <p className={`mt-1 text-xs ${SETTINGS_TEXT_SECONDARY_CLASS}`}>使用 Markdown 编写记忆内容。</p>
             </div>
             <Textarea
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               placeholder="在这里编写记忆内容..."
-              className="min-h-[520px] resize-y bg-[#0a0b0d] border-neutral-800/50 font-mono text-sm"
+              className={`min-h-[520px] resize-y font-mono text-sm ${SETTINGS_INPUT_CLASS}`}
             />
           </section>
 
-          <section className="space-y-3 rounded-xl border border-neutral-800/50 bg-[#17181b] p-5">
+          <section className={`${SETTINGS_PANEL_CLASS} space-y-3 p-5`}>
             <div>
-              <h4 className="text-sm font-medium text-neutral-100">预览</h4>
-              <p className="mt-1 text-xs text-neutral-500">实时查看 Markdown 渲染效果。</p>
+              <h4 className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>预览</h4>
+              <p className={`mt-1 text-xs ${SETTINGS_TEXT_SECONDARY_CLASS}`}>实时查看 Markdown 渲染效果。</p>
             </div>
-            <div className="min-h-[520px] rounded-xl border border-neutral-800/50 bg-[#0a0b0d] p-4">
+            <div className={`${SETTINGS_PANEL_MUTED_CLASS} min-h-[520px] p-4`}>
               {isLoading ? (
-                <div className="text-sm text-neutral-500">加载中...</div>
+                <div className={`text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>加载中...</div>
               ) : draft.trim() ? (
-                <MarkdownContent content={draft} className="text-sm leading-relaxed text-neutral-100" />
+                <MarkdownContent content={draft} className={`text-sm leading-relaxed ${SETTINGS_TEXT_PRIMARY_CLASS}`} />
               ) : (
-                <div className="text-sm text-neutral-600">当前文档为空。</div>
+                <div className={`text-sm ${SETTINGS_TEXT_TERTIARY_CLASS}`}>当前文档为空。</div>
               )}
             </div>
           </section>

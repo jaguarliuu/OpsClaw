@@ -1,6 +1,10 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  SETTINGS_INPUT_CLASS,
+  SETTINGS_TEXT_PRIMARY_CLASS,
+} from './settingsTheme';
 
 type LlmProviderSubmitSectionProps = {
   apiKey: string;
@@ -26,13 +30,13 @@ export function LlmProviderSubmitSection({
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-sm font-medium text-neutral-300">API Key</Label>
+        <Label className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>API Key</Label>
         <Input
           type="password"
           placeholder={viewModel.apiKeyPlaceholder}
           value={apiKey}
           onChange={(event) => onApiKeyChange(event.target.value)}
-          className="h-10 border-neutral-800/50 bg-[#0a0b0d] font-mono text-sm transition-all focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
+          className={`h-10 font-mono text-sm ${SETTINGS_INPUT_CLASS}`}
         />
       </div>
 

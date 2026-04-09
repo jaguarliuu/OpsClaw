@@ -33,6 +33,7 @@
   }
 
   body {
+    margin: 0;
     background-color: var(--app-bg-base);
     color: var(--app-text-primary);
     font-family: var(--font-sans);
@@ -237,7 +238,11 @@
 
   .xterm {
     height: 100%;
-    padding: 0.5rem 0.375rem 0.375rem;
+  }
+
+  .xterm,
+  .xterm .xterm-viewport {
+    background-color: var(--terminal-surface-bg, transparent) !important;
   }
 
   .xterm-helpers,

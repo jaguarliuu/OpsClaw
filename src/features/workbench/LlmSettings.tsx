@@ -12,6 +12,10 @@ import {
   canSaveLlmProviderForm,
   removeLlmProviderFormModel,
 } from './llmSettingsModel';
+import {
+  SETTINGS_PANEL_CLASS,
+  SETTINGS_TEXT_SECONDARY_CLASS,
+} from './settingsTheme';
 import { useLlmSettingsController } from './useLlmSettingsController';
 
 export function LlmSettings() {
@@ -63,7 +67,7 @@ export function LlmSettings() {
       <div>
         <div className="mb-6">
           <h3 className="text-base font-semibold tracking-tight">已配置的提供商</h3>
-          <p className="mt-1 text-sm text-neutral-500">管理你的 LLM 服务提供商配置</p>
+          <p className={`mt-1 text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>管理你的 LLM 服务提供商配置</p>
         </div>
         <LlmProviderListSection
           providers={providers}
@@ -83,11 +87,11 @@ export function LlmSettings() {
           <h3 className="text-base font-semibold tracking-tight">
             {editing ? '编辑提供商' : '添加新提供商'}
           </h3>
-          <p className="mt-1 text-sm text-neutral-500">
+          <p className={`mt-1 text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
             {editing ? '修改提供商配置信息' : '配置新的 LLM 服务提供商'}
           </p>
         </div>
-        <div className="space-y-6 rounded-xl border border-neutral-800/50 bg-[#17181b] p-6">
+        <div className={`${SETTINGS_PANEL_CLASS} space-y-6 p-6`}>
           <LlmProviderBasicsSection
             baseUrl={formData.baseUrl}
             name={formData.name}
