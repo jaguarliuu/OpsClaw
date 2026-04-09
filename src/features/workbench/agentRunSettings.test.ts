@@ -14,7 +14,9 @@ type StorageStub = {
 };
 
 void test('normalizeAgentMaxSteps accepts supported values and falls back for unsupported values', () => {
-  assert.equal(normalizeAgentMaxSteps(18), 18);
+  assert.equal(DEFAULT_AGENT_MAX_STEPS, 24);
+  assert.equal(normalizeAgentMaxSteps(30), 30);
+  assert.equal(normalizeAgentMaxSteps(40), 40);
   assert.equal(normalizeAgentMaxSteps(999), DEFAULT_AGENT_MAX_STEPS);
   assert.equal(normalizeAgentMaxSteps(Number.NaN), DEFAULT_AGENT_MAX_STEPS);
 });
@@ -22,7 +24,7 @@ void test('normalizeAgentMaxSteps accepts supported values and falls back for un
 void test('loadAgentMaxSteps reads the persisted value and falls back on invalid storage content', () => {
   const validStorage: StorageStub = {
     getItem() {
-      return '20';
+      return '40';
     },
     setItem() {},
   };
@@ -34,7 +36,7 @@ void test('loadAgentMaxSteps reads the persisted value and falls back on invalid
     setItem() {},
   };
 
-  assert.equal(loadAgentMaxSteps(validStorage), 20);
+  assert.equal(loadAgentMaxSteps(validStorage), 40);
   assert.equal(loadAgentMaxSteps(invalidStorage), DEFAULT_AGENT_MAX_STEPS);
   assert.equal(loadAgentMaxSteps(undefined), DEFAULT_AGENT_MAX_STEPS);
 });
@@ -55,7 +57,7 @@ void test('saveAgentMaxSteps persists the normalized value', () => {
   assert.deepEqual(writes, [
     {
       key: 'opsclaw.agent.maxSteps',
-      value: '15',
+      value: '24',
     },
   ]);
 });

@@ -336,11 +336,11 @@ void test('shouldSubmitAiAssistantOnEnter ignores Shift+Enter and IME confirmati
 
 void test('getAgentStepBudgetHint recommends moderate budgets by default and warns on higher budgets', () => {
   assert.equal(
-    getAgentStepBudgetHint(12),
-    '常规任务建议 12-15 步；复杂排障再提高预算。'
+    getAgentStepBudgetHint(24),
+    '常规任务建议 18-24 步；复杂排障再提高预算。'
   );
   assert.equal(
-    getAgentStepBudgetHint(20),
+    getAgentStepBudgetHint(30),
     '当前为高预算模式，适合复杂排障，但会增加执行时长与 token 消耗。'
   );
 });

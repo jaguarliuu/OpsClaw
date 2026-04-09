@@ -10,6 +10,10 @@ import { SshTerminalSearchOverlay } from '@/features/workbench/SshTerminalSearch
 import { SshTerminalSuggestionOverlay } from '@/features/workbench/SshTerminalSuggestionOverlay';
 import { fetchScripts } from '@/features/workbench/scriptApi';
 import {
+  isScriptLibraryChangeRelevant,
+  subscribeScriptLibraryChanged,
+} from '@/features/workbench/scriptLibraryEvents';
+import {
   buildScriptVariableInitialValues,
   renderScriptTemplate,
   validateScriptVariableValues,
@@ -199,22 +203,38 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
     useEffect(() => {
       let cancelled = false;
 
-      void fetchScripts(session.nodeId ?? null)
-        .then((items) => {
-          if (!cancelled) {
-            setQuickScripts(items);
-            setQuickScriptsError(null);
+      const reloadQuickScripts = async () => {
+        try {
+          const items = await fetchScripts(session.nodeId ?? null);
+          if (cancelled) {
+            return;
           }
-        })
-        .catch((error) => {
-          if (!cancelled) {
-            setQuickScripts([]);
-            setQuickScriptsError(error instanceof Error ? error.message : '快捷脚本加载失败。');
+
+          setQuickScripts(items);
+          setQuickScriptsError(null);
+        } catch (error) {
+          if (cancelled) {
+            return;
           }
-        });
+
+          setQuickScripts([]);
+          setQuickScriptsError(error instanceof Error ? error.message : '快捷脚本加载失败。');
+        }
+      };
+
+      void reloadQuickScripts();
+
+      const unsubscribe = subscribeScriptLibraryChanged((detail) => {
+        if (!isScriptLibraryChangeRelevant(detail, session.nodeId ?? null)) {
+          return;
+        }
+
+        void reloadQuickScripts();
+      });
 
       return () => {
         cancelled = true;
+        unsubscribe();
       };
     }, [session.nodeId]);
 

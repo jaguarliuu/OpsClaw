@@ -16,4 +16,29 @@ void test('agent system prompt enforces controlled execution constraints before 
   assert.match(prompt, /即使生成了命令，也必须遵守参数确认和审批 gate，不能绕过。/);
   assert.match(prompt, /当你需要用户补充参数、做选择、确认方案时，必须调用 interaction\.request 工具。/);
   assert.match(prompt, /不要直接用 assistant 文本向用户提问。/);
+  assert.match(prompt, /在当前节点会话下读写节点记忆时，不要自行编造 nodeId；优先省略 nodeId，让系统自动绑定当前节点。/);
+});
+
+void test('agent system prompt includes cached session system info when available', () => {
+  const prompt = buildAgentSystemPrompt({
+    sessionId: 'session-1',
+    initialStepBudget: 12,
+    hardMaxSteps: 24,
+    sessionSystemInfo: {
+      distributionId: 'ubuntu',
+      versionId: '22.04',
+      packageManager: 'apt',
+      kernel: '6.8.0-40-generic',
+      architecture: 'x86_64',
+      defaultShell: '/bin/bash',
+    },
+  });
+
+  assert.match(prompt, /当前会话已缓存的系统信息：/);
+  assert.match(prompt, /发行版：ubuntu 22\.04/);
+  assert.match(prompt, /包管理器：apt/);
+  assert.match(prompt, /内核：6\.8\.0-40-generic/);
+  assert.match(prompt, /架构：x86_64/);
+  assert.match(prompt, /默认 shell：\/bin\/bash/);
+  assert.match(prompt, /不要为了确认基础系统类型再次执行 os-release、uname、包管理器探测命令/);
 });

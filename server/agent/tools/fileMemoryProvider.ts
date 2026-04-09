@@ -13,7 +13,7 @@ const sessionScopeSchema = Type.Object({
 });
 
 const nodeMemorySchema = Type.Object({
-  nodeId: Type.String({ minLength: 1, description: '节点 ID' }),
+  nodeId: Type.Optional(Type.String({ minLength: 1, description: '节点 ID；在当前会话节点场景下可省略' })),
 });
 
 const groupMemorySchema = Type.Object({
@@ -26,11 +26,40 @@ const memoryWriteMode = StringEnum(['append', 'replace'], {
 });
 
 const writeNodeMemorySchema = Type.Object({
-  nodeId: Type.String({ minLength: 1, description: '节点 ID' }),
+  nodeId: Type.Optional(
+    Type.String({ minLength: 1, description: '节点 ID；在当前会话节点场景下可省略' })
+  ),
   content: Type.String({ minLength: 1, description: '要写入记忆文档的 Markdown 内容' }),
   mode: Type.Optional(memoryWriteMode),
   reason: Type.Optional(Type.String({ description: '写入原因的简短说明' })),
 });
+
+function resolveNodeFromScope(
+  nodeId: string | undefined,
+  ctx: Parameters<ToolHandler['execute']>[1],
+  getNodeById: FileMemoryProviderDependencies['getNodeById']
+) {
+  if (nodeId) {
+    return getNodeById(nodeId);
+  }
+
+  const sessionId = ctx.sessionId;
+  if (!sessionId) {
+    throw new Error('未提供 nodeId，且当前运行上下文没有 session。');
+  }
+
+  const session = ctx.capabilities.sessions.getSession(sessionId);
+  if (!session?.nodeId) {
+    throw new Error('当前会话未绑定节点，无法定位节点记忆。');
+  }
+
+  const node = getNodeById(session.nodeId);
+  if (!node) {
+    throw new Error('当前会话关联的节点不存在。');
+  }
+
+  return node;
+}
 
 const writeGroupMemorySchema = Type.Object({
   groupId: Type.String({ minLength: 1, description: '分组 ID' }),
@@ -96,7 +125,7 @@ export function createFileMemoryToolProvider(
       tags: ['memory', 'node', 'readonly'],
     },
     async execute(args, ctx) {
-      const node = dependencies.getNodeById(args.nodeId);
+      const node = resolveNodeFromScope(args.nodeId, ctx, dependencies.getNodeById);
       if (!node) {
         throw new Error('节点不存在。');
       }
@@ -142,7 +171,7 @@ export function createFileMemoryToolProvider(
       tags: ['memory', 'node', 'write'],
     },
     async execute(args, ctx) {
-      const node = dependencies.getNodeById(args.nodeId);
+      const node = resolveNodeFromScope(args.nodeId, ctx, dependencies.getNodeById);
       if (!node) {
         throw new Error('节点不存在。');
       }

@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import YAML from 'yaml';
 
 import type {
@@ -223,6 +223,35 @@ export async function loadOpsClawRules(rulesUrl: URL): Promise<OpsClawRulesFile>
     throw new Error(`Invalid OpsClaw rules YAML: parse error: ${message}`);
   }
   return parseOpsClawRules(parsed);
+}
+
+const BUNDLED_RULES_CANDIDATE_PATHS = [
+  '../../opsclaw.rules.yaml',
+  '../../../opsclaw.rules.yaml',
+] as const;
+
+export async function loadBundledOpsClawRules(moduleUrl: string | URL) {
+  const baseUrl = typeof moduleUrl === 'string' ? new URL(moduleUrl) : moduleUrl;
+  const candidateUrls = BUNDLED_RULES_CANDIDATE_PATHS.map(
+    (relativePath) => new URL(relativePath, baseUrl)
+  );
+
+  for (const candidateUrl of candidateUrls) {
+    try {
+      await access(candidateUrl);
+      return await loadOpsClawRules(candidateUrl);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw new Error(
+    `OpsClaw rules file not found. Checked: ${candidateUrls.map((item) => item.href).join(', ')}`
+  );
 }
 
 export function resolveEffectiveOpsClawRules(

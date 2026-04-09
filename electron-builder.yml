@@ -6,6 +6,7 @@ files:
   - dist/**
   - dist-server/**
   - dist-electron/**
+  - opsclaw.rules.yaml
   - package.json
 asar: true
 asarUnpack:

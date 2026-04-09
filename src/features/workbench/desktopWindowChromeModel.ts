@@ -1,5 +1,7 @@
 import type { OpsClawDesktopRuntime } from './types';
 
+const WINDOWS_TITLEBAR_CONTROLS_INSET_PX = '146px';
+
 type DesktopWindowChromeLayoutInput = {
   runtime?: OpsClawDesktopRuntime;
   location: {
@@ -13,6 +15,10 @@ type DesktopWindowChromeStyle = {
   WebkitAppRegion?: 'drag' | 'no-drag';
 };
 
+function isDesktopRuntime(input: DesktopWindowChromeLayoutInput) {
+  return input.runtime?.desktop === true || input.location.protocol === 'file:';
+}
+
 export function buildDesktopWindowChromeLayout(
   input: DesktopWindowChromeLayoutInput,
 ): {
@@ -21,8 +27,7 @@ export function buildDesktopWindowChromeLayout(
   interactiveStyle: DesktopWindowChromeStyle | undefined;
   windowControlsInsetStyle: DesktopWindowChromeStyle | undefined;
 } {
-  const isDesktop = input.runtime?.desktop === true || input.location.protocol === 'file:';
-  if (!isDesktop) {
+  if (!isDesktopRuntime(input)) {
     return {
       pageStyle: undefined,
       topBarStyle: undefined,
@@ -35,7 +40,7 @@ export function buildDesktopWindowChromeLayout(
     pageStyle: undefined,
     topBarStyle: {
       paddingTop: 'env(titlebar-area-height, 0px)',
-      paddingRight: 'calc(env(titlebar-area-width, 138px) + 8px)',
+      paddingRight: WINDOWS_TITLEBAR_CONTROLS_INSET_PX,
       WebkitAppRegion: 'drag',
     },
     interactiveStyle: {
@@ -44,5 +49,18 @@ export function buildDesktopWindowChromeLayout(
     windowControlsInsetStyle: {
       WebkitAppRegion: 'no-drag',
     },
+  };
+}
+
+export function buildDesktopPanelHeaderStyle(
+  input: DesktopWindowChromeLayoutInput
+): Pick<DesktopWindowChromeStyle, 'paddingTop' | 'paddingRight'> | undefined {
+  if (!isDesktopRuntime(input)) {
+    return undefined;
+  }
+
+  return {
+    paddingTop: 'calc(0.75rem + env(titlebar-area-height, 0px))',
+    paddingRight: `calc(1rem + ${WINDOWS_TITLEBAR_CONTROLS_INSET_PX})`,
   };
 }

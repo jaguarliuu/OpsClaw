@@ -1,6 +1,6 @@
 export const AGENT_MAX_STEPS_STORAGE_KEY = 'opsclaw.agent.maxSteps';
-export const AGENT_MAX_STEP_OPTIONS = [8, 12, 15, 18, 20] as const;
-export const DEFAULT_AGENT_MAX_STEPS = 15;
+export const AGENT_MAX_STEP_OPTIONS = [12, 18, 24, 30, 40] as const;
+export const DEFAULT_AGENT_MAX_STEPS = 24;
 
 type AgentSettingsStorage = Pick<Storage, 'getItem' | 'setItem'>;
 

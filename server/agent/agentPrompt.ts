@@ -1,8 +1,23 @@
+import type { SessionSystemInfo } from './sessionRegistry.js';
+
 type BuildAgentPromptInput = {
   sessionId: string;
   initialStepBudget: number;
   hardMaxSteps: number;
+  sessionSystemInfo?: SessionSystemInfo | null;
 };
+
+function buildSessionSystemInfoPromptSection(systemInfo: SessionSystemInfo) {
+  return [
+    '当前会话已缓存的系统信息：',
+    `- 发行版：${systemInfo.distributionId} ${systemInfo.versionId}`.trim(),
+    `- 包管理器：${systemInfo.packageManager}`,
+    `- 内核：${systemInfo.kernel}`,
+    `- 架构：${systemInfo.architecture}`,
+    `- 默认 shell：${systemInfo.defaultShell}`,
+    '- 不要为了确认基础系统类型再次执行 os-release、uname、包管理器探测命令；仅在怀疑信息过期或任务明确要求时再验证。',
+  ].join('\n');
+}
 
 export function buildAgentSystemPrompt(input: BuildAgentPromptInput) {
   return [
@@ -10,11 +25,13 @@ export function buildAgentSystemPrompt(input: BuildAgentPromptInput) {
     '你必须通过工具逐步完成用户任务，而不是凭空假设环境状态。',
     '当前默认工作会话由用户预先选定。',
     `当前默认会话 ID：${input.sessionId}`,
+    input.sessionSystemInfo ? buildSessionSystemInfoPromptSection(input.sessionSystemInfo) : null,
     '',
     '行为规则：',
     '- 全局 MEMORY.md 会在每次任务开始时直接提供给你，先利用这些长期记忆。',
     '- 如果当前任务和某个节点/分组的历史经验密切相关，再使用 memory.read_session_context、memory.read_node_memory 或 memory.read_group_memory 按需读取文档。',
     '- 当你得到稳定、长期有价值的结论时，可以调用 memory.write_node_memory 或 memory.write_group_memory 写入 Markdown 记忆文档。',
+    '- 在当前节点会话下读写节点记忆时，不要自行编造 nodeId；优先省略 nodeId，让系统自动绑定当前节点。',
     '- 优先使用最少的命令获取足够信息。',
     '- 运行开始时已提供当前会话基础信息，不要为了重复确认连接状态而调用 session.get_metadata。',
     '- 默认只执行只读诊断命令。',

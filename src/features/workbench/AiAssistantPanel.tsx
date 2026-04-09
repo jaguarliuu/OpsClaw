@@ -39,6 +39,7 @@ import { createAgentSessionModel } from './agentSessionModel';
 import { InteractionCard } from './InteractionCard';
 import { formatAgentPolicySummary } from './agentPolicyUiModel';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { buildDesktopPanelHeaderStyle } from '@/features/workbench/desktopWindowChromeModel';
 import type { LiveSession } from './types';
 import type { AgentTimelineItem, ToolExecutionEnvelope } from './types.agent';
 import { useTerminalSettings } from './useTerminalSettings';
@@ -419,6 +420,10 @@ export function AiAssistantPanel({
   const isAgentInputLocked = mode === 'agent' && agentSessionModel.isInteractionLocked;
   const canClearAgentItems = mode !== 'agent' || agentSessionModel.canClearAgentItems;
   const themeClasses = getAiAssistantThemeClasses(appTheme.mode);
+  const desktopPanelHeaderStyle = buildDesktopPanelHeaderStyle({
+    runtime: window.__OPSCLAW_RUNTIME__,
+    location: window.location,
+  });
   const headerActionsState = getAiAssistantHeaderActionsState(canClearAgentItems);
   const primaryActionState = getAiAssistantPrimaryActionState({
     isBusy,
@@ -599,10 +604,7 @@ export function AiAssistantPanel({
       />
       <div
         className="flex items-start gap-3 border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] px-4 py-3"
-        style={{
-          paddingTop: 'calc(0.75rem + env(titlebar-area-height, 0px))',
-          paddingRight: 'calc(1rem + env(titlebar-area-right, 0px))',
-        }}
+        style={desktopPanelHeaderStyle}
       >
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
           <h2 className={`text-[13px] font-semibold ${themeClasses.primaryTextClass} uppercase tracking-wider`}>OpsClaw AI</h2>

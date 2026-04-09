@@ -113,7 +113,10 @@ export function TerminalWorkspaceHeader({
         className="flex items-stretch justify-between border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] px-2"
         style={desktopTopBarStyle}
       >
-        <div className="flex min-w-0 items-stretch gap-1 overflow-auto pt-2" style={desktopInteractiveStyle}>
+        <div
+          className="flex min-w-0 items-stretch gap-1 overflow-x-auto overflow-y-hidden pt-2"
+          style={desktopInteractiveStyle}
+        >
           {sidebarCollapsed ? (
             <Button
               aria-label="展开连接管理器"

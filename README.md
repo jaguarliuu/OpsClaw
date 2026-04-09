@@ -229,3 +229,4 @@ pnpm exec tsx --test src/features/workbench/aiAssistantPanelModel.test.ts
 - 为 Agent 增加更清晰的“等待人工输入 / 人工接管中”前端状态提示
 - 逐步补齐更系统的桌面端回归测试
 - 在打包脚本里加入预清理，避免本地产物持续堆积
+

@@ -5,6 +5,7 @@ import { Client } from 'ssh2';
 import { WebSocket, type WebSocketServer } from 'ws';
 
 import { SessionRegistry } from './agent/sessionRegistry.js';
+import { probeSessionSystemInfo } from './sessionSystemInfoProbe.js';
 
 function logTerminalGateway(event: string, details: Record<string, unknown> = {}) {
   console.log(`[TerminalGateway] ${new Date().toISOString()} ${event}`, details);
@@ -97,6 +98,7 @@ export function registerTerminalGateway({
     let pendingTerminalData = '';
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
     let websocketAlive = true;
+    let systemInfoProbeStarted = false;
     const websocketHeartbeatTimer = setInterval(() => {
       if (websocket.readyState !== WebSocket.OPEN) {
         return;
@@ -139,6 +141,28 @@ export function registerTerminalGateway({
       flushTimer = setTimeout(flushTerminalData, delay);
     };
 
+    const probeAndCacheSessionSystemInfo = async (client: Client, sessionId: string) => {
+      if (systemInfoProbeStarted) {
+        return;
+      }
+
+      systemInfoProbeStarted = true;
+
+      try {
+        const systemInfo = await probeSessionSystemInfo(client);
+        sessionRegistry.updateSessionSystemInfo(sessionId, systemInfo);
+        logTerminalGateway('session:system_info_ready', {
+          sessionId,
+          systemInfo,
+        });
+      } catch (error) {
+        logTerminalGateway('session:system_info_failed', {
+          sessionId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    };
+
     const cleanup = () => {
       logTerminalGateway('cleanup:start', {
         sessionId: currentSessionId,
@@ -157,6 +181,7 @@ export function registerTerminalGateway({
       }
 
       pendingTerminalData = '';
+      systemInfoProbeStarted = false;
       shellChannel?.removeAllListeners();
       shellChannel?.close();
       shellChannel = null;
@@ -256,6 +281,7 @@ export function registerTerminalGateway({
             });
             send({ type: 'status', payload: { state: 'connected' } });
             sessionRegistry.updateSessionStatus(connectPayload.sessionId, 'connected');
+            void probeAndCacheSessionSystemInfo(ssh, connectPayload.sessionId);
 
             channel.on('data', (chunk: Buffer) => {
               const content = chunk.toString('utf8');

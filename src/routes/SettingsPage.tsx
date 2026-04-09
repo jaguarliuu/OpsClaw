@@ -68,9 +68,9 @@ export default function SettingsPage() {
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <div>
+            <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">设置</h1>
-              <p className={`mt-0.5 text-sm ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
+              <p className={`mt-0.5 max-w-2xl text-sm leading-relaxed ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
                 统一管理终端、LLM、记忆和脚本能力
               </p>
             </div>

@@ -2,6 +2,15 @@ type SessionStatus = 'connecting' | 'connected' | 'closed' | 'error';
 
 import { logSession } from './logger.js';
 
+export type SessionSystemInfo = {
+  distributionId: string;
+  versionId: string;
+  packageManager: string;
+  kernel: string;
+  architecture: string;
+  defaultShell: string;
+};
+
 export type RegisteredSessionSummary = {
   sessionId: string;
   nodeId: string | null;
@@ -10,6 +19,7 @@ export type RegisteredSessionSummary = {
   username: string;
   status: SessionStatus;
   connectedAt: number | null;
+  systemInfo: SessionSystemInfo | null;
 };
 
 type PendingExecutionState =
@@ -241,6 +251,7 @@ export class SessionRegistry {
       username: session.username,
       status: session.status,
       connectedAt: session.connectedAt,
+      systemInfo: session.systemInfo,
     };
   }
 
@@ -267,6 +278,7 @@ export class SessionRegistry {
       username: input.username,
       status: 'connecting',
       connectedAt: null,
+      systemInfo: null,
       sendInput: input.sendInput,
       transcript: '',
       pendingExecution: null,
@@ -302,6 +314,23 @@ export class SessionRegistry {
         errorMessage ?? '连接已关闭，未完成的 Agent 命令已中断。'
       );
     }
+  }
+
+  updateSessionSystemInfo(sessionId: string, systemInfo: SessionSystemInfo) {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      logSession('system_info_ignored_missing_session', {
+        sessionId,
+        systemInfo,
+      });
+      return;
+    }
+
+    session.systemInfo = systemInfo;
+    logSession('system_info_updated', {
+      sessionId,
+      systemInfo,
+    });
   }
 
   unregisterSession(sessionId: string, errorMessage?: string) {

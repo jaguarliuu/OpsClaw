@@ -1126,7 +1126,7 @@ test('达到初始步数预算后如仍有进展会自动续期并继续完成�
     completeAgentContext: async () => {
       completionCount += 1;
 
-      if (completionCount <= 9) {
+      if (completionCount <= 13) {
         return createAssistantMessage({
           stopReason: 'toolUse',
           content: [
@@ -1160,7 +1160,7 @@ test('达到初始步数预算后如仍有进展会自动续期并继续完成�
       providerId: 'provider-1',
       provider: createProvider(),
       model: 'qwen-plus',
-      task: '执行一个需要超过 8 步的复杂诊断',
+      task: '执行一个需要超过默认初始预算的复杂诊断',
       sessionId: 'session-1',
     },
     event => {
@@ -1390,6 +1390,206 @@ test('显式传入更大的 maxSteps 时会允许复杂任务超过默认总预�
 
   assert.equal(events.some(event => event.type === 'run_failed'), false);
   assert.equal(events.some(event => event.type === 'run_completed' && event.steps === 17), true);
+});
+
+test('未显式传入 maxSteps 时会使用提升后的默认总预算完成更复杂的任务', async () => {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  const events: Array<{ type: string; error?: string; steps?: number }> = [];
+  let completionCount = 0;
+
+  const runtime = new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      async executeCommand(_sessionId: string, command: string) {
+        return {
+          command,
+          exitCode: 0,
+          output: `ok ${command}`,
+          durationMs: 10,
+        };
+      },
+    } as never,
+    completeAgentContext: async () => {
+      completionCount += 1;
+
+      if (completionCount <= 16) {
+        return createAssistantMessage({
+          stopReason: 'toolUse',
+          content: [
+            {
+              type: 'toolCall',
+              id: `call-${completionCount}`,
+              name: 'session.run_command',
+              arguments: {
+                sessionId: 'session-1',
+                command: `echo default-budget-step-${completionCount}`,
+              },
+            },
+          ],
+        });
+      }
+
+      return createAssistantMessage({
+        stopReason: 'stop',
+        content: [
+          {
+            type: 'text',
+            text: '默认预算下的复杂任务完成。',
+          },
+        ],
+      });
+    },
+  });
+
+  await runtime.run(
+    {
+      providerId: 'provider-1',
+      provider: createProvider(),
+      model: 'qwen-plus',
+      task: '执行超过旧默认预算的新复杂任务',
+      sessionId: 'session-1',
+    },
+    event => {
+      events.push({
+        type: event.type,
+        error: 'error' in event ? event.error : undefined,
+        steps: 'steps' in event ? event.steps : undefined,
+      });
+    },
+    new AbortController().signal
+  );
+
+  assert.equal(events.some(event => event.type === 'run_failed'), false);
+  assert.equal(events.some(event => event.type === 'run_completed' && event.steps === 17), true);
+});
+
+test('agent runtime injects cached session system info into the initial agent context', async () => {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  const completionContexts: Context[] = [];
+
+  const runtime = new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+          systemInfo: {
+            distributionId: 'ubuntu',
+            versionId: '22.04',
+            packageManager: 'apt',
+            kernel: '6.8.0-40-generic',
+            architecture: 'x86_64',
+            defaultShell: '/bin/bash',
+          },
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      async executeCommand() {
+        return {
+          command: 'true',
+          exitCode: 0,
+          output: '',
+          durationMs: 1,
+        };
+      },
+    } as never,
+    completeAgentContext: async (_provider, _model, context) => {
+      completionContexts.push(context);
+      return createAssistantMessage({
+        stopReason: 'stop',
+        content: [
+          {
+            type: 'text',
+            text: '读取完成。',
+          },
+        ],
+      });
+    },
+  });
+
+  await runtime.run(
+    {
+      providerId: 'provider-1',
+      provider: createProvider(),
+      model: 'qwen-plus',
+      task: '读取当前会话上下文',
+      sessionId: 'session-1',
+    },
+    () => {},
+    new AbortController().signal
+  );
+
+  assert.equal(completionContexts.length > 0, true);
+  assert.match(completionContexts[0]?.systemPrompt ?? '', /发行版：ubuntu 22\.04/);
+
+  const firstMessage = completionContexts[0]?.messages[0];
+  assert.equal(firstMessage?.role, 'user');
+  assert.match(JSON.stringify(firstMessage?.content ?? []), /包管理器：apt/);
+  assert.match(JSON.stringify(firstMessage?.content ?? []), /默认 shell：\/bin\/bash/);
 });
 
 test('当模型返回 error stopReason 时会把底层错误消息透传给 run_failed 事件', async () => {

@@ -4,6 +4,7 @@ import type {
   ScriptLibraryUpsertInput,
 } from './types.js';
 import { buildServerHttpBaseUrl } from './serverBase';
+import { dispatchScriptLibraryChanged } from './scriptLibraryEvents.js';
 
 async function readJson<T>(response: Response) {
   const payload = (await response.json()) as T & { message?: string };
@@ -51,6 +52,9 @@ export async function createScript(input: ScriptLibraryUpsertInput) {
     body: JSON.stringify(input),
   });
   const payload = await readJson<{ item: ManagedScriptLibraryItem }>(response);
+  dispatchScriptLibraryChanged({
+    nodeId: payload.item.scope === 'node' ? payload.item.nodeId : null,
+  });
   return payload.item;
 }
 
@@ -61,6 +65,9 @@ export async function updateScript(id: string, input: Partial<ScriptLibraryUpser
     body: JSON.stringify(input),
   });
   const payload = await readJson<{ item: ManagedScriptLibraryItem }>(response);
+  dispatchScriptLibraryChanged({
+    nodeId: payload.item.scope === 'node' ? payload.item.nodeId : null,
+  });
   return payload.item;
 }
 
@@ -73,4 +80,6 @@ export async function deleteScript(id: string) {
     const payload = (await response.json()) as { message?: string };
     throw new Error(payload.message ?? '删除脚本失败。');
   }
+
+  dispatchScriptLibraryChanged({ nodeId: null });
 }

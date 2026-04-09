@@ -21,13 +21,15 @@ import { createInteractionRequest } from './interactionFactory.js';
 import type { InteractionRequest } from './interactionTypes.js';
 import { logAgent } from './logger.js';
 import type { StoredNodeDetail } from '../nodeStore.js';
-import { loadOpsClawRules, resolveEffectiveOpsClawRules } from './opsclawRules.js';
+import { loadBundledOpsClawRules, resolveEffectiveOpsClawRules } from './opsclawRules.js';
 import { buildAgentSystemPrompt } from './agentPrompt.js';
+import type { SessionSystemInfo } from './sessionRegistry.js';
 import { ToolExecutor } from './toolExecutor.js';
 import type { ToolPauseOutcome, ToolRegistry } from './toolTypes.js';
+import { buildSessionSystemInfoSummaryLines } from '../sessionSystemInfoProbe.js';
 
-const DEFAULT_INITIAL_STEP_BUDGET = 8;
-const DEFAULT_HARD_MAX_STEPS = 15;
+const DEFAULT_INITIAL_STEP_BUDGET = 12;
+const DEFAULT_HARD_MAX_STEPS = 24;
 const DEFAULT_MAX_COMMAND_OUTPUT_CHARS = 4000;
 const MAX_AUTO_MEMORY_OBSERVATIONS = 4;
 const MAX_MEMORY_PROMPT_CHARS = 6000;
@@ -47,6 +49,7 @@ type AgentRuntimeDependencies = {
       port: number;
       username: string;
       status: 'connecting' | 'connected' | 'closed' | 'error';
+      systemInfo?: SessionSystemInfo | null;
     } | null;
     getPendingExecutionDebug?: (
       sessionId: string
@@ -76,8 +79,6 @@ type PauseResolution =
   | { kind: 'paused'; pause: ToolPauseOutcome }
   | { kind: 'failed' }
   | { kind: 'completed'; envelope: ToolExecutionEnvelope };
-
-const OPSCLAW_RULES_URL = new URL('../../opsclaw.rules.yaml', import.meta.url);
 
 function isPauseOutcome(
   value: ToolExecutionEnvelope | ToolPauseOutcome
@@ -364,8 +365,9 @@ export class OpsAgentRuntime {
       return;
     }
     const node = session.nodeId ? this.dependencies.getNodeById(session.nodeId) : null;
+    const sessionSystemInfo = session.systemInfo ?? null;
     const effectiveRules = resolveEffectiveOpsClawRules(
-      await loadOpsClawRules(OPSCLAW_RULES_URL),
+      await loadBundledOpsClawRules(import.meta.url),
       node?.groupName ?? null
     );
     const sessionGroupName = node?.groupName ?? null;
@@ -375,6 +377,7 @@ export class OpsAgentRuntime {
         sessionId: input.sessionId,
         initialStepBudget,
         hardMaxSteps,
+        sessionSystemInfo,
       }),
       messages: [
         {
@@ -391,10 +394,15 @@ export class OpsAgentRuntime {
                 `- port: ${session.port}`,
                 `- username: ${session.username}`,
                 `- status: ${session.status}`,
+                sessionSystemInfo
+                  ? ['', '当前会话系统信息：', ...buildSessionSystemInfoSummaryLines(sessionSystemInfo)]
+                  : [],
                 '',
                 '全局记忆（MEMORY.md）：',
                 globalMemory.content.trim() || '[当前为空]',
-              ].join('\n'),
+              ]
+                .flat()
+                .join('\n'),
             },
           ],
           timestamp: Date.now(),

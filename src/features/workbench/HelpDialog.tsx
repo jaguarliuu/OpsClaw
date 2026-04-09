@@ -1,5 +1,6 @@
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -7,6 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { buildHelpDialogContent } from '@/features/workbench/helpDialogModel';
+import { buildDesktopPanelHeaderStyle } from '@/features/workbench/desktopWindowChromeModel';
 
 type HelpDialogProps = {
   isMacShortcutPlatform: boolean;
@@ -28,12 +30,19 @@ export function HelpDialog({
   open,
 }: HelpDialogProps) {
   const content = buildHelpDialogContent(isMacShortcutPlatform);
+  const desktopHeaderStyle = buildDesktopPanelHeaderStyle({
+    runtime: window.__OPSCLAW_RUNTIME__,
+    location: window.location,
+  });
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="w-[min(860px,calc(100vw-32px))] max-w-none overflow-hidden border-[var(--app-border-default)] bg-[var(--app-bg-elevated)] p-0 text-[var(--app-text-primary)]">
+      <DialogContent className="z-[60] w-[min(860px,calc(100vw-32px))] max-w-none overflow-hidden border-[var(--app-border-default)] bg-[var(--app-bg-elevated)] p-0 text-[var(--app-text-primary)]">
         <div className="grid max-h-[calc(100vh-40px)] grid-rows-[auto_minmax(0,1fr)]">
-          <DialogHeader className="border-[var(--app-border-default)] px-6 py-4">
+          <DialogHeader
+            className="border-[var(--app-border-default)] px-6 py-4"
+            style={desktopHeaderStyle}
+          >
             <div>
               <DialogTitle className="text-base font-semibold text-[var(--app-text-primary)]">
                 {content.title}
@@ -42,14 +51,16 @@ export function HelpDialog({
                 {content.description}
               </DialogDescription>
             </div>
-            <Button
-              className="h-8 px-2 text-[var(--app-text-secondary)]"
-              onClick={onClose}
-              size="sm"
-              variant="ghost"
-            >
-              关闭
-            </Button>
+            <DialogClose asChild>
+              <Button
+                className="h-8 px-2 text-[var(--app-text-secondary)]"
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                关闭
+              </Button>
+            </DialogClose>
           </DialogHeader>
 
           <div className="min-h-0 overflow-auto px-6 py-5">

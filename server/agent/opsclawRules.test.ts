@@ -6,6 +6,7 @@ import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
 import {
+  loadBundledOpsClawRules,
   loadOpsClawRules,
   resolveEffectiveOpsClawRules,
 } from './opsclawRules.js';
@@ -112,5 +113,32 @@ void test(
       effectiveUserManagement.protectedParameters.includes('username'),
       true
     );
+  }
+);
+
+void test(
+  'loadBundledOpsClawRules falls back to the packaged app root when dist-server asset is missing',
+  async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'opsclaw-bundled-rules-'));
+    const runtimeEntryPath = join(tempDir, 'dist-server', 'server', 'agent', 'agentRuntime.js');
+    const bundledRootRulesPath = join(tempDir, 'opsclaw.rules.yaml');
+
+    await writeFile(bundledRootRulesPath, `version: 1
+global:
+  intents:
+    package_management:
+      defaultRisk: medium
+      requireApproval: false
+      protectedParameters:
+        - package_name
+groups: {}
+`, 'utf8');
+
+    try {
+      const rules = await loadBundledOpsClawRules(pathToFileURL(runtimeEntryPath));
+      assert.equal(rules.global.intents.package_management?.defaultRisk, 'medium');
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   }
 );
