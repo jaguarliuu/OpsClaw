@@ -4,6 +4,10 @@ export type SettingsPageTab = (typeof SETTINGS_PAGE_TABS)[number];
 
 const SETTINGS_PAGE_PATH = '/settings';
 
+export function isSettingsPageTab(tab: string): tab is SettingsPageTab {
+  return SETTINGS_PAGE_TABS.includes(tab as SettingsPageTab);
+}
+
 export function buildSettingsPath(tab?: SettingsPageTab): string {
   if (!tab || tab === 'terminal') {
     return SETTINGS_PAGE_PATH;
@@ -15,8 +19,8 @@ export function buildSettingsPath(tab?: SettingsPageTab): string {
 export function resolveSettingsTab(searchParams: URLSearchParams): SettingsPageTab {
   const tab = searchParams.get('tab');
 
-  if (tab && SETTINGS_PAGE_TABS.includes(tab as SettingsPageTab)) {
-    return tab as SettingsPageTab;
+  if (tab && isSettingsPageTab(tab)) {
+    return tab;
   }
 
   return 'terminal';

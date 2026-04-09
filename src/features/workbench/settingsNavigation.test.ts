@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   buildSettingsPath,
+  isSettingsPageTab,
   resolveSettingsTab,
   type SettingsPageTab,
 } from './settingsNavigation.js';
@@ -23,4 +24,10 @@ void test('resolveSettingsTab returns a supported tab and falls back to terminal
     resolveSettingsTab(new URLSearchParams('tab=unknown' as SettingsPageTab)),
     'terminal'
   );
+});
+
+void test('isSettingsPageTab only accepts supported settings tabs', () => {
+  assert.equal(isSettingsPageTab('terminal'), true);
+  assert.equal(isSettingsPageTab('scripts'), true);
+  assert.equal(isSettingsPageTab('unknown'), false);
 });

@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button';
 import { buildDesktopWindowChromeLayout } from '@/features/workbench/desktopWindowChromeModel';
 import {
   buildSettingsPath,
+  isSettingsPageTab,
   resolveSettingsTab,
-  type SettingsPageTab,
 } from '@/features/workbench/settingsNavigation';
 import { useDeferredMount } from '@/features/workbench/useDeferredMount';
 import {
@@ -34,7 +34,11 @@ export default function SettingsPage() {
   const shouldRenderScriptsTab = useDeferredMount(activeTab === 'scripts');
 
   const handleTabChange = (nextTab: string) => {
-    void navigate(buildSettingsPath(nextTab as SettingsPageTab), { replace: true });
+    if (!isSettingsPageTab(nextTab)) {
+      return;
+    }
+
+    void navigate(buildSettingsPath(nextTab), { replace: true });
   };
 
   return (
