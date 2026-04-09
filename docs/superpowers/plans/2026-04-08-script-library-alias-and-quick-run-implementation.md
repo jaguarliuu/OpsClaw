@@ -1168,13 +1168,13 @@ git commit -m "feat: execute script aliases from terminal"
 在 `src/features/workbench/helpDialogModel.ts` 中补充：
 
 ```ts
-'脚本库支持 alias，终端中输入 x <alias> 可快速执行脚本。',
+'脚本支持 alias，终端中输入 x alias 并回车，可快速执行对应脚本。',
 ```
 
 以及脚本库能力 bullet：
 
 ```ts
-'脚本库：沉淀全局脚本、节点覆盖脚本和终端快捷 alias。'
+'脚本库：沉淀全局脚本、节点覆盖脚本和脚本别名（alias）。'
 ```
 
 - [ ] **Step 2: 更新帮助文案测试**
@@ -1182,8 +1182,8 @@ git commit -m "feat: execute script aliases from terminal"
 在 `src/features/workbench/helpDialogModel.test.ts` 中加入：
 
 ```ts
-assert.match(content.description, /x <alias>|alias/);
-assert.ok(content.featureBullets.some((item) => /脚本库/.test(item)));
+assert.ok(content.coreFeatures.includes('脚本库：沉淀全局脚本、节点覆盖脚本和脚本别名（alias）。'));
+assert.ok(content.usageTips.includes('脚本支持 alias，终端中输入 x alias 并回车，可快速执行对应脚本。'));
 ```
 
 - [ ] **Step 3: 运行最终验证**
