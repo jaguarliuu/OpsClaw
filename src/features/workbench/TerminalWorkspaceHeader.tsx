@@ -97,9 +97,15 @@ export function TerminalWorkspaceHeader({
   onToggleSidebar,
 }: TerminalWorkspaceHeaderProps) {
   const layoutActions = buildWorkbenchLayoutActions(splitLayout);
-  const [helpDialogAction, aiAssistantAction] = buildWorkbenchToolActions({
+  const toolActions = buildWorkbenchToolActions({
     isMacShortcutPlatform,
   });
+  const helpDialogAction = toolActions.find((action) => action.id === 'helpDialog');
+  const aiAssistantAction = toolActions.find((action) => action.id === 'aiAssistant');
+
+  if (!helpDialogAction || !aiAssistantAction) {
+    throw new Error('Workbench tool actions are incomplete.');
+  }
 
   return (
     <>
