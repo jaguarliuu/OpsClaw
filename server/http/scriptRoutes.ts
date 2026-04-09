@@ -10,6 +10,24 @@ export function registerScriptRoutes(
   app: HttpRouteApp,
   { scriptLibraryStore }: Pick<HttpApiDependencies, 'scriptLibraryStore'>
 ) {
+  app.get('/api/scripts/manage', (request, response) => {
+    try {
+      const scope = request.query['scope'];
+      const nodeId =
+        typeof request.query['nodeId'] === 'string' ? request.query['nodeId'] : undefined;
+
+      response.json({
+        items: scriptLibraryStore.listManagedScripts({
+          scope: scope === 'global' || scope === 'node' ? scope : undefined,
+          nodeId,
+        }),
+      });
+    } catch (error) {
+      console.error('[ScriptLibrary] manage list error:', error);
+      response.status(500).json({ message: '脚本管理列表读取失败。' });
+    }
+  });
+
   app.get('/api/scripts', (request, response) => {
     try {
       const nodeId =

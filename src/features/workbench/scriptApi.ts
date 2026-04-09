@@ -22,6 +22,24 @@ export async function fetchScripts(nodeId?: string | null) {
   return payload.items;
 }
 
+export async function fetchManagedScripts(input?: {
+  scope?: 'global' | 'node';
+  nodeId?: string | null;
+}) {
+  const url = new URL(`${buildServerHttpBaseUrl()}/api/scripts/manage`);
+
+  if (input?.scope) {
+    url.searchParams.set('scope', input.scope);
+  }
+  if (input?.nodeId) {
+    url.searchParams.set('nodeId', input.nodeId);
+  }
+
+  const response = await fetch(url);
+  const payload = await readJson<{ items: ScriptLibraryItem[] }>(response);
+  return payload.items;
+}
+
 export async function createScript(input: ScriptLibraryUpsertInput) {
   const response = await fetch(`${buildServerHttpBaseUrl()}/api/scripts`, {
     method: 'POST',

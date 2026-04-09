@@ -408,6 +408,47 @@ export async function createScriptLibraryStore() {
     return sortScripts(Array.from(resolved.values()));
   }
 
+  function listManagedScripts(input?: { scope?: 'global' | 'node'; nodeId?: string }) {
+    if (input?.scope === 'node') {
+      return queryMany(
+        database,
+        `
+          SELECT *
+          FROM script_library
+          WHERE scope = 'node' AND node_id = :nodeId
+          ORDER BY alias COLLATE NOCASE ASC, created_at ASC
+        `,
+        mapScriptRow,
+        {
+          ':nodeId': input.nodeId ?? '',
+        }
+      );
+    }
+
+    if (input?.scope === 'global') {
+      return queryMany(
+        database,
+        `
+          SELECT *
+          FROM script_library
+          WHERE scope = 'global'
+          ORDER BY alias COLLATE NOCASE ASC, created_at ASC
+        `,
+        mapScriptRow
+      );
+    }
+
+    return queryMany(
+      database,
+      `
+        SELECT *
+        FROM script_library
+        ORDER BY scope ASC, alias COLLATE NOCASE ASC, created_at ASC
+      `,
+      mapScriptRow
+    );
+  }
+
   function createScript(input: CreateScriptInput): ScriptLibraryItem {
     const next = normalizeCreateInput(input);
     const existing = getScriptByScopeAndKey(next.scope, next.nodeId, next.key);
@@ -506,6 +547,7 @@ export async function createScriptLibraryStore() {
 
   return {
     listAllScripts,
+    listManagedScripts,
     listResolvedScripts,
     getScript,
     createScript,

@@ -222,6 +222,44 @@ void test('script routes round-trip alias for create and list', async () => {
   }
 });
 
+void test('script management route returns raw node scripts for settings page', async () => {
+  const { createOpsClawServerApp } = await import('./serverApp.js');
+  const runtime = await createOpsClawServerApp();
+  const port = await listen(runtime.server);
+
+  try {
+    await fetch(`http://127.0.0.1:${port}/api/scripts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        key: 'restart-node-manage',
+        alias: 'restart-node-manage',
+        scope: 'node',
+        nodeId: 'node-1',
+        title: '节点脚本',
+        description: '',
+        kind: 'plain',
+        content: 'echo node',
+        variables: [],
+        tags: [],
+      }),
+    });
+
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/scripts/manage?scope=node&nodeId=node-1`
+    );
+    const payload = (await response.json()) as { items: Array<{ scope: string; nodeId: string | null }> };
+
+    assert.equal(response.status, 200);
+    assert.equal(
+      payload.items.some((item) => item.scope === 'node' && item.nodeId === 'node-1'),
+      true
+    );
+  } finally {
+    await close(runtime.server);
+  }
+});
+
 void test('createOpsClawServerApp allows desktop renderer requests from file-origin pages', async () => {
   process.env.OPSCLAW_DESKTOP = '1';
 

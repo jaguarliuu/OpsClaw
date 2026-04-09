@@ -180,6 +180,41 @@ void test('node alias overrides global alias during resolved lookup', async () =
   const store = await createScriptLibraryStore();
 
   store.createScript({
+    key: 'restart-global-resolved',
+    alias: 'restart-resolved',
+    scope: 'global',
+    nodeId: null,
+    title: '全局重启',
+    description: '',
+    kind: 'plain',
+    content: 'systemctl restart nginx',
+    variables: [],
+    tags: [],
+  });
+
+  store.createScript({
+    key: 'restart-node-resolved',
+    alias: 'restart-resolved',
+    scope: 'node',
+    nodeId: 'node-1',
+    title: '节点重启',
+    description: '',
+    kind: 'plain',
+    content: 'service nginx restart',
+    variables: [],
+    tags: [],
+  });
+
+  const [resolved] = store.listResolvedScripts('node-1').filter((item) => item.alias === 'restart-resolved');
+  assert.equal(resolved?.resolvedFrom, 'node');
+  assert.equal(resolved?.content, 'service nginx restart');
+});
+
+void test('listManagedScripts returns global and node scripts without resolved merging', async () => {
+  const { createScriptLibraryStore } = await import('./scriptLibraryStore.js');
+  const store = await createScriptLibraryStore();
+
+  store.createScript({
     key: 'restart-global',
     alias: 'restart',
     scope: 'global',
@@ -205,9 +240,18 @@ void test('node alias overrides global alias during resolved lookup', async () =
     tags: [],
   });
 
-  const [resolved] = store.listResolvedScripts('node-1').filter((item) => item.alias === 'restart');
-  assert.equal(resolved?.resolvedFrom, 'node');
-  assert.equal(resolved?.content, 'service nginx restart');
+  const items = store.listManagedScripts();
+  const managedRestartItems = items.filter((item) => item.alias === 'restart');
+
+  assert.equal(managedRestartItems.length, 2);
+  assert.equal(
+    managedRestartItems.some((item) => item.scope === 'global' && item.alias === 'restart'),
+    true
+  );
+  assert.equal(
+    managedRestartItems.some((item) => item.scope === 'node' && item.nodeId === 'node-1'),
+    true
+  );
 });
 
 void test('createScript rejects invalid alias format', async () => {
