@@ -133,7 +133,7 @@ export type ScriptVariableDefinition = {
   placeholder: string;
 };
 
-export type ScriptLibraryItem = {
+export type ManagedScriptLibraryItem = {
   id: string;
   key: string;
   alias: string;
@@ -145,10 +145,13 @@ export type ScriptLibraryItem = {
   content: string;
   variables: ScriptVariableDefinition[];
   tags: string[];
-  resolvedFrom: ScriptScope;
-  overridesGlobal: boolean;
   createdAt: string;
   updatedAt: string;
+};
+
+export type ScriptLibraryItem = ManagedScriptLibraryItem & {
+  resolvedFrom: ScriptScope;
+  overridesGlobal: boolean;
 };
 
 export type ScriptLibraryUpsertInput = {

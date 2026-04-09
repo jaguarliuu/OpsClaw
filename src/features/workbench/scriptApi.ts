@@ -1,4 +1,8 @@
-import type { ScriptLibraryItem, ScriptLibraryUpsertInput } from './types.js';
+import type {
+  ManagedScriptLibraryItem,
+  ScriptLibraryItem,
+  ScriptLibraryUpsertInput,
+} from './types.js';
 import { buildServerHttpBaseUrl } from './serverBase';
 
 async function readJson<T>(response: Response) {
@@ -36,7 +40,7 @@ export async function fetchManagedScripts(input?: {
   }
 
   const response = await fetch(url);
-  const payload = await readJson<{ items: ScriptLibraryItem[] }>(response);
+  const payload = await readJson<{ items: ManagedScriptLibraryItem[] }>(response);
   return payload.items;
 }
 
@@ -46,7 +50,7 @@ export async function createScript(input: ScriptLibraryUpsertInput) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  const payload = await readJson<{ item: ScriptLibraryItem }>(response);
+  const payload = await readJson<{ item: ManagedScriptLibraryItem }>(response);
   return payload.item;
 }
 
@@ -56,7 +60,7 @@ export async function updateScript(id: string, input: Partial<ScriptLibraryUpser
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  const payload = await readJson<{ item: ScriptLibraryItem }>(response);
+  const payload = await readJson<{ item: ManagedScriptLibraryItem }>(response);
   return payload.item;
 }
 
