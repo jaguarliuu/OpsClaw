@@ -28,6 +28,17 @@ export type AiAssistantModelOption = {
 };
 
 export type AiAssistantThemeMode = 'dark' | 'light';
+export type AiAssistantPrimaryActionState = {
+  kind: 'send' | 'stop';
+  disabled: boolean;
+  title: string;
+  ariaLabel: string;
+};
+
+export type AiAssistantHeaderActionsState = {
+  showStopAction: false;
+  newConversationTitle: string;
+};
 
 export const AI_ASSISTANT_PANEL_MIN_WIDTH = 300;
 export const AI_ASSISTANT_PANEL_MAX_WIDTH = 800;
@@ -168,6 +179,39 @@ export function getAiAssistantThemeClasses(mode: AiAssistantThemeMode) {
     infoTextClass: mode === 'light' ? 'text-blue-700' : 'text-blue-200',
     warningTextClass: mode === 'light' ? 'text-amber-900' : 'text-amber-200',
     errorTextClass: mode === 'light' ? 'text-red-700' : 'text-red-300',
+  };
+}
+
+export function getAiAssistantHeaderActionsState(
+  canClearConversation: boolean
+): AiAssistantHeaderActionsState {
+  return {
+    showStopAction: false,
+    newConversationTitle: canClearConversation
+      ? '新对话'
+      : '请先处理当前等待中的交互卡片',
+  };
+}
+
+export function getAiAssistantPrimaryActionState(input: {
+  isBusy: boolean;
+  canSend: boolean;
+  isAgentInputLocked: boolean;
+}): AiAssistantPrimaryActionState {
+  if (input.isBusy) {
+    return {
+      kind: 'stop',
+      disabled: false,
+      title: '停止',
+      ariaLabel: '停止当前运行',
+    };
+  }
+
+  return {
+    kind: 'send',
+    disabled: !input.canSend || input.isAgentInputLocked,
+    title: '发送',
+    ariaLabel: '发送',
   };
 }
 

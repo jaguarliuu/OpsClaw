@@ -8,6 +8,8 @@ import {
   buildAiAssistantModelOptions,
   clampAiAssistantPanelWidth,
   getDefaultAiAssistantSessionId,
+  getAiAssistantHeaderActionsState,
+  getAiAssistantPrimaryActionState,
   getAgentStepBudgetHint,
   getAiAssistantThemeClasses,
   getPreferredAiAssistantModelValue,
@@ -350,6 +352,62 @@ void test('getAiAssistantThemeClasses returns readable semantic text classes in 
   assert.match(themeClasses.secondaryTextClass, /text-\[var\(--app-text-secondary\)\]/);
   assert.doesNotMatch(themeClasses.primaryTextClass, /text-neutral-100|text-violet-50|text-sky-50/);
   assert.doesNotMatch(themeClasses.secondaryTextClass, /text-neutral-400|text-neutral-500/);
+});
+
+void test('getAiAssistantHeaderActionsState keeps stop out of the header and preserves the new-conversation tooltip state', () => {
+  assert.deepEqual(getAiAssistantHeaderActionsState(false), {
+    showStopAction: false,
+    newConversationTitle: '请先处理当前等待中的交互卡片',
+  });
+
+  assert.deepEqual(getAiAssistantHeaderActionsState(true), {
+    showStopAction: false,
+    newConversationTitle: '新对话',
+  });
+});
+
+void test('getAiAssistantPrimaryActionState switches the composer button to stop while busy', () => {
+  assert.deepEqual(
+    getAiAssistantPrimaryActionState({
+      isBusy: false,
+      canSend: true,
+      isAgentInputLocked: false,
+    }),
+    {
+      kind: 'send',
+      disabled: false,
+      title: '发送',
+      ariaLabel: '发送',
+    }
+  );
+
+  assert.deepEqual(
+    getAiAssistantPrimaryActionState({
+      isBusy: false,
+      canSend: false,
+      isAgentInputLocked: true,
+    }),
+    {
+      kind: 'send',
+      disabled: true,
+      title: '发送',
+      ariaLabel: '发送',
+    }
+  );
+
+  assert.deepEqual(
+    getAiAssistantPrimaryActionState({
+      isBusy: true,
+      canSend: false,
+      isAgentInputLocked: true,
+    }),
+    {
+      kind: 'stop',
+      disabled: false,
+      title: '停止',
+      ariaLabel: '停止当前运行',
+    }
+  );
 });
 
 void test('shouldAutoScrollAiAssistantTimeline scrolls when the panel opens, mode changes, or new visible items arrive', () => {

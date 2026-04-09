@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   Send,
+  SquareStop,
   TerminalSquare,
   WandSparkles,
   X,
@@ -22,6 +23,8 @@ import { useStreamingChat } from './useStreamingChat';
 import type { UseAgentRunResult } from './useAgentRun';
 import {
   createAiAssistantInputImeState,
+  getAiAssistantHeaderActionsState,
+  getAiAssistantPrimaryActionState,
   getAgentStepBudgetHint,
   getAiAssistantThemeClasses,
   getValidAiAssistantModelValue,
@@ -416,6 +419,12 @@ export function AiAssistantPanel({
   const isAgentInputLocked = mode === 'agent' && agentSessionModel.isInteractionLocked;
   const canClearAgentItems = mode !== 'agent' || agentSessionModel.canClearAgentItems;
   const themeClasses = getAiAssistantThemeClasses(appTheme.mode);
+  const headerActionsState = getAiAssistantHeaderActionsState(canClearAgentItems);
+  const primaryActionState = getAiAssistantPrimaryActionState({
+    isBusy,
+    canSend,
+    isAgentInputLocked,
+  });
   const activeDialogInteraction = shouldPresentAiAssistantInteractionDialog(
     agentRun.activeInteraction
   )
@@ -560,6 +569,20 @@ export function AiAssistantPanel({
     setInput('');
   };
 
+  const handlePrimaryAction = () => {
+    if (primaryActionState.kind === 'stop') {
+      if (mode === 'agent') {
+        stopAgent();
+        return;
+      }
+
+      stopStreaming();
+      return;
+    }
+
+    handleSend();
+  };
+
   if (!open) return null;
 
   return (
@@ -574,11 +597,14 @@ export function AiAssistantPanel({
           startDragging();
         }}
       />
-      <div 
-        className="flex items-center justify-between px-4 py-3 border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)]"
-        style={{ paddingTop: 'calc(0.75rem + env(titlebar-area-height, 0px))' }}
+      <div
+        className="flex items-start gap-3 border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] px-4 py-3"
+        style={{
+          paddingTop: 'calc(0.75rem + env(titlebar-area-height, 0px))',
+          paddingRight: 'calc(1rem + env(titlebar-area-right, 0px))',
+        }}
       >
-        <div className="flex items-center gap-3 w-full" style={{ paddingRight: 'env(titlebar-area-right, 120px)' }}>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
           <h2 className={`text-[13px] font-semibold ${themeClasses.primaryTextClass} uppercase tracking-wider`}>OpsClaw AI</h2>
           <div className="flex items-center gap-1 bg-neutral-800/40 p-0.5 rounded-lg border border-neutral-700/50">
             <button
@@ -605,7 +631,7 @@ export function AiAssistantPanel({
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-1 shrink-0 z-10 relative">
+        <div className="relative z-10 flex shrink-0 items-center gap-1 self-start">
           <button
             onClick={mode === 'agent' ? clearAgentItems : clearChatMessages}
             disabled={!canClearAgentItems}
@@ -614,18 +640,10 @@ export function AiAssistantPanel({
                 ? `${themeClasses.secondaryTextClass} hover:bg-[var(--app-bg-elevated3)] hover:text-[var(--app-text-primary)]`
                 : 'cursor-not-allowed text-[var(--app-text-tertiary)] opacity-60'
             }`}
-            title={canClearAgentItems ? '新对话' : '请先处理当前等待中的交互卡片'}
+            title={headerActionsState.newConversationTitle}
           >
             <span>新对话</span>
           </button>
-          {isBusy ? (
-            <button
-              onClick={mode === 'agent' ? stopAgent : stopStreaming}
-              className="text-[11px] px-2 py-1.5 text-[var(--app-status-warning)] hover:opacity-80 hover:bg-amber-500/10 rounded-md transition-colors"
-            >
-              停止
-            </button>
-          ) : null}
           <div className="w-px h-3 bg-neutral-700 mx-1"></div>
           <button
             onClick={onClose}
@@ -825,12 +843,21 @@ export function AiAssistantPanel({
             </div>
             
             <button
-              onClick={handleSend}
-              disabled={!canSend || isAgentInputLocked}
-              className="h-7 w-7 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:bg-neutral-800 disabled:text-neutral-500 flex items-center justify-center transition-all shrink-0 text-white shadow-sm"
-              title="发送"
+              onClick={handlePrimaryAction}
+              disabled={primaryActionState.disabled}
+              aria-label={primaryActionState.ariaLabel}
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm transition-all ${
+                primaryActionState.kind === 'stop'
+                  ? 'bg-amber-500 hover:bg-amber-400'
+                  : 'bg-blue-600 hover:bg-blue-500 disabled:bg-neutral-800'
+              } disabled:text-neutral-500 disabled:opacity-50`}
+              title={primaryActionState.title}
             >
-              <Send className="w-3.5 h-3.5" />
+              {primaryActionState.kind === 'stop' ? (
+                <SquareStop className="h-3.5 w-3.5" />
+              ) : (
+                <Send className="h-3.5 w-3.5" />
+              )}
             </button>
           </div>
         </div>
