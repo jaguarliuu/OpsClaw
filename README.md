@@ -35,7 +35,7 @@ pnpm desktop:pack:win
 - HITL 卡片直接在 `AiAssistantPanel` 中出现，开发者可以审查 LLM 生成的建议、填充字段，然后再回传执行或取消。
 
 ### 快捷脚本与终端增强
-- 快捷脚本从旧的脚本库面板已经迁移到设置中心的「脚本管理」，所有脚本在 Settings -> Quick Scripts 里编排。
+- 快捷脚本从旧的脚本库面板已经迁移到设置中心的「脚本」标签页统一管理，不再分散在工作台右侧区域。
 - `terminalQuickScriptModel` 提供 `x alias`、`x dashboard` 等命令行快捷方式，快速从终端呼出脚本、面板或 Dashboards。
 - 终端增强包括命令主题高亮、搜索建议、自动完成历史与脚本变量替换。
 
@@ -71,7 +71,7 @@ pnpm desktop:pack:win
 - 常用命令：`pnpm dev`（Web 开发）、`pnpm desktop:dev`（桌面快速迭代）、`pnpm desktop:pack:win`（Windows 打包）、`pnpm lint`、`pnpm typecheck`。
 - 本地运行时会在 `data/` 下生成 `opsclaw.sqlite`、`opsclaw.master.key` 与 `memory/` 目录，阅读、备份和清空都在这个路径下完成。
 - 可以用 `OPSCLAW_DATA_DIR=/path` 改写数据目录以支持多环境或 CI。
-- 桌面端调试时，Electron 会把 backend 进程和前端分开启动，日志分别写入 `release/logs/`（用户数据）与 `data/`，调试时可观察 `devtools` 与 `terminal` 输出。
+- 桌面端调试时，Electron 会把 backend 进程和前端分开启动；主进程与 backend 日志默认写入 Electron `userData/logs/`，运行时数据则落到对应的 `OPSCLAW_DATA_DIR`。
 - 项目仍处于快速迭代阶段，主链路（SSH + AI + Desktop）稳定后再继续向巡检、审计等上层能力推进。
 
 ## 文档索引
