@@ -1,232 +1,82 @@
 # OpsClaw
 
-OpsClaw 是一个面向桌面端的 AI 原生运维工作台。
+OpsClaw 是面向桌面与本地运行时的 AI-native SSH 运维工作台。它把节点、终端、AI Chat / Agent、结构化 HITL、快捷脚本、节点状态巡检与 Electron 桌面运行时收敛到同一个工作区里，让后续运维自动化能力可以在一个统一的「AI + SSH」底座上持续迭代。
 
-它把 SSH 会话、AI Chat、Agent 执行、脚本库、命令历史、节点记忆和桌面打包整合到同一个工作区里，目标是让后续功能都建立在稳定的 AI + SSH 底座之上，而不是分散成多个孤立工具。
+## OpsClaw 是什么
 
-## 当前能力
+这个仓库提供了既有 Web 开发体验又有 Electron 桌面壳的工程基础。React/Vite 负责工作台、设置、AI 面板与终端，Express/WebSocket + ssh2 搭建后端的 Node 网关与 Agent runtime，Electron 负责将这个系统打包成桌面应用并处理运行时桥接。开发者来到这里，是为了了解系统的当前能力、快速跑起来并找到下一步要修改的代码入口。
 
-- SSH 节点与分组管理
-- 终端会话管理、命令执行、历史记录与搜索建议
-- AI Chat 流式对话
-- AI Agent 基于 ReAct 的多步执行
-- Agent 命令取消、会话锁释放、交互式命令人工接管续跑
-- LLM 提供商配置
-  - 内置 provider 候选
-  - OpenAI-compatible / 自定义 provider
-  - 可自定义 `baseUrl`
-  - 可维护模型候选并手填模型名
-- 节点 / 全局记忆（`MEMORY.md`）
-- 全局脚本库 + 节点覆盖脚本
-- Electron 桌面端集成与 Windows 打包
+## 快速开始
 
-## 技术栈
-
-- 前端：React 19、TypeScript、Vite、Tailwind CSS 4、Radix UI、xterm.js
-- 服务端：Express、WebSocket、ssh2、sql.js
-- AI：`@mariozechner/pi-ai`
-- 桌面端：Electron、electron-builder
-- 包管理：pnpm
-
-## 运行方式
-
-### 1. 安装依赖
+当前发布版本：`0.2.0`。
 
 ```bash
 pnpm install
-```
-
-### 2. Web 开发模式
-
-```bash
 pnpm dev
-```
-
-默认会同时启动：
-
-- Vite 前端：`http://localhost:5173`
-- Node 服务端：`http://localhost:4000`
-
-### 3. 桌面端开发模式
-
-```bash
-pnpm desktop:dev
-```
-
-这会先编译 Electron 主进程，再启动前端开发服务器和桌面壳。
-
-### 4. 生产构建
-
-```bash
-pnpm build
-pnpm desktop:build
-```
-
-### 5. Windows 打包
-
-```bash
-pnpm desktop:pack:win
-```
-
-默认产物：
-
-- `release/OpsClaw-0.1.0-win.zip`
-- `release/win-unpacked/`
-
-## 常用命令
-
-```bash
-pnpm dev
-pnpm build
-pnpm lint
-pnpm typecheck
 pnpm desktop:dev
 pnpm desktop:pack:win
 ```
 
-## 项目结构
+`pnpm dev` 同时启动 Vite 前端（默认 `http://localhost:5173`）和 Express/SSH 网关（默认 `http://localhost:4000`）。`pnpm desktop:dev` 会先编译 Electron 主进程，然后启动渲染器与桌面壳，方便调试。`pnpm desktop:pack:win` 会在 `release/` 下产出比如 `OpsClaw-0.2.0-win.zip` 的安装包，主运行路径在 `release/win-unpacked/`（桌面运行时的 unpack 目录）。
 
-```text
-.
-├─ electron/                  # Electron 主进程、预加载、日志与窗口逻辑
-├─ server/                    # Express API、SSH 网关、Agent runtime、数据存储
-│  ├─ agent/                  # Agent、工具注册、会话锁、记忆沉淀
-│  └─ http/                   # 各 HTTP 路由模块
-├─ src/
-│  ├─ app/                    # App shell、路由、主题变量注入
-│  ├─ components/             # 通用 UI 组件
-│  ├─ features/workbench/     # 工作台主功能
-│  ├─ routes/                 # 页面级路由
-│  └─ styles/                 # 全局样式与 Markdown / xterm 主题
-├─ docs/superpowers/          # 设计文档与实现计划
-└─ release/                   # 本地打包产物（不建议入库）
-```
+## 当前能力概览
 
-## 核心模块
+### 节点与终端
+- 节点与分组数据由后端管理，前端 Session 树展示树状关系、搜索、上下文菜单和拓扑信息。
+- 每次打开终端都会复用 `SshTerminalPane` + `useSshTerminal*` hooks，保持命令历史、运行时状态、搜索建议和切换会话的流畅度。
+- 命令在后台写入 `commandHistoryStore`，并在工作台里提供可搜索的执行记录与回放线索。
 
-### 工作台
+### AI Chat / Agent
+- `AiAssistantPanel` 同时承载 Chat 与 Agent，两者共用流式 LLM 输出、上下文提醒与标记的参数输入。
+- Agent 依赖 ReAct 风格执行器，对多步命令保持锁、支持中断与人工回退，并且可以在面板内显示当前步骤、工具调用与上下文。
 
-主工作区在 [`src/routes/WorkbenchPage.tsx`](./src/routes/WorkbenchPage.tsx) 和 [`src/features/workbench`](./src/features/workbench)。
+### 结构化 HITL
+- Agent 交互呈现为结构化卡片，需要人工确认参数、审批执行进度或继续输入，避免阻塞式终端输入。
+- HITL 卡片直接在 `AiAssistantPanel` 中出现，开发者可以审查 LLM 生成的建议、填充字段，然后再回传执行或取消。
 
-当前结构已经做过一轮拆分，重点职责分别收口到：
+### 快捷脚本与终端增强
+- 快捷脚本从旧的脚本库面板已经迁移到设置中心的「脚本管理」，所有脚本在 Settings -> Quick Scripts 里编排。
+- `terminalQuickScriptModel` 提供 `x alias`、`x dashboard` 等命令行快捷方式，快速从终端呼出脚本、面板或 Dashboards。
+- 终端增强包括命令主题高亮、搜索建议、自动完成历史与脚本变量替换。
 
-- `useWorkbenchWorkspaceData`：工作区加载 / refresh / polling
-- `SshTerminalPane` + 一组 `useSshTerminal*` hooks：终端连接、运行时、搜索、viewport、命令执行
-- `SessionTree*`：会话树 UI、filter、context menu、header/search/footer
-- `AiAssistantPanel`：Chat / Agent 面板
-- `ScriptLibraryPanel`：脚本库
-- `LlmSettings`：LLM 配置中心
+### 节点状态 Dashboard
+- `NodeStatusDashboardDialog` 汇总最近的巡检快照、操作结果和健康状态，方便在工作台横幅内调度。
+- `nodeInspectionService` 定期采集节点指标和脚本执行结果，为 Dashboard 提供历史记录与可视化。
 
-### 服务端
+### 设置与桌面运行时
+- 设置页负责 LLM provider 配置（内置候选、OpenAI-compatible、自定义 `baseUrl`）以及节点记忆和脚本自动上下文管理，所有快捷脚本都在该中心维护。
+- Electron 桌面端负责启动独立的后端进程、注入 `OPSCLAW_ELECTRON_*` 运行时配置，并将日志写入用户数据目录。
+- Windows 打包依赖 `electron-builder`，输出目录是 `release/`，桌面端也可将数据写入 `data/`（见下文）。
 
-服务入口在 [`server/serverApp.ts`](./server/serverApp.ts)。
+## 架构概览
 
-主要组成：
+- `src/`：以 React + Vite 搭建的工作台 shell、路由、组件与特性目录，包含工作台、设置、终端、AI 面板。
+- `server/`：Express、WebSocket、ssh2、sql.js 搭建的后端，包括 HTTP API、Terminal gateway、Agent runtime、节点巡检与数据库。
+- `server/agent/`：Agent runtime、工具注册、会话锁与记忆写入逻辑，为 `AiAssistantPanel` 提供多轮执行能力。
+- `electron/`：Electron 主进程、预加载脚本、窗口生命周期、桌面运行时配置与日志。
+- `docs/`：运维定位、设计 spec、实现计划与超级能力演进记录。
 
-- `nodeStore`：节点 / 分组数据
-- `commandHistoryStore`：命令历史
-- `llmProviderStore`：模型提供商配置
-- `scriptLibraryStore`：脚本库
-- `SessionRegistry`：SSH 会话注册、转录与 Agent 命令锁
-- `OpsAgentRuntime`：Agent 执行循环
-- `registerOpsClawHttpApi`：HTTP API 注册
-- `registerTerminalGateway`：SSH WebSocket 网关
+## 核心模块地图
 
-### Agent
+- `src/routes/WorkbenchPage.tsx`：工作台页面布局、左右区域分布、路由入口。
+- `src/features/workbench/AiAssistantPanel.tsx`：AI Chat/Agent 面板、结构化 HITL 卡片、审批与输入控件。
+- `src/features/workbench/terminalQuickScriptModel.ts`：快捷脚本、`x alias`、`x dashboard` 以及终端动作建模。
+- `src/features/workbench/NodeStatusDashboardDialog.tsx`：节点状态仪表盘、巡检结果可视化与快照回放。
+- `server/nodeInspectionService.ts`：周期巡检、节点指标收集与 Dashboard 数据源。
+- `server/agent/`：Agent 运行时、工具注册、锁管理与 API。
+- `electron/`：桌面主进程、preload、安全桥接、打包与开发脚本。
 
-Agent 相关代码在 [`server/agent`](./server/agent)。
+## 开发与调试
 
-当前内置工具包括：
+- 常用命令：`pnpm dev`（Web 开发）、`pnpm desktop:dev`（桌面快速迭代）、`pnpm desktop:pack:win`（Windows 打包）、`pnpm lint`、`pnpm typecheck`。
+- 本地运行时会在 `data/` 下生成 `opsclaw.sqlite`、`opsclaw.master.key` 与 `memory/` 目录，阅读、备份和清空都在这个路径下完成。
+- 可以用 `OPSCLAW_DATA_DIR=/path` 改写数据目录以支持多环境或 CI。
+- 桌面端调试时，Electron 会把 backend 进程和前端分开启动，日志分别写入 `release/logs/`（用户数据）与 `data/`，调试时可观察 `devtools` 与 `terminal` 输出。
+- 项目仍处于快速迭代阶段，主链路（SSH + AI + Desktop）稳定后再继续向巡检、审计等上层能力推进。
 
-- `session.list`
-- `session.get_metadata`
-- `session.read_transcript`
-- `session.run_command`
-- 文件记忆相关工具
+## 文档索引
 
-已经处理的关键稳定性问题包括：
-
-- Agent / Chat 停止时的中断链路
-- `run_failed` 错误透传
-- 会话锁未释放导致的 busy 假死
-- 交互式命令等待用户输入时的人工接管续跑
-- 人工输入回显脱敏，避免敏感内容进入 Agent 结果
-
-## 数据与运行时文件
-
-默认数据目录逻辑在 [`server/runtimePaths.ts`](./server/runtimePaths.ts)：
-
-- 默认使用当前工作目录
-- 数据库存放在 `data/opsclaw.sqlite`
-- 主密钥文件在 `data/opsclaw.master.key`
-- 记忆目录在 `data/memory/`
-
-可以通过环境变量覆盖：
-
-```bash
-OPSCLAW_DATA_DIR=/path/to/runtime-data
-```
-
-桌面端运行时会把后端放到独立子进程中启动，日志由 Electron 主进程和 backend 分别写入用户数据目录。
-
-## 开发约定
-
-### 前端
-
-- 主题颜色优先使用 `--app-bg-*`、`--app-text-*`、`--app-border-*`
-- 避免在工作台里继续扩散深色主题硬编码
-- 复杂组件优先拆成 model / hook / presentational component
-
-### 服务端
-
-- Agent 能力尽量围绕稳定的 `session.run_command`、记忆、脚本库扩展
-- 对会话、锁、取消、中断这类状态要优先写回归测试
-- 先保证 AI 主线稳定，再往巡检、审计等上层能力扩展
-
-## 测试与校验
-
-当前仓库大量使用 Node 原生 `node:test` 风格的小型回归测试，分布在：
-
-- `server/**/*.test.ts`
-- `src/features/workbench/**/*.test.ts`
-- `electron/**/*.test.ts`
-
-常用校验：
-
-```bash
-pnpm typecheck
-pnpm lint
-pnpm exec tsx --test server/agent/agentRuntime.test.ts
-pnpm exec tsx --test server/agent/sessionRegistry.test.ts
-pnpm exec tsx --test src/features/workbench/aiAssistantPanelModel.test.ts
-```
-
-## 常见问题
-
-### 桌面端启动后 `Failed to fetch`
-
-先确认：
-
-- Electron backend 进程是否成功启动
-- `serverBase` 是否拿到了桌面 runtime 注入的 API / WS 地址
-- `file://` 场景下接口是否走桌面端地址而不是相对路径
-
-### Agent 执行后会话一直 busy
-
-先看最近的 `sessionRegistry` 修复是否已包含在当前构建产物中；旧包会出现命令中断后锁未释放的问题。
-
-### 白色主题下 AI 面板文字不可见
-
-优先检查是否又引入了 `text-neutral-100` / `text-violet-50` 这类深色主题硬编码，而没有走 `--app-text-*` 语义变量。
-
-### 构建产物占用磁盘
-
-本地打包会生成较大的 `release/`、Electron 缓存和 pnpm store。构建前建议先清理旧的 `win-unpacked/`，不要把二进制产物提交进仓库。
-
-## 后续建议
-
-- 继续收敛主题系统，消除剩余硬编码颜色
-- 为 Agent 增加更清晰的“等待人工输入 / 人工接管中”前端状态提示
-- 逐步补齐更系统的桌面端回归测试
-- 在打包脚本里加入预清理，避免本地产物持续堆积
-
+- `docs/opsclaw.md`
+- `docs/opsclaw-mvp-slim.md`
+- `docs/superpowers/specs/`
+- `docs/superpowers/plans/`
