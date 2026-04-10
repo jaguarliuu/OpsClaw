@@ -13,7 +13,8 @@
 ### Task 1: 校准 README 信息源
 
 **Files:**
-- Modify: `/Users/eumenides/Desktop/jaguarliu/core/opsclaw/README.md`
+- Modify: `/Users/eumenides/Desktop/jaguarliu/core/opsclaw/docs/superpowers/plans/2026-04-10-readme-refresh.md`
+- Reference: `/Users/eumenides/Desktop/jaguarliu/core/opsclaw/README.md`
 - Reference: `/Users/eumenides/Desktop/jaguarliu/core/opsclaw/package.json`
 - Reference: `/Users/eumenides/Desktop/jaguarliu/core/opsclaw/docs/superpowers/specs/2026-04-10-readme-refresh-design.md`
 
@@ -60,18 +61,9 @@ README 中仍包含旧版章节与过时描述；package.json 版本为 0.2.0；
 ## 文档索引
 ```
 
-- [ ] **Step 4: 提交本任务**
+- [ ] **Step 4: 记录任务边界与预期产出**
 
-```bash
-git add /Users/eumenides/Desktop/jaguarliu/core/opsclaw/docs/superpowers/plans/2026-04-10-readme-refresh.md
-git commit -m "docs: add readme refresh implementation plan"
-```
-
-Expected:
-
-```text
-plan 文件已提交，后续 README 改写有可执行依据。
-```
+在计划内确认上述事实与骨架是否仍有效、是否需要在 Task 2/3 中添加额外注意点，并在必要时更新备注。
 
 ### Task 2: 重写 README 主体内容
 
@@ -83,7 +75,7 @@ plan 文件已提交，后续 README 改写有可执行依据。
 
 将 README 顶部改写为更聚焦开发者的定位，并保留最关键启动命令。开头内容应接近以下结构：
 
-```markdown
+````markdown
 # OpsClaw
 
 OpsClaw 是一个面向桌面与本地运行时的 AI-native SSH 运维工作台。
@@ -98,7 +90,7 @@ pnpm dev
 pnpm desktop:dev
 pnpm desktop:pack:win
 ```
-```
+````
 
 - [ ] **Step 2: 用按工作流分组的方式重写“当前能力概览”**
 
@@ -163,18 +155,9 @@ pnpm desktop:pack:win
 - `docs/superpowers/plans/`
 ```
 
-- [ ] **Step 5: 提交 README 改写**
+- [ ] **Step 5: 记录 README 改写反馈**
 
-```bash
-git add /Users/eumenides/Desktop/jaguarliu/core/opsclaw/README.md
-git commit -m "docs: refresh readme for contributors"
-```
-
-Expected:
-
-```text
-README 结构与内容已切换到开发者入口文档形态。
-```
+确认 Task 2 产出是否匹配预期结构，并将任何未解决的问题或延伸讨论写入备注供 Task 3 校验。
 
 ### Task 3: 校验 README 的准确性与可读性
 
@@ -223,15 +206,11 @@ Expected:
 README 能在一次滚动阅读中完成高层理解，不会重新退化为长篇细节堆砌文档。
 ```
 
-- [ ] **Step 4: 提交最终文档校验结果**
+- [ ] **Step 4: 记录校验结果**
 
-```bash
-git add /Users/eumenides/Desktop/jaguarliu/core/opsclaw/README.md
-git commit -m "docs: polish readme structure and links"
-```
+把 Task 3 的自检命令输出写入计划备注，提炼任何遗留风险或需进一步确认的细节。
 
-Expected:
+### 最终整合与提交建议
 
-```text
-README 最终内容通过自检，可以交给用户评估。
-```
+- 在 Task 2 完成且 Task 3 校验通过后，统一舞台 README.md（必要时也包括 refs/ docs/ 变更）。
+- 确保一起提交的内容满足“开发者入口”目标后，用 `git commit -m "docs: refresh readme for contributors"` 记录一份整合提交。
