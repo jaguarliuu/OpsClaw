@@ -4,11 +4,14 @@ import test from 'node:test';
 import type { ScriptLibraryItem } from './types.js';
 
 import {
+  buildQuickScriptCandidates,
+  buildQuickScriptCompletion,
   buildQuickScriptSuggestionItems,
   detectTerminalQuickScriptQuery,
   findExactQuickScriptMatch,
   isQuickScriptQueryStillCurrent,
   rankQuickScriptCandidates,
+  resolveTerminalDashboardShortcut,
   resolveQuickScriptExecutionTarget,
 } from './terminalQuickScriptModel.js';
 
@@ -17,6 +20,23 @@ void test('detectTerminalQuickScriptQuery only matches whole-line x prefix', () 
   assert.equal(detectTerminalQuickScriptQuery('x '), '');
   assert.equal(detectTerminalQuickScriptQuery('echo x nginx'), null);
   assert.equal(detectTerminalQuickScriptQuery('sudo x nginx'), null);
+});
+
+void test('resolveTerminalDashboardShortcut treats x dashboard as a dashboard action instead of a script alias', () => {
+  assert.equal(resolveTerminalDashboardShortcut('x dashboard'), true);
+  assert.equal(resolveTerminalDashboardShortcut('x Dashboard'), true);
+  assert.equal(resolveTerminalDashboardShortcut('  x dashboard  '), true);
+  assert.equal(detectTerminalQuickScriptQuery('x dashboard'), null);
+  assert.equal(resolveTerminalDashboardShortcut('x dashboard now'), false);
+});
+
+void test('buildQuickScriptCandidates includes the builtin dashboard action in x suggestions', () => {
+  const candidates = buildQuickScriptCandidates([], 'dash');
+
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0]?.label, 'dashboard');
+  assert.equal(candidates[0]?.kind, 'builtin');
+  assert.equal(candidates[0]?.builtinAction, 'dashboard');
 });
 
 void test('findExactQuickScriptMatch prefers node script over global script', () => {
@@ -30,6 +50,7 @@ void test('findExactQuickScriptMatch prefers node script over global script', ()
       title: '全局重启',
       description: '',
       kind: 'plain',
+      usage: 'quick_run',
       content: 'systemctl restart nginx',
       variables: [],
       tags: [],
@@ -47,6 +68,7 @@ void test('findExactQuickScriptMatch prefers node script over global script', ()
       title: '节点重启',
       description: '',
       kind: 'plain',
+      usage: 'quick_run',
       content: 'service nginx restart',
       variables: [],
       tags: [],
@@ -71,6 +93,7 @@ void test('rankQuickScriptCandidates orders items by alias exact, scope, and ali
       title: '全局重启',
       description: '',
       kind: 'plain',
+      usage: 'quick_run',
       content: 'systemctl restart nginx',
       variables: [],
       tags: [],
@@ -88,6 +111,7 @@ void test('rankQuickScriptCandidates orders items by alias exact, scope, and ali
       title: '节点重启',
       description: '',
       kind: 'plain',
+      usage: 'quick_run',
       content: 'service nginx restart',
       variables: [],
       tags: [],
@@ -105,6 +129,7 @@ void test('rankQuickScriptCandidates orders items by alias exact, scope, and ali
       title: 'restart alpha',
       description: '',
       kind: 'plain',
+      usage: 'quick_run',
       content: 'alpha command',
       variables: [],
       tags: [],
@@ -122,6 +147,7 @@ void test('rankQuickScriptCandidates orders items by alias exact, scope, and ali
       title: 'restart beta',
       description: '',
       kind: 'plain',
+      usage: 'quick_run',
       content: 'beta command',
       variables: [],
       tags: [],
@@ -139,6 +165,7 @@ void test('rankQuickScriptCandidates orders items by alias exact, scope, and ali
       title: 'restart charlie',
       description: '',
       kind: 'plain',
+      usage: 'quick_run',
       content: 'charlie command',
       variables: [],
       tags: [],
@@ -164,46 +191,67 @@ void test('buildQuickScriptSuggestionItems returns highlighted list items', () =
   const items = buildQuickScriptSuggestionItems(
     [
       {
-        id: 'node-1',
-        key: 'restart-node',
-        alias: 'restart',
-        scope: 'node',
-        nodeId: 'node-1',
-        title: '节点重启',
-        description: '',
-        kind: 'plain',
-        content: 'service nginx restart',
-        variables: [],
-        tags: [],
-        resolvedFrom: 'node',
-        overridesGlobal: true,
-        createdAt: '',
-        updatedAt: '',
+        kind: 'builtin',
+        id: 'builtin-dashboard',
+        label: 'dashboard',
+        detail: '节点状态面板 · 内置',
+        builtinAction: 'dashboard',
       },
       {
+        kind: 'script',
+        id: 'node-1',
+        label: 'restart',
+        detail: '节点重启 · node · plain',
+        script: {
+          id: 'node-1',
+          key: 'restart-node',
+          alias: 'restart',
+          scope: 'node',
+          nodeId: 'node-1',
+          title: '节点重启',
+          description: '',
+          kind: 'plain',
+          usage: 'quick_run',
+          content: 'service nginx restart',
+          variables: [],
+          tags: [],
+          resolvedFrom: 'node',
+          overridesGlobal: true,
+          createdAt: '',
+          updatedAt: '',
+        },
+      },
+      {
+        kind: 'script',
         id: 'global-1',
-        key: 'logs-global',
-        alias: 'logs',
-        scope: 'global',
-        nodeId: null,
-        title: '查看日志',
-        description: '',
-        kind: 'plain',
-        content: 'journalctl -n 200',
-        variables: [],
-        tags: [],
-        resolvedFrom: 'global',
-        overridesGlobal: false,
-        createdAt: '',
-        updatedAt: '',
+        label: 'logs',
+        detail: '查看日志 · global · plain',
+        script: {
+          id: 'global-1',
+          key: 'logs-global',
+          alias: 'logs',
+          scope: 'global',
+          nodeId: null,
+          title: '查看日志',
+          description: '',
+          kind: 'plain',
+          usage: 'quick_run',
+          content: 'journalctl -n 200',
+          variables: [],
+          tags: [],
+          resolvedFrom: 'global',
+          overridesGlobal: false,
+          createdAt: '',
+          updatedAt: '',
+        },
       },
     ],
     0
   );
 
-  assert.equal(items.length, 2);
+  assert.equal(items.length, 3);
   assert.equal(items[0]?.highlighted, true);
-  assert.equal(items[0]?.label, 'restart');
+  assert.equal(items[0]?.label, 'dashboard');
 });
 
 void test('isQuickScriptQueryStillCurrent validates current input buffer against expected query', () => {
@@ -223,6 +271,7 @@ void test('resolveQuickScriptExecutionTarget ignores stale ranked candidates fro
       title: '节点重启',
       description: '',
       kind: 'plain',
+      usage: 'quick_run',
       content: 'service nginx restart',
       variables: [],
       tags: ['service'],
@@ -240,6 +289,7 @@ void test('resolveQuickScriptExecutionTarget ignores stale ranked candidates fro
       title: '查看日志',
       description: '',
       kind: 'plain',
+      usage: 'quick_run',
       content: 'journalctl -n 200',
       variables: [],
       tags: ['debug'],
@@ -254,9 +304,37 @@ void test('resolveQuickScriptExecutionTarget ignores stale ranked candidates fro
     query: 'res',
     items,
     rankedQuery: 'logs',
-    rankedItems: [items[1]!],
+    rankedItems: buildQuickScriptCandidates(items, 'logs'),
     selectedIndex: 0,
   });
 
   assert.equal(target?.id, 'restart-node');
+});
+
+void test('resolveQuickScriptExecutionTarget resolves builtin dashboard when it is the selected x candidate', () => {
+  const target = resolveQuickScriptExecutionTarget({
+    query: 'dash',
+    items: [],
+    rankedQuery: 'dash',
+    rankedItems: buildQuickScriptCandidates([], 'dash'),
+    selectedIndex: 0,
+  });
+
+  assert.equal(target?.kind, 'builtin');
+  assert.equal(target?.builtinAction, 'dashboard');
+});
+
+void test('buildQuickScriptCompletion completes builtin dashboard from a partial x query', () => {
+  const completion = buildQuickScriptCompletion({
+    inputBuffer: 'x dash',
+    items: [],
+    rankedQuery: 'dash',
+    rankedItems: buildQuickScriptCandidates([], 'dash'),
+    selectedIndex: 0,
+  });
+
+  assert.deepEqual(completion, {
+    completedInput: 'x dashboard',
+    forwardedInput: 'board',
+  });
 });

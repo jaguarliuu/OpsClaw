@@ -16,6 +16,21 @@ export function buildSettingsPath(tab?: SettingsPageTab): string {
   return `${SETTINGS_PAGE_PATH}?tab=${tab}`;
 }
 
+export function buildInspectionScriptSettingsPath(nodeId: string, scriptId?: string | null): string {
+  const params = new URLSearchParams({
+    tab: 'scripts',
+    scope: 'node',
+    nodeId,
+    usage: 'inspection',
+  });
+
+  if (scriptId && scriptId.trim()) {
+    params.set('scriptId', scriptId.trim());
+  }
+
+  return `${SETTINGS_PAGE_PATH}?${params.toString()}`;
+}
+
 export function resolveSettingsTab(searchParams: URLSearchParams): SettingsPageTab {
   const tab = searchParams.get('tab');
 

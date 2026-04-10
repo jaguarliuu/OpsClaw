@@ -7,11 +7,15 @@ import { createAgentRuntimeBundle } from './agent/runtimeBundle.js';
 import { createCommandHistoryStore } from './commandHistoryStore.js';
 import { registerOpsClawHttpApi } from './httpApi.js';
 import { createLlmProviderStore } from './llmProviderStore.js';
+import { runInspectionCommandOnNode } from './nodeInspectionRunner.js';
+import { createNodeInspectionService, type RunInspectionCommand } from './nodeInspectionService.js';
+import { createNodeInspectionStore } from './nodeInspectionStore.js';
 import { createNodeStore } from './nodeStore.js';
 import { createScriptLibraryStore } from './scriptLibraryStore.js';
 
 export type CreateOpsClawServerAppOptions = {
   port?: number;
+  runNodeInspectionCommand?: RunInspectionCommand;
 };
 
 export async function createOpsClawServerApp(options: CreateOpsClawServerAppOptions = {}) {
@@ -19,6 +23,16 @@ export async function createOpsClawServerApp(options: CreateOpsClawServerAppOpti
   const commandHistoryStore = await createCommandHistoryStore();
   const llmProviderStore = await createLlmProviderStore();
   const scriptLibraryStore = await createScriptLibraryStore();
+  const nodeInspectionStore = await createNodeInspectionStore();
+  const runNodeInspectionCommand: RunInspectionCommand =
+    options.runNodeInspectionCommand ??
+    ((node, command) => runInspectionCommandOnNode(node, command, (id) => nodeStore.getNodeWithSecrets(id)));
+  const nodeInspectionService = createNodeInspectionService({
+    nodeStore,
+    scriptLibraryStore,
+    inspectionStore: nodeInspectionStore,
+    runInspectionCommand: runNodeInspectionCommand,
+  });
   const { sessionRegistry, fileMemoryStore, agentRuntime } = createAgentRuntimeBundle({
     getNodeById: (id) => nodeStore.getNode(id),
     getGroupById: (id) => nodeStore.getGroup(id),
@@ -33,6 +47,8 @@ export async function createOpsClawServerApp(options: CreateOpsClawServerAppOpti
     commandHistoryStore,
     llmProviderStore,
     scriptLibraryStore,
+    nodeInspectionStore,
+    nodeInspectionService,
     fileMemoryStore,
     agentRuntime,
   });
@@ -43,6 +59,9 @@ export async function createOpsClawServerApp(options: CreateOpsClawServerAppOpti
     websocketServer,
     port,
     nodeStore,
+    scriptLibraryStore,
+    nodeInspectionStore,
+    nodeInspectionService,
     sessionRegistry,
   };
 }

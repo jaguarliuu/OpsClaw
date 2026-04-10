@@ -2,6 +2,7 @@ import type {
   ManagedScriptLibraryItem,
   ScriptLibraryItem,
   ScriptLibraryUpsertInput,
+  ScriptUsage,
 } from './types.js';
 import { buildServerHttpBaseUrl } from './serverBase';
 import { dispatchScriptLibraryChanged } from './scriptLibraryEvents.js';
@@ -30,6 +31,7 @@ export async function fetchScripts(nodeId?: string | null) {
 export async function fetchManagedScripts(input?: {
   scope?: 'global' | 'node';
   nodeId?: string | null;
+  usage?: ScriptUsage;
 }) {
   const url = new URL(`${buildServerHttpBaseUrl()}/api/scripts/manage`);
 
@@ -38,6 +40,9 @@ export async function fetchManagedScripts(input?: {
   }
   if (input?.nodeId) {
     url.searchParams.set('nodeId', input.nodeId);
+  }
+  if (input?.usage) {
+    url.searchParams.set('usage', input.usage);
   }
 
   const response = await fetch(url);

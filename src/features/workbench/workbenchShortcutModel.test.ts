@@ -7,7 +7,10 @@ import {
 } from './workbenchShortcutModel.js';
 
 void test('resolveWorkbenchShortcutAction no longer maps mod:semicolon to a script drawer', () => {
-  assert.equal(resolveWorkbenchShortcutAction({ key: ';', mod: true }), null);
+  assert.equal(
+    resolveWorkbenchShortcutAction({ key: ';', mod: true }),
+    null
+  );
 });
 
 void test('resolveWorkbenchShortcutAction keeps existing quick connect and ai shortcuts', () => {
@@ -18,6 +21,13 @@ void test('resolveWorkbenchShortcutAction keeps existing quick connect and ai sh
   assert.equal(
     resolveWorkbenchShortcutAction({ key: 'a', mod: true }),
     'toggleAiAssistant'
+  );
+});
+
+void test('resolveWorkbenchShortcutAction supports node dashboard shortcut', () => {
+  assert.equal(
+    resolveWorkbenchShortcutAction({ key: 'd', mod: true }),
+    'openNodeDashboard'
   );
 });
 

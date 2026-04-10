@@ -4,6 +4,7 @@ import { resolveWorkbenchShortcutAction } from './workbenchShortcutModel';
 
 type ShortcutHandlers = {
   onCloseActiveTab: () => void;
+  onOpenNodeDashboard: () => void;
   onOpenNewConnection: () => void;
   onSwitchToTabIndex: (index: number) => void;
   onSwitchToPrevTab: () => void;
@@ -49,6 +50,9 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): void {
           return;
         case 'toggleAiAssistant':
           handlersRef.current.onToggleAiAssistant();
+          return;
+        case 'openNodeDashboard':
+          handlersRef.current.onOpenNodeDashboard();
           return;
         case 'closeActiveTab':
           handlersRef.current.onCloseActiveTab();

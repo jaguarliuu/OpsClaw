@@ -5,7 +5,10 @@ import { cn } from '@/lib/utils';
 function Card({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
-      className={cn('rounded-xl border border-neutral-800 bg-neutral-900 text-neutral-100 shadow-sm', className)}
+      className={cn(
+        'rounded-xl border border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] text-[var(--app-text-primary)] shadow-sm',
+        className
+      )}
       {...props}
     />
   );
@@ -16,11 +19,16 @@ function CardHeader({ className, ...props }: React.ComponentProps<'div'>) {
 }
 
 function CardTitle({ className, ...props }: React.ComponentProps<'div'>) {
-  return <div className={cn('text-sm font-semibold tracking-tight', className)} {...props} />;
+  return (
+    <div
+      className={cn('text-sm font-semibold tracking-tight text-[var(--app-text-primary)]', className)}
+      {...props}
+    />
+  );
 }
 
 function CardDescription({ className, ...props }: React.ComponentProps<'div'>) {
-  return <div className={cn('text-xs text-neutral-400', className)} {...props} />;
+  return <div className={cn('text-xs text-[var(--app-text-secondary)]', className)} {...props} />;
 }
 
 function CardContent({ className, ...props }: React.ComponentProps<'div'>) {

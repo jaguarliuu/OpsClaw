@@ -44,3 +44,8 @@ export const LazyMoveProfileDialog = lazy(async () => {
   const module = await import('./GroupDialogs');
   return { default: module.MoveProfileDialog };
 });
+
+export const LazyNodeStatusDashboardDialog = lazy(async () => {
+  const module = await import('./NodeStatusDashboardDialog');
+  return { default: module.NodeStatusDashboardDialog };
+});

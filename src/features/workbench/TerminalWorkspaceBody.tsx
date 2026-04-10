@@ -26,6 +26,7 @@ type TerminalWorkspaceBodyProps = {
   splitRatio: number;
   terminalRefs: MutableRefObject<Record<string, SshTerminalPaneHandle | null>>;
   onFocusEmptyPane: (paneIndex: FocusedPane) => void;
+  onOpenNodeDashboard: (nodeId: string) => void;
   onOpenNewConnection: () => void;
   onPointerFocusPane: (paneIndex: FocusedPane) => void;
   onSessionStatusChange: (
@@ -50,6 +51,7 @@ export function TerminalWorkspaceBody({
   terminalRefs,
   onDividerMouseDown,
   onFocusEmptyPane,
+  onOpenNodeDashboard,
   onOpenNewConnection,
   onPointerFocusPane,
   onSessionStatusChange,
@@ -87,6 +89,7 @@ export function TerminalWorkspaceBody({
                   active={session.id === activeSessionId}
                   agentSessionLock={agentSessionLock?.sessionId === session.id ? agentSessionLock : null}
                   key={session.id}
+                  onOpenNodeDashboard={onOpenNodeDashboard}
                   onStatusChange={onSessionStatusChange}
                   ref={(handle) => {
                     terminalRefs.current[session.id] = handle;
@@ -102,6 +105,7 @@ export function TerminalWorkspaceBody({
                   active={false}
                   agentSessionLock={agentSessionLock?.sessionId === session.id ? agentSessionLock : null}
                   key={session.id}
+                  onOpenNodeDashboard={onOpenNodeDashboard}
                   onStatusChange={onSessionStatusChange}
                   ref={(handle) => {
                     terminalRefs.current[session.id] = handle;
@@ -134,6 +138,7 @@ export function TerminalWorkspaceBody({
                   active={renderState.isFocusedPane}
                   agentSessionLock={agentSessionLock?.sessionId === session.id ? agentSessionLock : null}
                   show={true}
+                  onOpenNodeDashboard={onOpenNodeDashboard}
                   onStatusChange={onSessionStatusChange}
                   ref={(handle) => {
                     terminalRefs.current[session.id] = handle;

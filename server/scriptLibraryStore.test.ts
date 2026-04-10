@@ -61,6 +61,7 @@ void test('listResolvedScripts merges global and node scripts by alias precedenc
     title: '磁盘占用',
     description: '',
     kind: 'plain',
+    usage: 'inspection',
     content: 'df -h',
     variables: [],
     tags: ['inspect'],
@@ -69,17 +70,14 @@ void test('listResolvedScripts merges global and node scripts by alias precedenc
   const nodeItems = store.listResolvedScripts('node-1');
   const defaultItems = store.listResolvedScripts();
 
-  assert.equal(nodeItems.length, 2);
-  assert.equal(nodeItems[0]?.key, 'disk-usage-global');
-  assert.equal(nodeItems[0]?.resolvedFrom, 'global');
-  assert.equal(nodeItems[0]?.overridesGlobal, false);
-  assert.equal(nodeItems[1]?.key, 'restart-nginx-global');
-  assert.equal(nodeItems[1]?.resolvedFrom, 'node');
-  assert.equal(nodeItems[1]?.overridesGlobal, true);
-  assert.equal(nodeItems[1]?.content, 'sudo service nginx restart');
+  assert.equal(nodeItems.length, 1);
+  assert.equal(nodeItems[0]?.key, 'restart-nginx-global');
+  assert.equal(nodeItems[0]?.resolvedFrom, 'node');
+  assert.equal(nodeItems[0]?.overridesGlobal, true);
+  assert.equal(nodeItems[0]?.content, 'sudo service nginx restart');
 
-  assert.equal(defaultItems.length, 2);
-  assert.equal(defaultItems[1]?.resolvedFrom, 'global');
+  assert.equal(defaultItems.length, 1);
+  assert.equal(defaultItems[0]?.resolvedFrom, 'global');
 });
 
 void test('createScript and updateScript preserve template variables and tags', async () => {
@@ -158,7 +156,7 @@ void test('createScript persists alias and listResolvedScripts returns it', asyn
   const { createScriptLibraryStore } = await import('./scriptLibraryStore.js');
   const store = await createScriptLibraryStore();
 
-  store.createScript({
+  const created = store.createScript({
     key: 'disk-usage',
     alias: 'disk',
     scope: 'global',
@@ -173,6 +171,8 @@ void test('createScript persists alias and listResolvedScripts returns it', asyn
 
   const [item] = store.listResolvedScripts();
   assert.equal(item?.alias, 'disk');
+  assert.equal(created.usage, 'quick_run');
+  assert.equal(item?.usage, 'quick_run');
 });
 
 void test('node alias overrides global alias during resolved lookup', async () => {
@@ -252,6 +252,94 @@ void test('listManagedScripts returns global and node scripts without resolved m
     managedRestartItems.some((item) => item.scope === 'node' && item.nodeId === 'node-1'),
     true
   );
+});
+
+void test('listManagedScripts supports filtering by usage', async () => {
+  const { createScriptLibraryStore } = await import('./scriptLibraryStore.js');
+  const store = await createScriptLibraryStore();
+
+  store.createScript({
+    key: 'quick-run-script',
+    alias: 'quick-run-script',
+    scope: 'global',
+    nodeId: null,
+    title: '快捷执行脚本',
+    description: '',
+    kind: 'plain',
+    content: 'echo quick',
+    variables: [],
+    tags: [],
+  });
+
+  store.createScript({
+    key: 'inspection-script',
+    alias: 'inspection-script',
+    scope: 'global',
+    nodeId: null,
+    title: '巡检脚本',
+    description: '',
+    kind: 'plain',
+    usage: 'inspection',
+    content: 'echo inspect',
+    variables: [],
+    tags: [],
+  });
+
+  const quickRunItems = store.listManagedScripts({ usage: 'quick_run' });
+  const inspectionItems = store.listManagedScripts({ usage: 'inspection' });
+
+  assert.equal(
+    quickRunItems.some((item) => item.alias === 'quick-run-script'),
+    true
+  );
+  assert.equal(
+    quickRunItems.some((item) => item.alias === 'inspection-script'),
+    false
+  );
+  assert.equal(
+    inspectionItems.some((item) => item.alias === 'inspection-script'),
+    true
+  );
+  assert.equal(
+    inspectionItems.some((item) => item.alias === 'quick-run-script'),
+    false
+  );
+});
+
+void test('listResolvedScripts excludes inspection scripts from default x alias candidates', async () => {
+  const { createScriptLibraryStore } = await import('./scriptLibraryStore.js');
+  const store = await createScriptLibraryStore();
+
+  store.createScript({
+    key: 'restart-nginx',
+    alias: 'restart-nginx',
+    scope: 'global',
+    nodeId: null,
+    title: '重启 Nginx',
+    description: '',
+    kind: 'plain',
+    content: 'sudo systemctl restart nginx',
+    variables: [],
+    tags: [],
+  });
+
+  store.createScript({
+    key: 'health-check',
+    alias: 'health-check',
+    scope: 'global',
+    nodeId: null,
+    title: '健康检查',
+    description: '',
+    kind: 'plain',
+    usage: 'inspection',
+    content: 'echo inspect',
+    variables: [],
+    tags: [],
+  });
+
+  const aliases = store.listResolvedScripts().map((item) => item.alias);
+  assert.equal(aliases.includes('restart-nginx'), true);
+  assert.equal(aliases.includes('health-check'), false);
 });
 
 void test('global script listings ignore inconsistent global rows with non-null node ids', async () => {

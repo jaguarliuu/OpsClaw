@@ -14,6 +14,7 @@ type SessionTreeContextMenuProps = {
   onDeleteGroup: (group: SavedConnectionGroup) => void;
   onDeleteProfile: (profile: SavedConnectionProfile) => void;
   onEditProfile: (profile: SavedConnectionProfile) => void;
+  onOpenNodeDashboard: (profile: SavedConnectionProfile) => void;
   onOpenCsvImport: () => void;
   onOpenNewConnection: () => void;
   onRenameGroup: (group: SavedConnectionGroup) => void;
@@ -29,6 +30,7 @@ export function SessionTreeContextMenu({
   onDeleteGroup,
   onDeleteProfile,
   onEditProfile,
+  onOpenNodeDashboard,
   onMoveProfileToGroup,
   onOpenCsvImport,
   onOpenNewConnection,
@@ -140,6 +142,16 @@ export function SessionTreeContextMenu({
             type="button"
           >
             配置
+          </button>
+          <button
+            className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-bg-elevated3)]"
+            onClick={() => {
+              onOpenNodeDashboard(contextMenuState.profile);
+              onRequestClose();
+            }}
+            type="button"
+          >
+            节点状态
           </button>
           <button
             className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-bg-elevated3)]"

@@ -10,6 +10,17 @@ const originalDesktopFlag = process.env.OPSCLAW_DESKTOP;
 
 let tempRoot = '';
 
+type CapturedResponse = {
+  status: (code: number) => CapturedResponse;
+  json: (payload: unknown) => void;
+};
+
+type CapturedRequest = {
+  body: unknown;
+};
+
+type CapturedPostHandler = (request: CapturedRequest, response: CapturedResponse) => Promise<void> | void;
+
 function listen(server: http.Server) {
   return new Promise<number>((resolve, reject) => {
     server.listen(0, () => {
@@ -327,6 +338,263 @@ void test('createOpsClawServerApp allows desktop renderer requests from file-ori
 
     assert.equal(healthResponse.status, 200);
     assert.equal(healthResponse.headers.get('access-control-allow-origin'), 'null');
+  } finally {
+    await close(runtime.server);
+  }
+});
+
+void test('node import bootstraps inspection profile for each successful row', async () => {
+  const { createOpsClawServerApp } = await import('./serverApp.js');
+  const runtime = await createOpsClawServerApp();
+  const port = await listen(runtime.server);
+
+  try {
+    const importResponse = await fetch(`http://127.0.0.1:${port}/api/nodes/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        csv: [
+          'name,host,port,username,authMode,password',
+          'csv-node,10.0.0.9,22,ubuntu,password,secret',
+        ].join('\n'),
+      }),
+    });
+    assert.equal(importResponse.status, 200);
+    const importPayload = (await importResponse.json()) as {
+      results: Array<{ success: boolean; row: number; name?: string; error?: string }>;
+    };
+
+    assert.deepEqual(importPayload.results, [{ success: true, row: 2, name: 'csv-node' }]);
+    const node = runtime.nodeStore.listNodes().find((item) => item.name === 'csv-node');
+    assert.ok(node);
+    const profile = runtime.nodeInspectionStore.getProfile(node.id);
+    assert.equal(profile?.dashboardSchemaKey, 'default_system');
+  } finally {
+    await close(runtime.server);
+  }
+});
+
+void test('node import rolls back created node when inspection bootstrap fails', async () => {
+  const { registerNodeRoutes } = await import('./http/nodeRoutes.js');
+
+  let importHandler: CapturedPostHandler | null = null;
+
+  registerNodeRoutes(
+    {
+      get() {},
+      post(path: string, handler: CapturedPostHandler) {
+        if (path === '/api/nodes/import') {
+          importHandler = handler;
+        }
+      },
+      put() {},
+      delete() {},
+    } as never,
+    {
+      nodeStore: {
+        async createNode() {
+          return {
+            id: 'node-import-fail',
+            name: 'broken-node',
+          };
+        },
+        async deleteNode(id: string) {
+          deletedNodeIds.push(id);
+          return true;
+        },
+      },
+      nodeInspectionService: {
+        async ensureNodeBootstrap() {
+          throw new Error('bootstrap failed');
+        },
+        async deleteNodeInspectionData(id: string) {
+          deletedInspectionIds.push(id);
+        },
+      },
+    } as never
+  );
+
+  const deletedNodeIds: string[] = [];
+  const deletedInspectionIds: string[] = [];
+  let statusCode = 200;
+  let jsonPayload: unknown = null;
+
+  if (!importHandler) {
+    throw new Error('import handler not registered');
+  }
+  const runImportHandler: CapturedPostHandler = importHandler;
+  await runImportHandler(
+    {
+      body: {
+        csv: [
+          'name,host,port,username,authMode,password',
+          'broken-node,10.0.0.10,22,ubuntu,password,secret',
+        ].join('\n'),
+      },
+    },
+    {
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json(payload: unknown) {
+        jsonPayload = payload;
+      },
+    }
+  );
+
+  assert.equal(statusCode, 200);
+  assert.deepEqual(jsonPayload, {
+    results: [{ success: false, row: 2, error: 'bootstrap failed' }],
+  });
+  assert.deepEqual(deletedNodeIds, ['node-import-fail']);
+  assert.deepEqual(deletedInspectionIds, ['node-import-fail']);
+});
+
+void test('single node creation rolls back created node when inspection bootstrap fails', async () => {
+  const { registerNodeRoutes } = await import('./http/nodeRoutes.js');
+
+  let createHandler: CapturedPostHandler | null = null;
+
+  const deletedNodeIds: string[] = [];
+  const deletedInspectionIds: string[] = [];
+  let statusCode = 200;
+  let jsonPayload: unknown = null;
+
+  registerNodeRoutes(
+    {
+      get() {},
+      post(path: string, handler: CapturedPostHandler) {
+        if (path === '/api/nodes') {
+          createHandler = handler;
+        }
+      },
+      put() {},
+      delete() {},
+    } as never,
+    {
+      nodeStore: {
+        async createNode() {
+          return {
+            id: 'node-create-fail',
+            name: 'broken-single-node',
+          };
+        },
+        async deleteNode(id: string) {
+          deletedNodeIds.push(id);
+          return true;
+        },
+      },
+      nodeInspectionService: {
+        async ensureNodeBootstrap() {
+          throw new Error('bootstrap failed');
+        },
+        async deleteNodeInspectionData(id: string) {
+          deletedInspectionIds.push(id);
+        },
+      },
+    } as never
+  );
+
+  if (!createHandler) {
+    throw new Error('create handler not registered');
+  }
+  const runCreateHandler: CapturedPostHandler = createHandler;
+  await runCreateHandler(
+    {
+      body: {
+        name: 'broken-single-node',
+        host: '10.0.0.10',
+        port: 22,
+        username: 'ubuntu',
+        authMode: 'password',
+        password: 'secret',
+      },
+    },
+    {
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json(payload: unknown) {
+        jsonPayload = payload;
+      },
+    }
+  );
+
+  assert.equal(statusCode, 500);
+  assert.deepEqual(jsonPayload, { message: '节点保存失败。' });
+  assert.deepEqual(deletedNodeIds, ['node-create-fail']);
+  assert.deepEqual(deletedInspectionIds, ['node-create-fail']);
+});
+
+void test('dashboard endpoints are wired and node lifecycle bootstraps inspection data', async () => {
+  const { createOpsClawServerApp } = await import('./serverApp.js');
+
+  const runtime = await createOpsClawServerApp({
+    runNodeInspectionCommand: async () =>
+      JSON.stringify({
+        schemaVersion: 1,
+        collectedAt: '2026-04-09T11:00:00.000Z',
+        cpu: { usagePercent: 58 },
+      }),
+  });
+  const port = await listen(runtime.server);
+
+  try {
+    const createNodeResponse = await fetch(`http://127.0.0.1:${port}/api/nodes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'dashboard-node',
+        host: '10.0.0.8',
+        port: 22,
+        username: 'ubuntu',
+        authMode: 'password',
+        password: 'secret',
+      }),
+    });
+    assert.equal(createNodeResponse.status, 201);
+    const createdNodePayload = (await createNodeResponse.json()) as { item: { id: string } };
+    const nodeId = createdNodePayload.item.id;
+
+    const profile = runtime.nodeInspectionStore.getProfile(nodeId);
+    assert.equal(profile?.dashboardSchemaKey, 'default_system');
+    const profileScript = profile ? runtime.scriptLibraryStore.getScript(profile.scriptId) : null;
+    assert.equal(profileScript?.usage, 'inspection');
+
+    const dashboardResponse = await fetch(`http://127.0.0.1:${port}/api/nodes/${nodeId}/dashboard`);
+    assert.equal(dashboardResponse.status, 200);
+    const dashboardPayload = (await dashboardResponse.json()) as {
+      profile: { dashboardSchemaKey: string };
+      latestSnapshot: null;
+      latestSuccessSnapshot: null;
+      recentSnapshots: unknown[];
+    };
+    assert.equal(dashboardPayload.profile.dashboardSchemaKey, 'default_system');
+    assert.equal(dashboardPayload.latestSnapshot, null);
+    assert.equal(dashboardPayload.latestSuccessSnapshot, null);
+    assert.deepEqual(dashboardPayload.recentSnapshots, []);
+
+    const collectResponse = await fetch(`http://127.0.0.1:${port}/api/nodes/${nodeId}/dashboard/collect`, {
+      method: 'POST',
+    });
+    assert.equal(collectResponse.status, 200);
+    const collectPayload = (await collectResponse.json()) as {
+      latestSnapshot: { status: string; summaryJson: { cpuUsagePercent: number } | null };
+      latestSuccessSnapshot: { status: string } | null;
+    };
+    assert.equal(collectPayload.latestSnapshot.status, 'success');
+    assert.equal(collectPayload.latestSnapshot.summaryJson?.cpuUsagePercent, 58);
+    assert.equal(collectPayload.latestSuccessSnapshot?.status, 'success');
+
+    const deleteNodeResponse = await fetch(`http://127.0.0.1:${port}/api/nodes/${nodeId}`, {
+      method: 'DELETE',
+    });
+    assert.equal(deleteNodeResponse.status, 204);
+    assert.equal(runtime.nodeInspectionStore.getProfile(nodeId), null);
+    assert.deepEqual(runtime.nodeInspectionStore.listSnapshots(nodeId), []);
+    assert.equal(profile ? runtime.scriptLibraryStore.getScript(profile.scriptId) : null, null);
   } finally {
     await close(runtime.server);
   }

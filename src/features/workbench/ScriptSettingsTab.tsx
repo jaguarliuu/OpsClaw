@@ -5,6 +5,7 @@ import {
   useMemo,
   useState,
 } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -38,11 +39,16 @@ import {
   validateScriptAlias,
 } from '@/features/workbench/scriptLibraryModel';
 import {
+  assertScriptUsageForEditor,
+  buildInitialScriptSettingsView,
+  buildScriptUsageBadgeLabel,
+  buildScriptUsageFilterOptions,
   buildManagedScriptQuery,
   buildScriptSettingsEmptyState,
   buildScriptSettingsIntro,
   normalizeTemplateVariableDefinitions,
   type ScriptSettingsScope,
+  type ScriptUsageFilter,
   validateTemplateScriptDefinition,
 } from '@/features/workbench/scriptSettingsModel';
 import {
@@ -58,6 +64,7 @@ import type {
   ManagedScriptLibraryItem,
   ScriptLibraryUpsertInput,
   ScriptScope,
+  ScriptUsage,
   ScriptVariableDefinition,
 } from '@/features/workbench/types';
 import { cn } from '@/lib/utils';
@@ -93,7 +100,8 @@ function filterManagedScriptItems(items: ManagedScriptLibraryItem[], query: stri
 
 function createEmptyScriptDraft(
   scope: ScriptSettingsScope,
-  selectedNodeId: string | null
+  selectedNodeId: string | null,
+  usage: ScriptUsage = 'quick_run'
 ): ScriptLibraryUpsertInput {
   return {
     key: '',
@@ -103,6 +111,7 @@ function createEmptyScriptDraft(
     title: '',
     description: '',
     kind: 'plain',
+    usage,
     content: '',
     variables: [],
     tags: [],
@@ -111,13 +120,14 @@ function createEmptyScriptDraft(
 
 function createEditorState(
   scope: ScriptSettingsScope,
-  selectedNodeId: string | null
+  selectedNodeId: string | null,
+  usage: ScriptUsage = 'quick_run'
 ): EditorState {
   return {
     open: false,
     mode: 'create',
     itemId: null,
-    draft: createEmptyScriptDraft(scope, selectedNodeId),
+    draft: createEmptyScriptDraft(scope, selectedNodeId, usage),
     tagsText: '',
   };
 }
@@ -135,6 +145,7 @@ function buildEditorStateFromItem(item: ManagedScriptLibraryItem): EditorState {
       title: item.title,
       description: item.description,
       kind: item.kind,
+      usage: assertScriptUsageForEditor(item.usage),
       content: item.content,
       variables: item.variables.map((variable) => ({ ...variable })),
       tags: [...item.tags],
@@ -159,6 +170,7 @@ function buildUpsertInput(editorState: EditorState): ScriptLibraryUpsertInput {
     title: editorState.draft.title.trim(),
     description: editorState.draft.description.trim(),
     kind: editorState.draft.kind,
+    usage: editorState.draft.usage,
     content: editorState.draft.content,
     variables:
       editorState.draft.kind === 'template'
@@ -171,6 +183,8 @@ function buildUpsertInput(editorState: EditorState): ScriptLibraryUpsertInput {
 function getManagedScriptScopeLabel(item: ManagedScriptLibraryItem) {
   return item.scope === 'node' ? '节点脚本' : '全局脚本';
 }
+
+const SCRIPT_USAGE_FILTER_OPTIONS = buildScriptUsageFilterOptions();
 
 function ScriptSettingsEditorDialog({
   errorMessage,
@@ -389,6 +403,30 @@ function ScriptSettingsEditorDialog({
               <SelectContent>
                 <SelectItem value="plain">纯文本脚本</SelectItem>
                 <SelectItem value="template">模板脚本</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="script-usage">用途</Label>
+            <Select
+              onValueChange={(value: ScriptUsage) => {
+                onStateChange((current) => ({
+                  ...current,
+                  draft: {
+                    ...current.draft,
+                    usage: value,
+                  },
+                }));
+              }}
+              value={state.draft.usage}
+            >
+              <SelectTrigger id="script-usage">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="quick_run">快捷执行</SelectItem>
+                <SelectItem value="inspection">巡检脚本</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -632,14 +670,20 @@ function ScriptSettingsEditorDialog({
 }
 
 export function ScriptSettingsTab() {
-  const [scope, setScope] = useState<ScriptSettingsScope>('global');
-  const [selectedNodeId, setSelectedNodeId] = useState('');
+  const [searchParams] = useSearchParams();
+  const initialView = useMemo(
+    () => buildInitialScriptSettingsView(searchParams),
+    [searchParams]
+  );
+  const [scope, setScope] = useState<ScriptSettingsScope>(initialView.scope);
+  const [usageFilter, setUsageFilter] = useState<ScriptUsageFilter>(initialView.usageFilter);
+  const [selectedNodeId, setSelectedNodeId] = useState(initialView.selectedNodeId);
   const [nodes, setNodes] = useState<NodeSummaryRecord[]>([]);
   const [items, setItems] = useState<ManagedScriptLibraryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [selectedScriptId, setSelectedScriptId] = useState<string | null>(null);
+  const [selectedScriptId, setSelectedScriptId] = useState<string | null>(initialView.selectedScriptId);
   const [editorState, setEditorState] = useState<EditorState>(() =>
     createEditorState('global', null)
   );
@@ -647,6 +691,22 @@ export function ScriptSettingsTab() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const deferredQuery = useDeferredValue(query);
+
+  useEffect(() => {
+    setScope(initialView.scope);
+    setUsageFilter(initialView.usageFilter);
+    setSelectedNodeId(initialView.selectedNodeId);
+    setQuery('');
+    setSelectedScriptId(initialView.selectedScriptId);
+    setEditorError(null);
+    setEditorState(
+      createEditorState(
+        initialView.scope,
+        initialView.scope === 'node' ? initialView.selectedNodeId || null : null,
+        initialView.usageFilter === 'all' ? 'quick_run' : initialView.usageFilter
+      )
+    );
+  }, [initialView]);
 
   useEffect(() => {
     let cancelled = false;
@@ -678,7 +738,7 @@ export function ScriptSettingsTab() {
     let cancelled = false;
 
     async function load() {
-      const managedQuery = buildManagedScriptQuery({ scope, selectedNodeId });
+      const managedQuery = buildManagedScriptQuery({ scope, selectedNodeId, usage: usageFilter });
       if (managedQuery.scope === 'node' && !managedQuery.nodeId) {
         setIsLoading(false);
         setErrorMessage(null);
@@ -722,7 +782,7 @@ export function ScriptSettingsTab() {
     return () => {
       cancelled = true;
     };
-  }, [scope, selectedNodeId]);
+  }, [scope, selectedNodeId, usageFilter]);
 
   const filteredItems = useMemo(
     () => filterManagedScriptItems(items, deferredQuery),
@@ -757,7 +817,7 @@ export function ScriptSettingsTab() {
   }, [selectedScript, selectedScriptId]);
 
   async function reloadScripts(nextSelectedId?: string | null) {
-    const managedQuery = buildManagedScriptQuery({ scope, selectedNodeId });
+    const managedQuery = buildManagedScriptQuery({ scope, selectedNodeId, usage: usageFilter });
     if (managedQuery.scope === 'node' && !managedQuery.nodeId) {
       startTransition(() => {
         setItems([]);
@@ -816,7 +876,13 @@ export function ScriptSettingsTab() {
       }
 
       await reloadScripts(nextSelectedId);
-      setEditorState(createEditorState(scope, scope === 'node' ? selectedNodeId || null : null));
+      setEditorState(
+        createEditorState(
+          scope,
+          scope === 'node' ? selectedNodeId || null : null,
+          usageFilter === 'all' ? 'quick_run' : usageFilter
+        )
+      );
     } catch (error) {
       setEditorError(error instanceof Error ? error.message : '脚本保存失败。');
     } finally {
@@ -907,16 +973,43 @@ export function ScriptSettingsTab() {
                   ? '全局脚本会在终端按 alias 直接解析。'
                   : '节点脚本只显示当前选中节点下维护的原始记录。'}
               </div>
+              <div className={`mt-2 ${SETTINGS_TEXT_TERTIARY_CLASS}`}>
+                {usageFilter === 'quick_run'
+                  ? '当前只查看可用于 x alias 的快捷执行脚本。'
+                  : usageFilter === 'inspection'
+                    ? '当前只查看巡检脚本。'
+                    : '当前显示全部用途。'}
+              </div>
             </div>
           </aside>
 
           <section className={`${SETTINGS_PANEL_CLASS} space-y-4 p-5`}>
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <Input
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索 alias、标题、key、描述、标签"
-                value={query}
-              />
+              <div className="flex flex-1 flex-col gap-3 md:flex-row">
+                <Input
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="搜索 alias、标题、key、描述、标签"
+                  value={query}
+                />
+                <Select
+                  value={usageFilter}
+                  onValueChange={(value) => {
+                    setUsageFilter(value as ScriptUsageFilter);
+                    setQuery('');
+                  }}
+                >
+                  <SelectTrigger className={`w-full md:w-[150px] ${SETTINGS_INPUT_CLASS}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SCRIPT_USAGE_FILTER_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <Button
                 disabled={scope === 'node' && nodes.length === 0}
                 onClick={() => {
@@ -927,7 +1020,8 @@ export function ScriptSettingsTab() {
                     itemId: null,
                     draft: createEmptyScriptDraft(
                       scope,
-                      scope === 'node' ? selectedNodeId || null : null
+                      scope === 'node' ? selectedNodeId || null : null,
+                      usageFilter === 'all' ? 'quick_run' : usageFilter
                     ),
                     tagsText: '',
                   });
@@ -974,6 +1068,9 @@ export function ScriptSettingsTab() {
                             <span className="block truncate text-sm">{item.title}</span>
                             <span className={`mt-1 block truncate text-xs ${SETTINGS_TEXT_TERTIARY_CLASS}`}>
                               {getManagedScriptScopeLabel(item)}
+                              {buildScriptUsageBadgeLabel(item.usage)
+                                ? ` · ${buildScriptUsageBadgeLabel(item.usage)}`
+                                : ''}
                               {item.tags.length > 0 ? ` · ${item.tags.join(', ')}` : ''}
                             </span>
                           </span>
@@ -992,8 +1089,12 @@ export function ScriptSettingsTab() {
                       <div className="flex items-center gap-2">
                         <Button
                           onClick={() => {
-                            setEditorError(null);
-                            setEditorState(buildEditorStateFromItem(selectedScript));
+                            try {
+                              setEditorError(null);
+                              setEditorState(buildEditorStateFromItem(selectedScript));
+                            } catch (error) {
+                              setEditorError(error instanceof Error ? error.message : '脚本编辑器打开失败。');
+                            }
                           }}
                           size="sm"
                           variant="secondary"
@@ -1024,6 +1125,11 @@ export function ScriptSettingsTab() {
                         <span className="rounded-full border border-[var(--app-border-default)] px-2 py-1">
                           {getManagedScriptScopeLabel(selectedScript)}
                         </span>
+                        {buildScriptUsageBadgeLabel(selectedScript.usage) ? (
+                          <span className="rounded-full border border-[var(--app-border-default)] px-2 py-1">
+                            {buildScriptUsageBadgeLabel(selectedScript.usage)}
+                          </span>
+                        ) : null}
                         {selectedScript.scope === 'node' ? (
                           <span className="rounded-full border border-[var(--app-border-default)] px-2 py-1">
                             节点: {nodes.find((node) => node.id === selectedScript.nodeId)?.name ?? selectedScript.nodeId}
@@ -1130,7 +1236,13 @@ export function ScriptSettingsTab() {
         nodes={editorNodes}
         onClose={() => {
           setEditorError(null);
-          setEditorState(createEditorState(scope, scope === 'node' ? selectedNodeId || null : null));
+          setEditorState(
+            createEditorState(
+              scope,
+              scope === 'node' ? selectedNodeId || null : null,
+              usageFilter === 'all' ? 'quick_run' : usageFilter
+            )
+          );
         }}
         onSave={() => {
           void handleSaveScript();

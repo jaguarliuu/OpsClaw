@@ -39,6 +39,8 @@ void test('registerOpsClawHttpApi registers the core HTTP surface on the app', a
     commandHistoryStore: {} as never,
     llmProviderStore: {} as never,
     scriptLibraryStore: {} as never,
+    nodeInspectionStore: {} as never,
+    nodeInspectionService: {} as never,
     fileMemoryStore: {} as never,
     agentRuntime: {} as never,
   });

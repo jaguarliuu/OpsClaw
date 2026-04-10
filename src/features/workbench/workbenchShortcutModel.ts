@@ -3,6 +3,7 @@ export type WorkbenchShortcutAction =
   | 'toggleCommandHistory'
   | 'toggleLlmSettings'
   | 'toggleAiAssistant'
+  | 'openNodeDashboard'
   | 'closeActiveTab'
   | 'openNewConnection'
   | 'switchToPrevTab'
@@ -22,6 +23,8 @@ export function resolveWorkbenchShortcutAction(input: { key: string; mod: boolea
       return 'toggleLlmSettings' as const;
     case 'a':
       return 'toggleAiAssistant' as const;
+    case 'd':
+      return 'openNodeDashboard' as const;
     case 'w':
       return 'closeActiveTab' as const;
     case 't':
@@ -42,6 +45,8 @@ export function formatWorkbenchShortcutLabel(
   switch (action) {
     case 'toggleAiAssistant':
       return isMac ? '⌘A' : 'Ctrl+A';
+    case 'openNodeDashboard':
+      return isMac ? '⌘D' : 'Ctrl+D';
     case 'toggleQuickConnect':
       return isMac ? '⌘K' : 'Ctrl+K';
     case 'toggleCommandHistory':

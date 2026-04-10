@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildInspectionScriptSettingsPath,
   buildSettingsPath,
   isSettingsPageTab,
   resolveSettingsTab,
@@ -30,4 +31,11 @@ void test('isSettingsPageTab only accepts supported settings tabs', () => {
   assert.equal(isSettingsPageTab('terminal'), true);
   assert.equal(isSettingsPageTab('scripts'), true);
   assert.equal(isSettingsPageTab('unknown'), false);
+});
+
+void test('buildInspectionScriptSettingsPath points to the scripts tab with inspection filters', () => {
+  assert.equal(
+    buildInspectionScriptSettingsPath('node-1', 'script-9'),
+    '/settings?tab=scripts&scope=node&nodeId=node-1&usage=inspection&scriptId=script-9'
+  );
 });

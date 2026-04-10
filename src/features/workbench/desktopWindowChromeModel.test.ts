@@ -45,6 +45,7 @@ void test('buildDesktopPanelHeaderStyle keeps desktop side-panel actions clear o
     {
       paddingTop: 'calc(0.75rem + env(titlebar-area-height, 0px))',
       paddingRight: 'calc(1rem + 146px)',
+      WebkitAppRegion: 'no-drag',
     }
   );
 });

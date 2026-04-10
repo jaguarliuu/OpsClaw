@@ -54,7 +54,7 @@ export function buildDesktopWindowChromeLayout(
 
 export function buildDesktopPanelHeaderStyle(
   input: DesktopWindowChromeLayoutInput
-): Pick<DesktopWindowChromeStyle, 'paddingTop' | 'paddingRight'> | undefined {
+): Pick<DesktopWindowChromeStyle, 'paddingTop' | 'paddingRight' | 'WebkitAppRegion'> | undefined {
   if (!isDesktopRuntime(input)) {
     return undefined;
   }
@@ -62,5 +62,6 @@ export function buildDesktopPanelHeaderStyle(
   return {
     paddingTop: 'calc(0.75rem + env(titlebar-area-height, 0px))',
     paddingRight: `calc(1rem + ${WINDOWS_TITLEBAR_CONTROLS_INSET_PX})`,
+    WebkitAppRegion: 'no-drag',
   };
 }

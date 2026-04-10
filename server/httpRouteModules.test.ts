@@ -33,6 +33,7 @@ function createFakeApp(routes: RegisteredRoute[]): FakeApp {
 void test('route modules register their own route domains', async () => {
   const [
     { registerNodeRoutes },
+    { registerNodeDashboardRoutes },
     { registerGroupRoutes },
     { registerCommandRoutes },
     { registerLlmRoutes },
@@ -41,6 +42,7 @@ void test('route modules register their own route domains', async () => {
     { registerScriptRoutes },
   ] = await Promise.all([
     import('./http/nodeRoutes.js'),
+    import('./http/nodeDashboardRoutes.js'),
     import('./http/groupRoutes.js'),
     import('./http/commandRoutes.js'),
     import('./http/llmRoutes.js'),
@@ -56,11 +58,14 @@ void test('route modules register their own route domains', async () => {
     commandHistoryStore: {} as never,
     llmProviderStore: {} as never,
     scriptLibraryStore: {} as never,
+    nodeInspectionStore: {} as never,
+    nodeInspectionService: {} as never,
     fileMemoryStore: {} as never,
     agentRuntime: {} as never,
   };
 
   registerNodeRoutes(app as never, deps);
+  registerNodeDashboardRoutes(app as never, deps);
   registerGroupRoutes(app as never, deps);
   registerCommandRoutes(app as never, deps);
   registerLlmRoutes(app as never, deps);
@@ -69,6 +74,10 @@ void test('route modules register their own route domains', async () => {
   registerScriptRoutes(app as never, deps);
 
   assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/nodes'));
+  assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/nodes/:id/dashboard'));
+  assert.ok(
+    routes.some((route) => route.method === 'post' && route.path === '/api/nodes/:id/dashboard/collect')
+  );
   assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/groups'));
   assert.ok(routes.some((route) => route.method === 'post' && route.path === '/api/commands'));
   assert.ok(routes.some((route) => route.method === 'post' && route.path === '/api/llm/chat'));

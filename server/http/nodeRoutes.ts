@@ -11,7 +11,15 @@ import {
   parseNodeInput,
 } from './support.js';
 
-export function registerNodeRoutes(app: HttpRouteApp, { nodeStore }: HttpApiDependencies) {
+export function registerNodeRoutes(
+  app: HttpRouteApp,
+  { nodeStore, nodeInspectionService }: Pick<HttpApiDependencies, 'nodeStore' | 'nodeInspectionService'>
+) {
+  const rollbackCreatedNode = async (nodeId: string) => {
+    await nodeStore.deleteNode(nodeId);
+    await nodeInspectionService.deleteNodeInspectionData(nodeId);
+  };
+
   app.get('/api/nodes', (_request, response) => {
     response.json({ items: nodeStore.listNodes() });
   });
@@ -92,8 +100,17 @@ export function registerNodeRoutes(app: HttpRouteApp, { nodeStore }: HttpApiDepe
             throw new Error('authMode 必须是 password 或 privateKey');
           }
 
-          await nodeStore.createNode(input);
-          results.push({ success: true, row: index + 1, name: input.name });
+          const createdNode = await nodeStore.createNode(input);
+          if (!createdNode) {
+            throw new Error('节点保存失败。');
+          }
+          try {
+            await nodeInspectionService.ensureNodeBootstrap(createdNode.id);
+          } catch (error) {
+            await rollbackCreatedNode(createdNode.id);
+            throw error;
+          }
+          results.push({ success: true, row: index + 1, name: createdNode.name });
         } catch (error) {
           results.push({
             success: false,
@@ -133,6 +150,16 @@ export function registerNodeRoutes(app: HttpRouteApp, { nodeStore }: HttpApiDepe
   app.post('/api/nodes', async (request, response) => {
     try {
       const node = await nodeStore.createNode(parseNodeInput(request.body));
+      if (!node) {
+        response.status(500).json({ message: '节点保存失败。' });
+        return;
+      }
+      try {
+        await nodeInspectionService.ensureNodeBootstrap(node.id);
+      } catch (error) {
+        await rollbackCreatedNode(node.id);
+        throw error;
+      }
       response.status(201).json({ item: node });
     } catch (error) {
       if (error instanceof RequestError) {
@@ -200,6 +227,7 @@ export function registerNodeRoutes(app: HttpRouteApp, { nodeStore }: HttpApiDepe
         return;
       }
 
+      await nodeInspectionService.deleteNodeInspectionData(request.params.id);
       response.status(204).send();
     } catch (error) {
       console.error(error);

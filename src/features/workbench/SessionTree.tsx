@@ -30,6 +30,7 @@ type SessionTreeProps = {
   onDeleteProfile: (profile: SavedConnectionProfile) => void;
   onDeleteGroup: (group: SavedConnectionGroup) => void;
   onEditProfile: (profile: SavedConnectionProfile) => void;
+  onOpenNodeDashboard: (profile: SavedConnectionProfile) => void;
   onRenameGroup: (group: SavedConnectionGroup) => void;
   onMoveProfileToGroup: (profile: SavedConnectionProfile) => void;
   onToggleCollapse: () => void;
@@ -55,6 +56,7 @@ export function SessionTree({
   onDeleteProfile,
   onDeleteGroup,
   onEditProfile,
+  onOpenNodeDashboard,
   onRenameGroup,
   onMoveProfileToGroup,
   onToggleCollapse,
@@ -143,6 +145,7 @@ export function SessionTree({
           onDeleteProfile={onDeleteProfile}
           onEditProfile={onEditProfile}
           onMoveProfileToGroup={onMoveProfileToGroup}
+          onOpenNodeDashboard={onOpenNodeDashboard}
           onOpenCsvImport={onOpenCsvImport}
           onOpenNewConnection={onOpenNewConnection}
           onRenameGroup={onRenameGroup}

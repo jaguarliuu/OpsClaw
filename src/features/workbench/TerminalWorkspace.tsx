@@ -36,6 +36,7 @@ type TerminalWorkspaceProps = {
   sessions: LiveSession[];
   sidebarCollapsed: boolean;
   onCloseSession: (sessionId: string) => void;
+  onOpenNodeDashboard: (nodeId: string) => void;
   onOpenNewConnection: () => void;
   onOpenPendingGates: () => void;
   onToggleSidebar: () => void;
@@ -54,6 +55,7 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
   sessions,
   sidebarCollapsed,
   onCloseSession,
+  onOpenNodeDashboard,
   onOpenNewConnection,
   onOpenPendingGates,
   onToggleSidebar,
@@ -232,6 +234,7 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
         terminalRefs={terminalRefs}
         onDividerMouseDown={handleDividerMouseDown}
         onFocusEmptyPane={handleFocusEmptyPane}
+        onOpenNodeDashboard={onOpenNodeDashboard}
         onOpenNewConnection={onOpenNewConnection}
         onPointerFocusPane={handlePaneFocus}
         onSessionStatusChange={onSessionStatusChange}

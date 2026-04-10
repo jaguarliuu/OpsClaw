@@ -15,9 +15,16 @@ export function registerScriptRoutes(
       const scope = request.query['scope'];
       const nodeId =
         typeof request.query['nodeId'] === 'string' ? request.query['nodeId'] : undefined;
+      const usage =
+        typeof request.query['usage'] === 'string' ? request.query['usage'] : undefined;
 
       if (scope !== undefined && scope !== 'global' && scope !== 'node') {
         response.status(400).json({ message: '脚本管理 scope 参数不合法。' });
+        return;
+      }
+
+      if (usage !== undefined && usage !== 'quick_run' && usage !== 'inspection') {
+        response.status(400).json({ message: '脚本管理 usage 参数不合法。' });
         return;
       }
 
@@ -30,6 +37,7 @@ export function registerScriptRoutes(
         items: scriptLibraryStore.listManagedScripts({
           scope,
           nodeId,
+          usage,
         }),
       });
     } catch (error) {

@@ -4,6 +4,7 @@ import { getSqliteDatabase, type SqlDatabaseHandle, type SqlParams, type SqlRow 
 
 export type ScriptScope = 'global' | 'node';
 export type ScriptKind = 'plain' | 'template';
+export type ScriptUsage = 'quick_run' | 'inspection';
 export type ScriptVariableInputType = 'text' | 'textarea';
 
 export type ScriptVariableDefinition = {
@@ -24,6 +25,7 @@ export type ScriptLibraryItem = {
   title: string;
   description: string;
   kind: ScriptKind;
+  usage: ScriptUsage;
   content: string;
   variables: ScriptVariableDefinition[];
   tags: string[];
@@ -44,6 +46,7 @@ export type CreateScriptInput = {
   title: string;
   description?: string;
   kind: ScriptKind;
+  usage?: ScriptUsage;
   content: string;
   variables: ScriptVariableDefinition[];
   tags: string[];
@@ -87,6 +90,14 @@ function readScope(value: SqlRow[string]): ScriptScope {
 function readKind(value: SqlRow[string]): ScriptKind {
   if (value !== 'plain' && value !== 'template') {
     throw new Error('Invalid script kind.');
+  }
+
+  return value;
+}
+
+function readUsage(value: SqlRow[string]): ScriptUsage {
+  if (value !== 'quick_run' && value !== 'inspection') {
+    throw new Error('Invalid script usage.');
   }
 
   return value;
@@ -144,6 +155,7 @@ function mapScriptRow(row: SqlRow): ScriptLibraryItem {
     title: readString(row.title, 'title'),
     description: readString(row.description, 'description'),
     kind: readKind(row.kind),
+    usage: readUsage(row.usage),
     content: readString(row.content, 'content'),
     variables: parseJsonArray<unknown>(row.variables_json, 'variables_json').map(normalizeScriptVariable),
     tags: parseJsonArray<unknown>(row.tags_json, 'tags_json').filter(
@@ -231,6 +243,7 @@ function normalizeCreateInput(input: CreateScriptInput) {
   const content = input.content.trim();
   const tags = uniqueStrings(input.tags);
   const variables = input.variables.map(normalizeScriptVariable);
+  const usage = input.usage ?? 'quick_run';
 
   if (!key) {
     throw new Error('脚本 key 不能为空。');
@@ -262,6 +275,7 @@ function normalizeCreateInput(input: CreateScriptInput) {
     title,
     description,
     kind: input.kind,
+    usage,
     content,
     variables,
     tags,
@@ -283,6 +297,7 @@ function normalizeUpdateInput(current: ScriptLibraryItem, input: UpdateScriptInp
     title: input.title ?? current.title,
     description: input.description ?? current.description,
     kind,
+    usage: input.usage ?? current.usage,
     content,
     variables,
     tags: input.tags ?? current.tags,
@@ -367,7 +382,11 @@ export async function createScriptLibraryStore() {
   function listResolvedScripts(nodeId?: string): ResolvedScriptLibraryItem[] {
     const globalScripts = queryMany(
       database,
-      `SELECT * FROM script_library WHERE scope = 'global' AND node_id IS NULL`,
+      `
+        SELECT *
+        FROM script_library
+        WHERE scope = 'global' AND node_id IS NULL AND usage = 'quick_run'
+      `,
       mapScriptRow
     );
 
@@ -383,7 +402,11 @@ export async function createScriptLibraryStore() {
 
     const nodeScripts = queryMany(
       database,
-      `SELECT * FROM script_library WHERE scope = 'node' AND node_id = :nodeId`,
+      `
+        SELECT *
+        FROM script_library
+        WHERE scope = 'node' AND node_id = :nodeId AND usage = 'quick_run'
+      `,
       mapScriptRow,
       { ':nodeId': nodeId }
     );
@@ -408,19 +431,26 @@ export async function createScriptLibraryStore() {
     return sortScripts(Array.from(resolved.values()));
   }
 
-  function listManagedScripts(input?: { scope?: 'global' | 'node'; nodeId?: string }) {
+  function listManagedScripts(input?: {
+    scope?: 'global' | 'node';
+    nodeId?: string;
+    usage?: ScriptUsage;
+  }) {
     if (input?.scope === 'node') {
       return queryMany(
         database,
         `
           SELECT *
           FROM script_library
-          WHERE scope = 'node' AND node_id = :nodeId
+          WHERE scope = 'node'
+            AND node_id = :nodeId
+            AND (:usage IS NULL OR usage = :usage)
           ORDER BY alias COLLATE NOCASE ASC, created_at ASC
         `,
         mapScriptRow,
         {
           ':nodeId': input.nodeId ?? '',
+          ':usage': input.usage ?? null,
         }
       );
     }
@@ -431,10 +461,15 @@ export async function createScriptLibraryStore() {
         `
           SELECT *
           FROM script_library
-          WHERE scope = 'global' AND node_id IS NULL
+          WHERE scope = 'global'
+            AND node_id IS NULL
+            AND (:usage IS NULL OR usage = :usage)
           ORDER BY alias COLLATE NOCASE ASC, created_at ASC
         `,
-        mapScriptRow
+        mapScriptRow,
+        {
+          ':usage': input.usage ?? null,
+        }
       );
     }
 
@@ -443,9 +478,13 @@ export async function createScriptLibraryStore() {
       `
         SELECT *
         FROM script_library
+        WHERE (:usage IS NULL OR usage = :usage)
         ORDER BY scope ASC, alias COLLATE NOCASE ASC, created_at ASC
       `,
-      mapScriptRow
+      mapScriptRow,
+      {
+        ':usage': input?.usage ?? null,
+      }
     );
   }
 
@@ -462,10 +501,10 @@ export async function createScriptLibraryStore() {
     database.run(
       `
         INSERT INTO script_library (
-          id, key, alias, scope, node_id, title, description, kind, content,
+          id, key, alias, scope, node_id, title, description, kind, usage, content,
           variables_json, tags_json, created_at, updated_at
         ) VALUES (
-          :id, :key, :alias, :scope, :nodeId, :title, :description, :kind, :content,
+          :id, :key, :alias, :scope, :nodeId, :title, :description, :kind, :usage, :content,
           :variablesJson, :tagsJson, :createdAt, :updatedAt
         )
       `,
@@ -478,6 +517,7 @@ export async function createScriptLibraryStore() {
         ':title': next.title,
         ':description': next.description,
         ':kind': next.kind,
+        ':usage': next.usage,
         ':content': next.content,
         ':variablesJson': JSON.stringify(next.variables),
         ':tagsJson': JSON.stringify(next.tags),
@@ -514,6 +554,7 @@ export async function createScriptLibraryStore() {
             title = :title,
             description = :description,
             kind = :kind,
+            usage = :usage,
             content = :content,
             variables_json = :variablesJson,
             tags_json = :tagsJson,
@@ -529,6 +570,7 @@ export async function createScriptLibraryStore() {
         ':title': next.title,
         ':description': next.description,
         ':kind': next.kind,
+        ':usage': next.usage,
         ':content': next.content,
         ':variablesJson': JSON.stringify(next.variables),
         ':tagsJson': JSON.stringify(next.tags),

@@ -4,6 +4,7 @@ import { registerCommandRoutes } from './http/commandRoutes.js';
 import { registerGroupRoutes } from './http/groupRoutes.js';
 import { registerLlmRoutes } from './http/llmRoutes.js';
 import { registerMemoryRoutes } from './http/memoryRoutes.js';
+import { registerNodeDashboardRoutes } from './http/nodeDashboardRoutes.js';
 import { registerNodeRoutes } from './http/nodeRoutes.js';
 import { registerScriptRoutes } from './http/scriptRoutes.js';
 import type { HttpApiDependencies } from './http/support.js';
@@ -59,6 +60,7 @@ export function registerOpsClawHttpApi(app: Express, dependencies: HttpApiDepend
   });
 
   registerNodeRoutes(app, dependencies);
+  registerNodeDashboardRoutes(app, dependencies);
   registerGroupRoutes(app, dependencies);
   registerCommandRoutes(app, dependencies);
   registerLlmRoutes(app, dependencies);

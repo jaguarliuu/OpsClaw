@@ -142,6 +142,24 @@ function queryTableColumns(database: SqlDatabaseHandle, tableName: string) {
   return new Set(rows);
 }
 
+type TableColumnInfo = {
+  name: string;
+  type: string;
+  notNull: boolean;
+};
+
+function queryTableInfo(database: SqlDatabaseHandle, tableName: string) {
+  return queryMany(
+    database,
+    `PRAGMA table_info(${tableName})`,
+    (row): TableColumnInfo => ({
+      name: readString(row.name, 'name'),
+      type: typeof row.type === 'string' ? row.type : '',
+      notNull: row.notnull === 1,
+    })
+  );
+}
+
 function readNullableString(value: SqliteValue, field: string) {
   if (value === null) {
     return null;
@@ -343,6 +361,7 @@ function ensureScriptLibraryTable(database: SqlDatabaseHandle) {
       title TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
       kind TEXT NOT NULL CHECK (kind IN ('plain', 'template')),
+      usage TEXT NOT NULL DEFAULT 'quick_run' CHECK (usage IN ('quick_run', 'inspection')),
       content TEXT NOT NULL,
       variables_json TEXT NOT NULL,
       tags_json TEXT NOT NULL,
@@ -372,6 +391,184 @@ function ensureScriptLibraryAliasColumn(database: SqlDatabaseHandle) {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_script_library_node_alias
     ON script_library(node_id, alias)
     WHERE scope = 'node';
+  `);
+}
+
+function ensureScriptLibraryUsageColumn(database: SqlDatabaseHandle) {
+  const columns = queryTableColumns(database, 'script_library');
+  if (!columns.has('usage')) {
+    database.run(`
+      ALTER TABLE script_library
+      ADD COLUMN usage TEXT NOT NULL DEFAULT 'quick_run'
+      CHECK (usage IN ('quick_run', 'inspection'));
+    `);
+  }
+
+  database.run(`
+    UPDATE script_library
+    SET usage = 'quick_run'
+    WHERE usage IS NULL OR usage = '';
+  `);
+}
+
+function ensureNodeInspectionProfilesTable(database: SqlDatabaseHandle) {
+  const columns = queryTableColumns(database, 'node_inspection_profiles');
+  const requiredColumns = ['node_id', 'script_id', 'dashboard_schema_key', 'created_at', 'updated_at'];
+  if (columns.size === 0) {
+    database.run(`
+      CREATE TABLE IF NOT EXISTS node_inspection_profiles (
+        node_id TEXT PRIMARY KEY,
+        script_id TEXT NOT NULL,
+        dashboard_schema_key TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    return;
+  }
+
+  const needsRebuild = requiredColumns.some((column) => !columns.has(column));
+  if (!needsRebuild) {
+    return;
+  }
+
+  database.run('ALTER TABLE node_inspection_profiles RENAME TO node_inspection_profiles_legacy;');
+  database.run(`
+    CREATE TABLE node_inspection_profiles (
+      node_id TEXT PRIMARY KEY,
+      script_id TEXT NOT NULL,
+      dashboard_schema_key TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  database.run('DROP TABLE node_inspection_profiles_legacy;');
+}
+
+function ensureNodeInspectionSnapshotsTable(database: SqlDatabaseHandle) {
+  const tableInfo = queryTableInfo(database, 'node_inspection_snapshots');
+  const columns = new Map(tableInfo.map((column) => [column.name, column]));
+  const tableRows = toSqlRows(
+    database.exec(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'node_inspection_snapshots';`)
+  );
+  const tableSql = typeof tableRows[0]?.sql === 'string' ? tableRows[0].sql : '';
+  const requiredColumns = ['id', 'node_id', 'status', 'payload_json', 'error_message', 'created_at', 'created_at_ms'];
+
+  if (columns.size === 0) {
+    database.run(`
+      CREATE TABLE IF NOT EXISTS node_inspection_snapshots (
+        id TEXT PRIMARY KEY,
+        node_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('success', 'error')),
+        payload_json TEXT,
+        error_message TEXT,
+        created_at TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL
+      );
+    `);
+  } else {
+    const hasRequiredColumns = requiredColumns.every((column) => columns.has(column));
+    const payloadAllowsNull = columns.get('payload_json')?.notNull === false;
+    const createdAtMsType = columns.get('created_at_ms')?.type.toUpperCase() ?? '';
+    const createdAtMsLooksNumeric = createdAtMsType.includes('INT') || createdAtMsType.includes('NUM');
+    const statusMatchesCurrentConstraint =
+      tableSql.includes(`'success'`) &&
+      tableSql.includes(`'error'`) &&
+      !tableSql.includes(`'failed'`);
+    const needsRebuild =
+      !hasRequiredColumns ||
+      !payloadAllowsNull ||
+      !createdAtMsLooksNumeric ||
+      !statusMatchesCurrentConstraint;
+
+    if (needsRebuild) {
+      const canMigrateRows =
+        columns.has('id') &&
+        columns.has('node_id') &&
+        columns.has('status') &&
+        columns.has('created_at');
+      const legacyRows = canMigrateRows
+        ? queryMany(
+            database,
+            `
+              SELECT
+                id,
+                node_id,
+                status,
+                ${columns.has('payload_json') ? 'payload_json' : 'NULL AS payload_json'},
+                ${columns.has('error_message') ? 'error_message' : 'NULL AS error_message'},
+                created_at,
+                ${columns.has('created_at_ms') ? 'created_at_ms' : 'NULL AS created_at_ms'}
+              FROM node_inspection_snapshots
+            `,
+            (row) => {
+              const rawStatus = readString(row.status, 'status');
+              const createdAt = readString(row.created_at, 'created_at');
+              const parsedCreatedAtMs = Date.parse(createdAt);
+              return {
+                id: readString(row.id, 'id'),
+                nodeId: readString(row.node_id, 'node_id'),
+                status: rawStatus === 'failed' ? 'error' : rawStatus === 'error' ? 'error' : 'success',
+                payloadJson: readNullableString(row.payload_json, 'payload_json'),
+                errorMessage: readNullableString(row.error_message, 'error_message'),
+                createdAt,
+                createdAtMs:
+                  typeof row.created_at_ms === 'number'
+                    ? row.created_at_ms
+                    : Number.isFinite(parsedCreatedAtMs)
+                      ? parsedCreatedAtMs
+                      : Date.now(),
+              };
+            }
+          )
+        : [];
+
+      database.run('ALTER TABLE node_inspection_snapshots RENAME TO node_inspection_snapshots_legacy;');
+      database.run(`
+        CREATE TABLE node_inspection_snapshots (
+          id TEXT PRIMARY KEY,
+          node_id TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('success', 'error')),
+          payload_json TEXT,
+          error_message TEXT,
+          created_at TEXT NOT NULL,
+          created_at_ms INTEGER NOT NULL
+        );
+      `);
+
+      for (const row of legacyRows) {
+        database.run(
+          `
+            INSERT INTO node_inspection_snapshots (
+              id, node_id, status, payload_json, error_message, created_at, created_at_ms
+            ) VALUES (
+              :id, :nodeId, :status, :payloadJson, :errorMessage, :createdAt, :createdAtMs
+            );
+          `,
+          {
+            ':id': row.id,
+            ':nodeId': row.nodeId,
+            ':status': row.status,
+            ':payloadJson': row.payloadJson,
+            ':errorMessage': row.errorMessage,
+            ':createdAt': row.createdAt,
+            ':createdAtMs': row.createdAtMs,
+          }
+        );
+      }
+
+      database.run('DROP TABLE node_inspection_snapshots_legacy;');
+    }
+  }
+
+  database.run(`
+    CREATE INDEX IF NOT EXISTS idx_node_inspection_snapshots_node_created_at
+    ON node_inspection_snapshots(node_id, created_at_ms DESC);
+  `);
+  database.run(`
+    CREATE INDEX IF NOT EXISTS idx_node_inspection_snapshots_node_status_created_at
+    ON node_inspection_snapshots(node_id, status, created_at_ms DESC);
   `);
 }
 
@@ -420,6 +617,9 @@ async function createDatabase(): Promise<SqliteDatabase> {
   ensureLlmProvidersTable(database);
   ensureScriptLibraryTable(database);
   ensureScriptLibraryAliasColumn(database);
+  ensureScriptLibraryUsageColumn(database);
+  ensureNodeInspectionProfilesTable(database);
+  ensureNodeInspectionSnapshotsTable(database);
 
   let persistQueue = Promise.resolve();
 
@@ -449,4 +649,47 @@ export function getSqliteDatabase() {
   }
 
   return databasePromise;
+}
+
+export async function resetSqliteDatabaseForTests() {
+  if (!databasePromise) {
+    return;
+  }
+
+  const sqlite = await databasePromise;
+  await sqlite.close();
+  databasePromise = null;
+}
+
+export async function removeSqliteDatabaseFileForTests() {
+  await resetSqliteDatabaseForTests();
+  await fs.rm(getDatabaseFilePath(), { force: true });
+}
+
+export async function seedSqliteDatabaseFileForTests(
+  configure: (database: SqlDatabaseHandle) => void | Promise<void>
+) {
+  await removeSqliteDatabaseFileForTests();
+
+  const databaseFilePath = getDatabaseFilePath();
+  await fs.mkdir(path.dirname(databaseFilePath), { recursive: true });
+
+  const SQL = await initSqlJs({
+    locateFile(file) {
+      if (file === 'sql-wasm.wasm') {
+        return wasmPath;
+      }
+
+      return file;
+    },
+  });
+
+  const database = new SQL.Database() as unknown as SqlDatabaseHandle;
+  try {
+    database.run('PRAGMA foreign_keys = ON;');
+    await configure(database);
+    await fs.writeFile(databaseFilePath, Buffer.from(database.export()));
+  } finally {
+    database.close();
+  }
 }

@@ -28,7 +28,7 @@ const DialogContent = React.forwardRef<
     <DialogOverlay />
     <DialogPrimitive.Content
       className={cn(
-        'fixed left-1/2 top-1/2 z-50 grid w-[min(720px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 gap-0 rounded-lg border border-neutral-700 bg-[#262626] text-neutral-100 shadow-2xl',
+        'fixed left-1/2 top-1/2 z-50 grid w-[min(720px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 gap-0 rounded-lg border border-[var(--app-border-default)] bg-[var(--app-bg-elevated)] text-[var(--app-text-primary)] shadow-2xl',
         className
       )}
       {...props}
@@ -39,22 +39,48 @@ const DialogContent = React.forwardRef<
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 function DialogHeader({ className, ...props }: React.ComponentProps<'div'>) {
-  return <div className={cn('flex items-center justify-between gap-4 border-b border-neutral-700 px-6 py-4', className)} {...props} />;
+  return (
+    <div
+      className={cn(
+        'flex items-center justify-between gap-4 border-b border-[var(--app-border-default)] px-6 py-4',
+        className
+      )}
+      {...props}
+    />
+  );
 }
 
 function DialogFooter({ className, ...props }: React.ComponentProps<'div'>) {
-  return <div className={cn('flex items-center justify-end gap-3 border-t border-neutral-700 px-6 py-4', className)} {...props} />;
+  return (
+    <div
+      className={cn(
+        'flex items-center justify-end gap-3 border-t border-[var(--app-border-default)] px-6 py-4',
+        className
+      )}
+      {...props}
+    />
+  );
 }
 
 function DialogTitle({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Title>) {
-  return <DialogPrimitive.Title className={cn('text-sm font-semibold', className)} {...props} />;
+  return (
+    <DialogPrimitive.Title
+      className={cn('text-sm font-semibold text-[var(--app-text-primary)]', className)}
+      {...props}
+    />
+  );
 }
 
 function DialogDescription({
   className,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Description>) {
-  return <DialogPrimitive.Description className={cn('text-sm text-neutral-400', className)} {...props} />;
+  return (
+    <DialogPrimitive.Description
+      className={cn('text-sm text-[var(--app-text-secondary)]', className)}
+      {...props}
+    />
+  );
 }
 
 export {

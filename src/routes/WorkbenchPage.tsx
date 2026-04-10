@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { PendingInteractionPanel } from '@/features/workbench/PendingGatePanel';
 import { buildSettingsPath } from '@/features/workbench/settingsNavigation';
+import { useNodeStatusDashboard } from '@/features/workbench/useNodeStatusDashboard';
 import {
   buildGroupTree,
   defaultGroupName,
@@ -25,6 +26,7 @@ import {
   LazyGroupNameDialog,
   LazyHelpDialog,
   LazyMoveProfileDialog,
+  LazyNodeStatusDashboardDialog,
   LazyQuickConnectModal,
 } from '@/features/workbench/workbenchLazyPanels';
 import { createAgentSessionModel } from '@/features/workbench/agentSessionModel';
@@ -173,6 +175,26 @@ export function WorkbenchPage() {
   const shouldRenderConnectionPanel = useDeferredMount(isConnectionPanelOpen);
   const shouldRenderGroupDialog = useDeferredMount(groupDialogMode !== null);
   const shouldRenderMoveDialog = useDeferredMount(moveDialogProfile !== null);
+  const nodeStatusDashboard = useNodeStatusDashboard();
+  const shouldRenderNodeStatusDashboard = useDeferredMount(nodeStatusDashboard.open);
+
+  const openNodeDashboardForNodeId = (nodeId: string | null | undefined) => {
+    if (!nodeId) {
+      return;
+    }
+
+    nodeStatusDashboard.openDashboard(nodeId);
+  };
+
+  const openNodeDashboardForProfile = (profile: SavedConnectionProfile) => {
+    openNodeDashboardForNodeId(profile.id);
+  };
+
+  const openNodeDashboardForActiveSession = () => {
+    openNodeDashboardForNodeId(
+      sessions.find((session) => session.id === activeSessionId)?.nodeId
+    );
+  };
 
   const handleSelectProfile = (profile: SavedConnectionProfile) => {
     setSelectedProfileId(profile.id);
@@ -200,6 +222,7 @@ export function WorkbenchPage() {
       void navigate(buildSettingsPath('llm'));
     },
     onToggleAiAssistant: toggleAiAssistant,
+    onOpenNodeDashboard: openNodeDashboardForActiveSession,
     onCloseActiveTab: () => {
       if (activeSessionId) handleCloseSession(activeSessionId);
     },
@@ -243,6 +266,7 @@ export function WorkbenchPage() {
         onDeleteGroup={handleDeleteGroup}
         onDeleteProfile={handleDeleteProfile}
         onEditProfile={handleEditProfile}
+        onOpenNodeDashboard={openNodeDashboardForProfile}
         onMoveProfileToGroup={handleMoveProfileToGroup}
         onOpenNewConnection={openNewConnection}
         onOpenCsvImport={openCsvImport}
@@ -267,6 +291,7 @@ export function WorkbenchPage() {
         isMacShortcutPlatform={typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)}
         pendingInteractionCount={agentRun.pendingInteractions.length}
         onCloseSession={handleCloseSession}
+        onOpenNodeDashboard={openNodeDashboardForNodeId}
         onOpenPendingGates={() => setIsPendingGatePanelOpen(true)}
         onOpenNewConnection={openNewConnection}
         onSelectSession={setActiveSessionId}
@@ -457,6 +482,22 @@ export function WorkbenchPage() {
             open={isCsvImportOpen}
             onClose={closeCsvImport}
             onSuccess={refreshWorkspaceDataInBackground}
+          />
+        </Suspense>
+      ) : null}
+
+      {shouldRenderNodeStatusDashboard ? (
+        <Suspense fallback={null}>
+          <LazyNodeStatusDashboardDialog
+            errorMessage={nodeStatusDashboard.errorMessage}
+            isLoading={nodeStatusDashboard.isLoading}
+            isRefreshing={nodeStatusDashboard.isRefreshing}
+            onClose={nodeStatusDashboard.closeDashboard}
+            onRefresh={() => {
+              void nodeStatusDashboard.refreshDashboard();
+            }}
+            open={nodeStatusDashboard.open}
+            payload={nodeStatusDashboard.payload}
           />
         </Suspense>
       ) : null}

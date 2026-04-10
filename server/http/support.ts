@@ -7,12 +7,15 @@ import {
   type LlmProviderType,
 } from '../llmProviderStore.js';
 import type { LlmMessage } from '../llmClient.js';
+import { createNodeInspectionService } from '../nodeInspectionService.js';
+import { createNodeInspectionStore } from '../nodeInspectionStore.js';
 import { createNodeStore, type AuthMode, type NodeInput } from '../nodeStore.js';
 import {
   createScriptLibraryStore,
   type CreateScriptInput,
   type ScriptKind,
   type ScriptScope,
+  type ScriptUsage,
   type ScriptVariableDefinition,
 } from '../scriptLibraryStore.js';
 import type { OpsAgentRuntime } from '../agent/agentRuntime.js';
@@ -22,12 +25,16 @@ export type NodeStore = Awaited<ReturnType<typeof createNodeStore>>;
 export type CommandHistoryStore = Awaited<ReturnType<typeof createCommandHistoryStore>>;
 export type LlmProviderStore = Awaited<ReturnType<typeof createLlmProviderStore>>;
 export type ScriptLibraryStore = Awaited<ReturnType<typeof createScriptLibraryStore>>;
+export type NodeInspectionStore = Awaited<ReturnType<typeof createNodeInspectionStore>>;
+export type NodeInspectionService = ReturnType<typeof createNodeInspectionService>;
 
 export type HttpApiDependencies = {
   nodeStore: NodeStore;
   commandHistoryStore: CommandHistoryStore;
   llmProviderStore: LlmProviderStore;
   scriptLibraryStore: ScriptLibraryStore;
+  nodeInspectionStore: NodeInspectionStore;
+  nodeInspectionService: NodeInspectionService;
   fileMemoryStore: FileMemoryStore;
   agentRuntime: OpsAgentRuntime;
 };
@@ -320,6 +327,14 @@ function readScriptKind(value: unknown): ScriptKind {
   return value;
 }
 
+function readScriptUsage(value: unknown): ScriptUsage {
+  if (value !== 'quick_run' && value !== 'inspection') {
+    throw new RequestError(400, '脚本用途不正确。');
+  }
+
+  return value;
+}
+
 function readScriptVariables(body: Record<string, unknown>, key: string) {
   const value = body[key];
   if (!Array.isArray(value)) {
@@ -371,6 +386,7 @@ export function parseCreateScriptInput(payload: unknown): CreateScriptInput {
     title: readRequiredString(payload, 'title', '脚本标题'),
     description: readOptionalString(payload, 'description') ?? '',
     kind: readScriptKind(payload.kind),
+    usage: payload.usage === undefined ? 'quick_run' : readScriptUsage(payload.usage),
     content: readRequiredString(payload, 'content', '脚本内容', { allowEmpty: true }),
     variables: readScriptVariables(payload, 'variables'),
     tags: readScriptTags(payload, 'tags'),
@@ -411,6 +427,10 @@ export function parseUpdateScriptInput(payload: unknown): Partial<CreateScriptIn
 
   if (payload.kind !== undefined) {
     nextInput.kind = readScriptKind(payload.kind);
+  }
+
+  if (payload.usage !== undefined) {
+    nextInput.usage = readScriptUsage(payload.usage);
   }
 
   if (payload.content !== undefined) {

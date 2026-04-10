@@ -1,16 +1,41 @@
 import { extractTemplateVariableNames } from './scriptLibraryModel.js';
-import type { ScriptVariableDefinition } from './types.js';
+import type { ScriptUsage, ScriptVariableDefinition } from './types.js';
 
 export type ScriptSettingsScope = 'global' | 'node';
+export type ScriptUsageFilter = ScriptUsage | 'all';
+
+export function buildInitialScriptSettingsView(searchParams: URLSearchParams) {
+  const scopeParam = searchParams.get('scope');
+  const usageParam = searchParams.get('usage');
+  const nodeIdParam = searchParams.get('nodeId')?.trim() ?? '';
+  const scriptIdParam = searchParams.get('scriptId')?.trim() ?? '';
+
+  const scope: ScriptSettingsScope = scopeParam === 'node' ? 'node' : 'global';
+  const usageFilter: ScriptUsageFilter =
+    usageParam === 'inspection' || usageParam === 'all' || usageParam === 'quick_run'
+      ? usageParam
+      : 'quick_run';
+
+  return {
+    scope,
+    selectedNodeId: nodeIdParam,
+    usageFilter,
+    selectedScriptId: scriptIdParam || null,
+  };
+}
 
 export function buildManagedScriptQuery(input: {
   scope: ScriptSettingsScope;
   selectedNodeId: string;
+  usage: ScriptUsageFilter;
 }) {
+  const usage = input.usage === 'all' ? undefined : input.usage;
+
   if (input.scope === 'global') {
     return {
       scope: 'global' as const,
       nodeId: null,
+      usage,
     };
   }
 
@@ -19,11 +44,36 @@ export function buildManagedScriptQuery(input: {
   return {
     scope: 'node' as const,
     nodeId: normalizedNodeId === '' ? null : normalizedNodeId,
+    usage,
   };
 }
 
 export function buildScriptSettingsIntro() {
-  return '在终端里输入 x alias 可以快捷执行脚本。';
+  return '在终端里输入 x alias 可以快捷执行脚本；巡检脚本只在设置中单独维护，不会进入普通快捷执行候选。';
+}
+
+export function buildScriptUsageFilterOptions() {
+  return [
+    { value: 'quick_run' as const, label: '快捷执行' },
+    { value: 'inspection' as const, label: '巡检脚本' },
+    { value: 'all' as const, label: '全部' },
+  ];
+}
+
+export function assertScriptUsageForEditor(value: unknown): ScriptUsage {
+  if (value !== 'quick_run' && value !== 'inspection') {
+    throw new Error('脚本用途缺失或无效，无法编辑。');
+  }
+
+  return value;
+}
+
+export function buildScriptUsageBadgeLabel(usage: ScriptUsage) {
+  if (usage === 'inspection') {
+    return '巡检脚本';
+  }
+
+  return null;
 }
 
 export function buildScriptSettingsEmptyState(input: {

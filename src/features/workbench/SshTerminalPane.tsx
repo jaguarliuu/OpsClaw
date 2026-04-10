@@ -48,6 +48,7 @@ type SshTerminalPaneProps = {
   active: boolean;
   agentSessionLock: AgentSessionLock | null;
   show?: boolean;
+  onOpenNodeDashboard: (nodeId: string) => void;
   onStatusChange: (sessionId: string, status: ConnectionStatus, errorMessage?: string) => void;
 };
 
@@ -67,7 +68,14 @@ function logSshTerminalPane(event: string, details: Record<string, unknown> = {}
 }
 
 export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPaneProps>(
-  function SshTerminalPane({ session, active, agentSessionLock, show, onStatusChange }, ref) {
+  function SshTerminalPane({
+    session,
+    active,
+    agentSessionLock,
+    show,
+    onOpenNodeDashboard,
+    onStatusChange,
+  }, ref) {
     const { settings } = useTerminalSettings();
     const containerRef = useRef<HTMLDivElement | null>(null);
     const terminalRef = useRef<Terminal | null>(null);
@@ -286,6 +294,11 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
       terminalRef,
       toggleSearch,
       quickScriptsRef,
+      onOpenNodeDashboard: () => {
+        if (session.nodeId) {
+          onOpenNodeDashboard(session.nodeId);
+        }
+      },
       onExecuteQuickScript: handleExecuteQuickScript,
       onQuickScriptNotFound: (query) => {
         setQuickScriptError(`未找到别名为 "${query}" 的快捷脚本。`);
@@ -447,7 +460,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
               placement={suggestionOverlayPosition.placement}
               top={suggestionOverlayPosition.top}
               title="快捷脚本"
-              hint="输入 x alias 继续筛选"
+              hint="按 Tab 补全，回车执行"
               items={quickScriptItems}
             />
           ) : suggestionVisible && suggestion ? (

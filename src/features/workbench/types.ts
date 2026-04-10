@@ -122,6 +122,7 @@ export type MemoryDocument = {
 
 export type ScriptScope = 'global' | 'node';
 export type ScriptKind = 'plain' | 'template';
+export type ScriptUsage = 'quick_run' | 'inspection';
 export type ScriptVariableInputType = 'text' | 'textarea';
 
 export type ScriptVariableDefinition = {
@@ -142,6 +143,7 @@ export type ManagedScriptLibraryItem = {
   title: string;
   description: string;
   kind: ScriptKind;
+  usage: ScriptUsage;
   content: string;
   variables: ScriptVariableDefinition[];
   tags: string[];
@@ -162,9 +164,46 @@ export type ScriptLibraryUpsertInput = {
   title: string;
   description: string;
   kind: ScriptKind;
+  usage: ScriptUsage;
   content: string;
   variables: ScriptVariableDefinition[];
   tags: string[];
+};
+
+export type NodeDashboardSummary = {
+  cpuUsagePercent?: number | null;
+  memoryUsagePercent?: number | null;
+  rootDiskUsagePercent?: number | null;
+  load1?: number | null;
+};
+
+export type NodeDashboardProfile = {
+  nodeId: string;
+  scriptId: string;
+  dashboardSchemaKey: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NodeDashboardSnapshotStatus = 'success' | 'error';
+
+export type NodeDashboardSnapshot = {
+  id: string;
+  nodeId: string;
+  status: NodeDashboardSnapshotStatus;
+  payloadJson: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  createdAtMs: number;
+  summaryJson: NodeDashboardSummary | null;
+};
+
+export type NodeDashboardPayload = {
+  node: Pick<SavedConnectionProfile, 'id' | 'name' | 'host' | 'username'>;
+  profile: NodeDashboardProfile | null;
+  latestSnapshot: NodeDashboardSnapshot | null;
+  latestSuccessSnapshot: NodeDashboardSnapshot | null;
+  recentSnapshots: NodeDashboardSnapshot[];
 };
 
 export type OpsClawDesktopRuntime = {

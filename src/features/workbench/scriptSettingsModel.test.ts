@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  assertScriptUsageForEditor,
+  buildInitialScriptSettingsView,
+  buildScriptUsageBadgeLabel,
+  buildScriptUsageFilterOptions,
   buildScriptSettingsEmptyState,
   buildManagedScriptQuery,
   buildScriptSettingsIntro,
@@ -14,10 +18,12 @@ void test('buildManagedScriptQuery maps global and node scope to fetch params', 
     buildManagedScriptQuery({
       scope: 'global',
       selectedNodeId: '',
+      usage: 'quick_run',
     }),
     {
       scope: 'global',
       nodeId: null,
+      usage: 'quick_run',
     }
   );
 
@@ -25,10 +31,12 @@ void test('buildManagedScriptQuery maps global and node scope to fetch params', 
     buildManagedScriptQuery({
       scope: 'node',
       selectedNodeId: 'node-1',
+      usage: 'inspection',
     }),
     {
       scope: 'node',
       nodeId: 'node-1',
+      usage: 'inspection',
     }
   );
 
@@ -36,10 +44,12 @@ void test('buildManagedScriptQuery maps global and node scope to fetch params', 
     buildManagedScriptQuery({
       scope: 'node',
       selectedNodeId: '',
+      usage: 'all',
     }),
     {
       scope: 'node',
       nodeId: null,
+      usage: undefined,
     }
   );
 
@@ -47,16 +57,70 @@ void test('buildManagedScriptQuery maps global and node scope to fetch params', 
     buildManagedScriptQuery({
       scope: 'node',
       selectedNodeId: '   ',
+      usage: 'all',
     }),
     {
       scope: 'node',
       nodeId: null,
+      usage: undefined,
     }
   );
 });
 
 void test('buildScriptSettingsIntro keeps x alias guidance visible in settings', () => {
   assert.match(buildScriptSettingsIntro(), /x alias/);
+  assert.match(buildScriptSettingsIntro(), /巡检脚本/);
+});
+
+void test('buildScriptUsageBadgeLabel highlights inspection scripts', () => {
+  assert.equal(buildScriptUsageBadgeLabel('inspection'), '巡检脚本');
+  assert.equal(buildScriptUsageBadgeLabel('quick_run'), null);
+});
+
+void test('buildScriptUsageFilterOptions exposes quick_run inspection and all views', () => {
+  assert.deepEqual(buildScriptUsageFilterOptions(), [
+    { value: 'quick_run', label: '快捷执行' },
+    { value: 'inspection', label: '巡检脚本' },
+    { value: 'all', label: '全部' },
+  ]);
+});
+
+void test('buildInitialScriptSettingsView reads inspection script filters from URL params', () => {
+  assert.deepEqual(
+    buildInitialScriptSettingsView(
+      new URLSearchParams('tab=scripts&scope=node&nodeId=node-1&usage=inspection&scriptId=script-7')
+    ),
+    {
+      scope: 'node',
+      selectedNodeId: 'node-1',
+      usageFilter: 'inspection',
+      selectedScriptId: 'script-7',
+    }
+  );
+});
+
+void test('buildInitialScriptSettingsView falls back to default script view for invalid params', () => {
+  assert.deepEqual(
+    buildInitialScriptSettingsView(
+      new URLSearchParams('tab=scripts&scope=bad&nodeId=%20%20%20&usage=bad')
+    ),
+    {
+      scope: 'global',
+      selectedNodeId: '',
+      usageFilter: 'quick_run',
+      selectedScriptId: null,
+    }
+  );
+});
+
+void test('assertScriptUsageForEditor rejects missing usage instead of silently defaulting', () => {
+  assert.throws(
+    () => assertScriptUsageForEditor(undefined),
+    /脚本用途缺失/
+  );
+
+  assert.equal(assertScriptUsageForEditor('quick_run'), 'quick_run');
+  assert.equal(assertScriptUsageForEditor('inspection'), 'inspection');
 });
 
 void test('buildScriptSettingsEmptyState explains why node scope cannot load scripts without nodes', () => {
