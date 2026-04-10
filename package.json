@@ -1,7 +1,7 @@
 {
   "name": "opsclaw",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "AI-native SSH operations workbench with Electron desktop packaging.",
   "author": "OpsClaw Contributors",
   "type": "module",

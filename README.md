@@ -8,7 +8,7 @@ OpsClaw 是面向桌面与本地运行时的 AI-native SSH 运维工作台。它
 
 ## 快速开始
 
-当前发布版本：`0.2.0`。
+当前发布版本：`0.3.0`。
 
 ```bash
 pnpm install
@@ -17,7 +17,7 @@ pnpm desktop:dev
 pnpm desktop:pack:win
 ```
 
-`pnpm dev` 同时启动 Vite 前端（默认 `http://localhost:5173`）和 Express/SSH 网关（默认 `http://localhost:4000`）。`pnpm desktop:dev` 会先编译 Electron 主进程，然后启动渲染器与桌面壳，方便调试。`pnpm desktop:pack:win` 会在 `release/` 下产出比如 `OpsClaw-0.2.0-win.zip` 的安装包，主运行路径在 `release/win-unpacked/`（桌面运行时的 unpack 目录）。
+`pnpm dev` 同时启动 Vite 前端（默认 `http://localhost:5173`）和 Express/SSH 网关（默认 `http://localhost:4000`）。`pnpm desktop:dev` 会先编译 Electron 主进程，然后启动渲染器与桌面壳，方便调试。`pnpm desktop:pack:win` 会在 `release/` 下产出比如 `OpsClaw-0.3.0-win.zip` 的安装包，主运行路径在 `release/win-unpacked/`（桌面运行时的 unpack 目录）。
 
 ## 当前能力概览
 
