@@ -1,8 +1,21 @@
 import { useState } from 'react';
 import { Upload } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { importNodesFromCSV, type ImportResult } from './api';
+import { readCsvImportFile } from './csvImportModel';
+import {
+  SETTINGS_PANEL_CLASS,
+  SETTINGS_TEXT_PRIMARY_CLASS,
+  SETTINGS_TEXT_SECONDARY_CLASS,
+  SETTINGS_TEXT_TERTIARY_CLASS,
+} from './settingsTheme';
 
 type Props = {
   open: boolean;
@@ -25,10 +38,10 @@ export function CsvImportModal({ open, onClose, onSuccess }: Props) {
 
     setImporting(true);
     try {
-      const text = await file.text();
+      const text = await readCsvImportFile(file);
       const importResults = await importNodesFromCSV(text);
       setResults(importResults);
-      if (importResults.every(r => r.success)) {
+      if (importResults.every((r) => r.success)) {
         onSuccess();
       }
     } catch (error) {
@@ -53,7 +66,7 @@ export function CsvImportModal({ open, onClose, onSuccess }: Props) {
 测试服务器2,192.168.1.101,22,admin,privateKey,,"-----BEGIN RSA PRIVATE KEY-----
 ...your private key here...
 -----END RSA PRIVATE KEY-----",mypassphrase,测试环境,`;
-    const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['\uFEFF', template], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -64,33 +77,35 @@ export function CsvImportModal({ open, onClose, onSuccess }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-3xl bg-[#17181b] border-neutral-800">
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold">批量导入节点</DialogTitle>
-          <p className="text-sm text-neutral-500 mt-1">从 CSV 文件批量导入服务器节点</p>
+          <DialogDescription className={`mt-1 ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
+            从 CSV 文件批量导入服务器节点
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
-          <div className="p-4 bg-[#0a0b0d] rounded-lg border border-neutral-800/50">
+          <div className={`${SETTINGS_PANEL_CLASS} space-y-2 p-4`}>
             <div className="flex items-center justify-between mb-2">
-              <div className="text-xs text-neutral-500 font-medium">CSV 格式说明</div>
+              <div className={`text-xs font-medium ${SETTINGS_TEXT_SECONDARY_CLASS}`}>CSV 格式说明</div>
               <button
                 onClick={handleDownloadTemplate}
-                className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                className="text-xs text-blue-500 transition-colors hover:text-blue-400"
               >
                 下载模板
               </button>
             </div>
-            <div className="text-xs text-neutral-600 font-mono">
+            <div className={`font-mono text-xs ${SETTINGS_TEXT_TERTIARY_CLASS}`}>
               name,host,port,username,authMode,password,privateKey,passphrase,groupName,jumpHostId
             </div>
-            <div className="text-xs text-neutral-500 mt-2">
+            <div className={`mt-2 text-xs ${SETTINGS_TEXT_SECONDARY_CLASS}`}>
               必填：name, host, port, username, authMode（password 或 privateKey）
             </div>
           </div>
 
           <div className="space-y-3">
-            <label className="relative flex items-center justify-center h-32 border-2 border-dashed border-neutral-800 rounded-lg hover:border-[var(--app-border-strong)] transition-colors cursor-pointer bg-[#0a0b0d]/30">
+            <label className="relative flex h-32 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-[var(--app-border-default)] bg-[var(--app-bg-base)]/70 transition-colors hover:border-[var(--app-border-strong)]">
               <input
                 type="file"
                 accept=".csv"
@@ -98,8 +113,8 @@ export function CsvImportModal({ open, onClose, onSuccess }: Props) {
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
               <div className="flex flex-col items-center gap-2">
-                <Upload className="w-8 h-8 text-neutral-600" />
-                <div className="text-sm text-neutral-400">
+                <Upload className="h-8 w-8 text-[var(--app-text-tertiary)]" />
+                <div className={`text-sm ${SETTINGS_TEXT_PRIMARY_CLASS}`}>
                   {file ? file.name : '点击选择 CSV 文件'}
                 </div>
               </div>
@@ -118,14 +133,14 @@ export function CsvImportModal({ open, onClose, onSuccess }: Props) {
 
           {results && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 bg-[#0a0b0d] rounded-lg border border-neutral-800/50">
-                <div className="text-sm font-medium text-neutral-300">导入结果</div>
+              <div className={`${SETTINGS_PANEL_CLASS} flex items-center justify-between p-3`}>
+                <div className={`text-sm font-medium ${SETTINGS_TEXT_PRIMARY_CLASS}`}>导入结果</div>
                 <div className="flex items-center gap-4 text-xs">
                   <span className="text-emerald-400">成功：{successCount}</span>
                   <span className="text-red-400">失败：{failCount}</span>
                 </div>
               </div>
-              <div className="max-h-80 overflow-auto space-y-2 p-3 bg-[#0a0b0d] rounded-lg border border-neutral-800/50">
+              <div className={`${SETTINGS_PANEL_CLASS} max-h-80 space-y-2 overflow-auto p-3`}>
                 {results.map((r, i) => (
                   <div
                     key={i}
