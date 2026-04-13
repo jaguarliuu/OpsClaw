@@ -1,4 +1,9 @@
-import type { BrowserWindow, OpenDialogReturnValue, SaveDialogReturnValue } from 'electron';
+import type {
+  BrowserWindow,
+  Dialog,
+  OpenDialogOptions,
+  SaveDialogOptions,
+} from 'electron';
 
 export type NativeOpenDialogResult = {
   canceled: boolean;
@@ -13,16 +18,7 @@ export type NativeSaveDialogResult = {
 type NativeDialogOptions = Record<string, unknown>;
 
 type NativeDialogRegistrarDeps = {
-  dialog: {
-    showOpenDialog: (
-      browserWindow: BrowserWindow | undefined,
-      options?: unknown
-    ) => Promise<OpenDialogReturnValue>;
-    showSaveDialog: (
-      browserWindow: BrowserWindow | undefined,
-      options?: unknown
-    ) => Promise<SaveDialogReturnValue>;
-  };
+  dialog: Pick<Dialog, 'showOpenDialog' | 'showSaveDialog'>;
   ipcMain: {
     handle: (
       channel: string,
@@ -64,18 +60,20 @@ export function registerNativeDialogHandlers(
   deps: NativeDialogRegistrarDeps
 ) {
   deps.ipcMain.handle('opsclaw:file-dialog:open', async (_event, options) => {
-    const result = await deps.dialog.showOpenDialog(
-      getWindow() ?? undefined,
-      normalizeDialogOptions(options)
-    );
+    const normalizedOptions = normalizeDialogOptions(options) as OpenDialogOptions | undefined;
+    const window = getWindow();
+    const result = window
+      ? await deps.dialog.showOpenDialog(window, normalizedOptions ?? {})
+      : await deps.dialog.showOpenDialog(normalizedOptions ?? {});
     return normalizeOpenDialogResult(result);
   });
 
   deps.ipcMain.handle('opsclaw:file-dialog:save', async (_event, options) => {
-    const result = await deps.dialog.showSaveDialog(
-      getWindow() ?? undefined,
-      normalizeDialogOptions(options)
-    );
+    const normalizedOptions = normalizeDialogOptions(options) as SaveDialogOptions | undefined;
+    const window = getWindow();
+    const result = window
+      ? await deps.dialog.showSaveDialog(window, normalizedOptions ?? {})
+      : await deps.dialog.showSaveDialog(normalizedOptions ?? {});
     return normalizeSaveDialogResult(result);
   });
 }
