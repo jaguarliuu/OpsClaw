@@ -18,6 +18,7 @@ import {
   type ScriptUsage,
   type ScriptVariableDefinition,
 } from '../scriptLibraryStore.js';
+import { createSftpStore } from '../sftpStore.js';
 import type { OpsAgentRuntime } from '../agent/agentRuntime.js';
 import type { FileMemoryStore } from '../agent/fileMemoryStore.js';
 
@@ -27,6 +28,7 @@ export type LlmProviderStore = Awaited<ReturnType<typeof createLlmProviderStore>
 export type ScriptLibraryStore = Awaited<ReturnType<typeof createScriptLibraryStore>>;
 export type NodeInspectionStore = Awaited<ReturnType<typeof createNodeInspectionStore>>;
 export type NodeInspectionService = ReturnType<typeof createNodeInspectionService>;
+export type SftpStore = Awaited<ReturnType<typeof createSftpStore>>;
 
 export type HttpApiDependencies = {
   nodeStore: NodeStore;

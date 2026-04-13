@@ -259,6 +259,43 @@ function ensureCommandHistoryTable(database: SqlDatabaseHandle) {
   database.run(`CREATE INDEX IF NOT EXISTS idx_ch_last_used ON command_history(last_used DESC);`);
 }
 
+function ensureSftpHostKeysTable(database: SqlDatabaseHandle) {
+  database.run(`
+    CREATE TABLE IF NOT EXISTS sftp_host_keys (
+      node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+      algorithm TEXT NOT NULL,
+      fingerprint TEXT NOT NULL,
+      seen_at TEXT NOT NULL
+    );
+  `);
+}
+
+function ensureSftpTransferTasksTable(database: SqlDatabaseHandle) {
+  database.run(`
+    CREATE TABLE IF NOT EXISTS sftp_transfer_tasks (
+      task_id TEXT PRIMARY KEY,
+      node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+      direction TEXT NOT NULL,
+      local_path TEXT NOT NULL,
+      remote_path TEXT NOT NULL,
+      temp_local_path TEXT,
+      temp_remote_path TEXT,
+      total_bytes INTEGER,
+      transferred_bytes INTEGER NOT NULL,
+      last_confirmed_offset INTEGER NOT NULL,
+      chunk_size INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      retry_count INTEGER NOT NULL,
+      error_message TEXT,
+      checksum_status TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_sftp_transfer_tasks_node_id ON sftp_transfer_tasks(node_id);`);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_sftp_transfer_tasks_status ON sftp_transfer_tasks(status);`);
+}
+
 function ensureLlmProvidersTable(database: SqlDatabaseHandle) {
   database.run(LLM_PROVIDERS_TABLE_SQL);
   database.run(`CREATE INDEX IF NOT EXISTS idx_llm_enabled ON llm_providers(enabled);`);
@@ -614,6 +651,8 @@ async function createDatabase(): Promise<SqliteDatabase> {
   database.run(schema);
   ensureNodeCredentialColumns(database);
   ensureCommandHistoryTable(database);
+  ensureSftpHostKeysTable(database);
+  ensureSftpTransferTasksTable(database);
   ensureLlmProvidersTable(database);
   ensureScriptLibraryTable(database);
   ensureScriptLibraryAliasColumn(database);
