@@ -235,6 +235,7 @@ export function WorkbenchPage() {
     setActiveSessionId(primaryView.state.sessionId);
     primaryView.closeSftp();
   };
+  const isTerminalWorkspaceVisible = primaryView.state.mode !== 'sftp';
 
   useKeyboardShortcuts({
     onToggleQuickConnect: toggleQuickConnect,
@@ -308,7 +309,15 @@ export function WorkbenchPage() {
 
       <div className="relative min-h-screen min-w-0 flex-1">
         <div
-          style={primaryView.state.mode === 'sftp' ? { display: 'none' } : undefined}
+          aria-hidden={!isTerminalWorkspaceVisible}
+          style={
+            isTerminalWorkspaceVisible
+              ? undefined
+              : {
+                  visibility: 'hidden',
+                  pointerEvents: 'none',
+                }
+          }
         >
           <TerminalWorkspace
             ref={terminalWorkspaceRef}
@@ -316,6 +325,7 @@ export function WorkbenchPage() {
             agentSessionLock={agentSessionLock}
             isMacShortcutPlatform={typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)}
             pendingInteractionCount={agentRun.pendingInteractions.length}
+            visible={isTerminalWorkspaceVisible}
             onCloseSession={handleCloseSession}
             onOpenNodeDashboard={openNodeDashboardForNodeId}
             onOpenPendingGates={() => setIsPendingGatePanelOpen(true)}

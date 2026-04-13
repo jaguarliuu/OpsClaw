@@ -14,6 +14,15 @@ void test('keeps terminal workspace mounted when primary view switches to sftp',
   assert.doesNotMatch(source, /\{primaryView\.state\.mode === 'terminal' \?/);
 });
 
+void test('hides terminal workspace without collapsing layout when sftp is active', () => {
+  const source = readWorkbenchSource();
+
+  assert.doesNotMatch(source, /display:\s*'none'/);
+  assert.match(source, /visibility:\s*'hidden'/);
+  assert.match(source, /pointerEvents:\s*'none'/);
+  assert.match(source, /<TerminalWorkspace[\s\S]*visible=\{isTerminalWorkspaceVisible\}/);
+});
+
 void test('restores active terminal session from primary view state when closing sftp', () => {
   const source = readWorkbenchSource();
 
