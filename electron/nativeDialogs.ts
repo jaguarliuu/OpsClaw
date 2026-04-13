@@ -10,6 +10,8 @@ export type NativeSaveDialogResult = {
   path: string | null;
 };
 
+type NativeDialogOptions = Record<string, unknown>;
+
 type NativeDialogRegistrarDeps = {
   dialog: {
     showOpenDialog: (
@@ -35,9 +37,7 @@ export function normalizeOpenDialogResult(input: {
 }): NativeOpenDialogResult {
   return {
     canceled: input.canceled,
-    paths: input.canceled
-      ? []
-      : input.filePaths.map((item) => item.trim()).filter(Boolean),
+    paths: input.canceled ? [] : input.filePaths,
   };
 }
 
@@ -47,8 +47,16 @@ export function normalizeSaveDialogResult(input: {
 }): NativeSaveDialogResult {
   return {
     canceled: input.canceled,
-    path: input.canceled ? null : input.filePath?.trim() || null,
+    path: input.canceled ? null : input.filePath ?? null,
   };
+}
+
+export function normalizeDialogOptions(options: unknown): NativeDialogOptions | undefined {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    return undefined;
+  }
+
+  return options as NativeDialogOptions;
 }
 
 export function registerNativeDialogHandlers(
@@ -56,12 +64,18 @@ export function registerNativeDialogHandlers(
   deps: NativeDialogRegistrarDeps
 ) {
   deps.ipcMain.handle('opsclaw:file-dialog:open', async (_event, options) => {
-    const result = await deps.dialog.showOpenDialog(getWindow() ?? undefined, options);
+    const result = await deps.dialog.showOpenDialog(
+      getWindow() ?? undefined,
+      normalizeDialogOptions(options)
+    );
     return normalizeOpenDialogResult(result);
   });
 
   deps.ipcMain.handle('opsclaw:file-dialog:save', async (_event, options) => {
-    const result = await deps.dialog.showSaveDialog(getWindow() ?? undefined, options);
+    const result = await deps.dialog.showSaveDialog(
+      getWindow() ?? undefined,
+      normalizeDialogOptions(options)
+    );
     return normalizeSaveDialogResult(result);
   });
 }
