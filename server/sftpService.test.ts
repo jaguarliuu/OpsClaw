@@ -44,6 +44,9 @@ function createFakeConnection(): SftpConnectionClient & {
     async mkdir(path) {
       operations.push(`mkdir:${path}`);
     },
+    async writeChunk(path, chunk, offset) {
+      operations.push(`writeChunk:${path}:${offset}:${chunk.length}`);
+    },
     async rename(sourcePath, targetPath) {
       operations.push(`rename:${sourcePath}->${targetPath}`);
     },
@@ -309,6 +312,9 @@ void test('sftpConnectionManager reuses connection by nodeId and exposes manager
       },
       async mkdir(path) {
         operations.push(`mkdir:${node.id}:${path}`);
+      },
+      async writeChunk(remotePath, chunk, offset) {
+        operations.push(`writeChunk:${node.id}:${remotePath}:${offset}:${chunk.length}`);
       },
       async rename(fromPath, toPath) {
         operations.push(`rename:${node.id}:${fromPath}->${toPath}`);

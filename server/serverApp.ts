@@ -60,6 +60,8 @@ export async function createOpsClawServerApp(options: CreateOpsClawServerAppOpti
     scriptLibraryStore,
     nodeInspectionStore,
     nodeInspectionService,
+    sftpStore,
+    sftpService,
     fileMemoryStore,
     agentRuntime,
   });

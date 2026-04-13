@@ -25,6 +25,7 @@ export type SftpConnectionClient = {
   readDirectory: (path: string) => Promise<SftpDirectoryEntry[]>;
   stat: (path: string) => Promise<SftpFileMetadata>;
   mkdir: (path: string) => Promise<void>;
+  writeChunk: (path: string, chunk: Buffer, offset: number) => Promise<void>;
   rename: (sourcePath: string, targetPath: string) => Promise<void>;
   unlink: (path: string) => Promise<void>;
   rmdir: (path: string) => Promise<void>;
@@ -36,6 +37,7 @@ export type SftpConnectionManager = {
   listDirectory: (nodeId: string, path: string) => Promise<SftpDirectoryEntry[]>;
   stat: (nodeId: string, path: string) => Promise<SftpFileMetadata>;
   mkdir: (nodeId: string, path: string) => Promise<void>;
+  writeChunk: (nodeId: string, path: string, chunk: Buffer, offset: number) => Promise<void>;
   rename: (nodeId: string, sourcePath: string, targetPath: string) => Promise<void>;
   unlink: (nodeId: string, path: string) => Promise<void>;
   rmdir: (nodeId: string, path: string) => Promise<void>;
@@ -190,6 +192,32 @@ function wrapSftpClient(client: Client, sftp: SFTPWrapper): SftpConnectionClient
           }
 
           resolve();
+        });
+      });
+    },
+
+    writeChunk(path, chunk, offset) {
+      return new Promise((resolve, reject) => {
+        sftp.open(path, offset === 0 ? 'w' : 'r+', (openError, handle) => {
+          if (openError) {
+            reject(openError);
+            return;
+          }
+
+          sftp.write(handle, chunk, 0, chunk.length, offset, (writeError) => {
+            sftp.close(handle, (closeError) => {
+              if (writeError) {
+                reject(writeError);
+                return;
+              }
+              if (closeError) {
+                reject(closeError);
+                return;
+              }
+
+              resolve();
+            });
+          });
         });
       });
     },
@@ -470,6 +498,11 @@ export function createSftpConnectionManager(dependencies: {
     async mkdir(nodeId: string, path: string) {
       const connection = await this.getOrCreate(nodeId);
       await connection.mkdir(path);
+    },
+
+    async writeChunk(nodeId: string, path: string, chunk: Buffer, offset: number) {
+      const connection = await this.getOrCreate(nodeId);
+      await connection.writeChunk(path, chunk, offset);
     },
 
     async rename(nodeId: string, sourcePath: string, targetPath: string) {

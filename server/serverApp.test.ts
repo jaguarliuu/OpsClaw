@@ -233,6 +233,45 @@ void test('script routes round-trip alias for create and list', async () => {
   }
 });
 
+void test('sftp routes are registered on server app and do not fall through to 404', async () => {
+  const { createOpsClawServerApp } = await import('./serverApp.js');
+  const runtime = await createOpsClawServerApp();
+  const port = await listen(runtime.server);
+
+  try {
+    const listResponse = await fetch(`http://127.0.0.1:${port}/api/nodes/node-1/sftp/list`);
+    assert.notEqual(listResponse.status, 404);
+
+    const tasksResponse = await fetch(`http://127.0.0.1:${port}/api/nodes/node-1/sftp/tasks`);
+    assert.notEqual(tasksResponse.status, 404);
+    assert.equal(tasksResponse.status, 200);
+    assert.deepEqual(await tasksResponse.json(), { items: [] });
+  } finally {
+    await close(runtime.server);
+  }
+});
+
+void test('sftp list route falls back to current directory when query path is missing', async () => {
+  const { createOpsClawServerApp } = await import('./serverApp.js');
+  const runtime = await createOpsClawServerApp();
+  const port = await listen(runtime.server);
+  const capturedPaths: string[] = [];
+
+  runtime.sftpService.listDirectory = async ({ nodeId, path }) => {
+    capturedPaths.push(`${nodeId}:${path}`);
+    return { path, items: [] };
+  };
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/nodes/node-1/sftp/list`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { path: '.', items: [] });
+    assert.deepEqual(capturedPaths, ['node-1:.']);
+  } finally {
+    await close(runtime.server);
+  }
+});
+
 void test('script management route returns raw node scripts for settings page', async () => {
   const { createOpsClawServerApp } = await import('./serverApp.js');
   const runtime = await createOpsClawServerApp();
