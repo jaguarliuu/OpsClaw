@@ -51,6 +51,17 @@ function assertChunkSize(chunkSize: number) {
   }
 }
 
+async function assertFinalRemoteSize(
+  connectionManager: TransferConnectionManager,
+  input: { nodeId: string; tempRemotePath: string; totalBytes: number }
+) {
+  const metadata = await connectionManager.stat(input.nodeId, input.tempRemotePath);
+  const remoteSize = typeof metadata.size === 'number' ? metadata.size : null;
+  if (remoteSize !== input.totalBytes) {
+    throw new Error('Remote temp file size mismatch before finalize.');
+  }
+}
+
 function toTaskRecord(input: {
   taskId: string;
   nodeId: string;
@@ -192,24 +203,51 @@ export function createSftpTransferManager(dependencies: {
         await handle.close();
       }
 
-      await connectionManager.rename(input.nodeId, tempRemotePath, input.remotePath);
-      await sftpStore.upsertTransferTask({
-        taskId: input.taskId,
-        nodeId: input.nodeId,
-        direction: 'upload',
-        localPath: input.localPath,
-        remotePath: input.remotePath,
-        tempLocalPath: null,
-        tempRemotePath: null,
-        totalBytes,
-        transferredBytes: totalBytes,
-        lastConfirmedOffset: totalBytes,
-        chunkSize,
-        status: 'completed',
-        retryCount,
-        errorMessage: null,
-        checksumStatus: 'pending',
-      });
+      try {
+        await assertFinalRemoteSize(connectionManager, {
+          nodeId: input.nodeId,
+          tempRemotePath,
+          totalBytes,
+        });
+        await connectionManager.rename(input.nodeId, tempRemotePath, input.remotePath);
+        await sftpStore.upsertTransferTask({
+          taskId: input.taskId,
+          nodeId: input.nodeId,
+          direction: 'upload',
+          localPath: input.localPath,
+          remotePath: input.remotePath,
+          tempLocalPath: null,
+          tempRemotePath: null,
+          totalBytes,
+          transferredBytes: totalBytes,
+          lastConfirmedOffset: totalBytes,
+          chunkSize,
+          status: 'completed',
+          retryCount,
+          errorMessage: null,
+          checksumStatus: 'pending',
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await sftpStore.upsertTransferTask({
+          taskId: input.taskId,
+          nodeId: input.nodeId,
+          direction: 'upload',
+          localPath: input.localPath,
+          remotePath: input.remotePath,
+          tempLocalPath: null,
+          tempRemotePath,
+          totalBytes,
+          transferredBytes: offset,
+          lastConfirmedOffset: offset,
+          chunkSize,
+          status: 'paused',
+          retryCount,
+          errorMessage: message,
+          checksumStatus: 'pending',
+        });
+        throw error;
+      }
 
       return toTaskRecord({
         taskId: input.taskId,

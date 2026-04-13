@@ -1,3 +1,4 @@
+import { SftpConnectionManagerError } from '../sftpConnectionManager.js';
 import { SftpServiceError } from '../sftpService.js';
 import {
   type HttpApiDependencies,
@@ -26,6 +27,10 @@ function readQueryPath(query: unknown) {
 
 function handleSftpError(response: { status: (code: number) => { json: (payload: unknown) => void } }, error: unknown, fallbackMessage: string) {
   if (error instanceof RequestError || error instanceof SftpServiceError) {
+    response.status(error.statusCode).json({ message: error.message });
+    return;
+  }
+  if (error instanceof SftpConnectionManagerError) {
     response.status(error.statusCode).json({ message: error.message });
     return;
   }

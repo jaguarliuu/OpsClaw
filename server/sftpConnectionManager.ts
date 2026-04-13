@@ -5,6 +5,16 @@ import ssh2, { Client, type ConnectConfig, type SFTPWrapper } from 'ssh2';
 import type { SftpStore } from './http/support.js';
 import type { StoredNodeWithSecrets } from './nodeStore.js';
 
+export class SftpConnectionManagerError extends Error {
+  constructor(
+    readonly statusCode: number,
+    message: string
+  ) {
+    super(message);
+    this.name = 'SftpConnectionManagerError';
+  }
+}
+
 export type SftpFileMetadata = {
   mode?: number;
   size?: number;
@@ -389,7 +399,7 @@ export function createSftpConnectionManager(dependencies: {
   const createConnection = async (nodeId: string) => {
     const node = nodeStore.getNodeWithSecrets(nodeId);
     if (!node) {
-      throw new Error('节点不存在。');
+      throw new SftpConnectionManagerError(404, '节点不存在。');
     }
 
     const existingHostKey = await sftpStore.getHostKey(node.id);

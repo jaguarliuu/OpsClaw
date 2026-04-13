@@ -240,7 +240,8 @@ void test('sftp routes are registered on server app and do not fall through to 4
 
   try {
     const listResponse = await fetch(`http://127.0.0.1:${port}/api/nodes/node-1/sftp/list`);
-    assert.notEqual(listResponse.status, 404);
+    assert.equal(listResponse.status, 404);
+    assert.deepEqual(await listResponse.json(), { message: '节点不存在。' });
 
     const tasksResponse = await fetch(`http://127.0.0.1:${port}/api/nodes/node-1/sftp/tasks`);
     assert.notEqual(tasksResponse.status, 404);

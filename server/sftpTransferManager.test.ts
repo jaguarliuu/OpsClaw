@@ -292,7 +292,7 @@ void test('uploadFile restarts from offset 0 when temp remote size is stale for 
     chunkSize: 2,
   });
 
-  assert.deepEqual(connectionManager.statCalls, [tempRemotePath]);
+  assert.deepEqual(connectionManager.statCalls, [tempRemotePath, tempRemotePath]);
   assert.deepEqual(connectionManager.writeCalls, [
     { path: tempRemotePath, offset: 0, chunk: 'ab' },
     { path: tempRemotePath, offset: 2, chunk: 'cd' },
@@ -307,4 +307,46 @@ void test('uploadFile restarts from offset 0 when temp remote size is stale for 
   assert.equal(connectionManager.files.get('/remote/file.txt')?.toString('utf8'), 'abcdef');
   assert.equal(result.transferredBytes, 6);
   assert.equal(result.status, 'completed');
+});
+
+void test('uploadFile blocks rename when final temp remote size does not match expected totalBytes', async () => {
+  const localPath = path.join(tempRoot, 'final-size-mismatch-source.txt');
+  await fs.writeFile(localPath, 'abcdef', 'utf8');
+
+  const connectionManager = createFakeConnectionManager();
+  const originalStat = connectionManager.stat;
+  let statCallCount = 0;
+  connectionManager.stat = async (nodeId: string, remotePath: string) => {
+    statCallCount += 1;
+    if (statCallCount === 1) {
+      return { size: 5 };
+    }
+    return originalStat(nodeId, remotePath);
+  };
+  const store = createFakeStore();
+  const { createSftpTransferManager } = await import('./sftpTransferManager.js');
+  const manager = createSftpTransferManager({
+    sftpStore: store,
+    connectionManager,
+  });
+
+  await assert.rejects(
+    async () => {
+      await manager.uploadFile({
+        taskId: 'task-final-size-mismatch',
+        nodeId: 'node-1',
+        localPath,
+        remotePath: '/remote/file.txt',
+        chunkSize: 2,
+      });
+    },
+    /Remote temp file size mismatch before finalize/
+  );
+
+  assert.deepEqual(connectionManager.renameCalls, []);
+  assert.equal(connectionManager.files.has('/remote/file.txt'), false);
+  const task = store.tasks.get('task-final-size-mismatch');
+  assert.equal(task?.status, 'paused');
+  assert.equal(task?.errorMessage, 'Remote temp file size mismatch before finalize.');
+  assert.equal(task?.tempRemotePath, '/remote/.opsclaw-upload-task-final-size-mismatch.tmp');
 });
