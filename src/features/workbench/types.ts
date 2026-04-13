@@ -221,7 +221,7 @@ export type OpsClawDesktopFileDialog = {
   pickFiles: (options?: {
     title?: string;
     filters?: Array<{ name: string; extensions: string[] }>;
-    multiSelections?: boolean;
+    properties?: Array<'openFile' | 'multiSelections'>;
   }) => Promise<{ canceled: boolean; paths: string[] }>;
   pickSavePath: (options?: {
     title?: string;

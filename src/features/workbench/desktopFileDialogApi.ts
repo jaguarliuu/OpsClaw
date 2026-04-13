@@ -5,6 +5,6 @@ export async function pickUploadFiles() {
 
   return window.__OPSCLAW_FILE_DIALOG__.pickFiles({
     title: '选择要上传的文件',
-    multiSelections: true,
+    properties: ['openFile', 'multiSelections'],
   });
 }
