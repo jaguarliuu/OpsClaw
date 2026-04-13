@@ -8,6 +8,7 @@ import {
   buildGroupTree,
   defaultGroupName,
 } from '@/features/workbench/workbenchPageModel';
+import { buildDesktopWindowChromeLayout } from '@/features/workbench/desktopWindowChromeModel';
 import { useDeferredMount } from '@/features/workbench/useDeferredMount';
 import { scheduleIdleTask } from '@/features/workbench/idleTaskScheduler';
 import { useKeyboardShortcuts } from '@/features/workbench/useKeyboardShortcuts';
@@ -36,7 +37,11 @@ import { useWorkbenchShellState } from '@/features/workbench/useWorkbenchShellSt
 import { useWorkbenchSessions } from '@/features/workbench/useWorkbenchSessions';
 import { useWorkbenchWorkspaceData } from '@/features/workbench/useWorkbenchWorkspaceData';
 import { useWorkbenchPrimaryView } from '@/features/workbench/useWorkbenchPrimaryView';
-import { TerminalWorkspace, type TerminalWorkspaceHandle } from '@/features/workbench/TerminalWorkspace';
+import { type TerminalWorkspaceHandle } from '@/features/workbench/TerminalWorkspace';
+import { TerminalWorkspaceBody } from '@/features/workbench/TerminalWorkspaceBody';
+import { TerminalWorkspaceHeader } from '@/features/workbench/TerminalWorkspaceHeader';
+import { SftpFileManagerView } from '@/features/workbench/SftpFileManagerView';
+import { useTerminalWorkspaceController } from '@/features/workbench/useTerminalWorkspaceController';
 
 import { SessionTree } from '@/features/workbench/SessionTree';
 import type {
@@ -182,6 +187,15 @@ export function WorkbenchPage() {
     activeSessionId,
     sessions,
   });
+  const terminalWorkspaceController = useTerminalWorkspaceController({
+    activeSessionId,
+    onSelectSession: setActiveSessionId,
+    sessions,
+  });
+  const desktopWindowChrome = buildDesktopWindowChromeLayout({
+    runtime: window.__OPSCLAW_RUNTIME__,
+    location: window.location,
+  });
 
   const openNodeDashboardForNodeId = (nodeId: string | null | undefined) => {
     if (!nodeId) {
@@ -236,6 +250,14 @@ export function WorkbenchPage() {
     primaryView.closeSftp();
   };
   const isTerminalWorkspaceVisible = primaryView.state.mode !== 'sftp';
+  const activeSession = activeSessionId
+    ? sessions.find((session) => session.id === activeSessionId) ?? null
+    : null;
+
+  terminalWorkspaceRef.current = {
+    sendCommandToActive: terminalWorkspaceController.sendCommandToActive,
+    executeCommandOnSession: terminalWorkspaceController.executeCommandOnSession,
+  };
 
   useKeyboardShortcuts({
     onToggleQuickConnect: toggleQuickConnect,
@@ -310,62 +332,78 @@ export function WorkbenchPage() {
       <div className="relative min-h-screen min-w-0 flex-1">
         <div
           aria-hidden={!isTerminalWorkspaceVisible}
-          style={
+          className={
             isTerminalWorkspaceVisible
-              ? undefined
-              : {
-                  visibility: 'hidden',
-                  pointerEvents: 'none',
-                }
+              ? 'grid min-h-screen min-w-0 flex-1 bg-[var(--app-bg-elevated)]'
+              : 'pointer-events-none absolute inset-0 grid min-h-screen min-w-0 flex-1 bg-[var(--app-bg-elevated)]'
           }
+          style={{
+            gridTemplateRows:
+              isTerminalWorkspaceVisible
+                ? desktopWindowChrome.topBarStyle
+                  ? 'calc(42px + env(titlebar-area-height, 0px)) 38px minmax(0,1fr)'
+                  : '42px 38px minmax(0,1fr)'
+                : 'minmax(0,1fr)',
+          }}
         >
-          <TerminalWorkspace
-            ref={terminalWorkspaceRef}
+          {isTerminalWorkspaceVisible ? (
+            <TerminalWorkspaceHeader
+              activeSession={activeSession}
+              activeSessionId={activeSessionId}
+              desktopInteractiveStyle={desktopWindowChrome.interactiveStyle}
+              desktopTopBarStyle={desktopWindowChrome.topBarStyle}
+              desktopWindowControlsInsetStyle={desktopWindowChrome.windowControlsInsetStyle}
+              isMacShortcutPlatform={typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)}
+              pendingInteractionCount={agentRun.pendingInteractions.length}
+              sessions={sessions}
+              sidebarCollapsed={isSidebarCollapsed}
+              splitLayout={terminalWorkspaceController.splitLayout}
+              onCloseSession={handleCloseSession}
+              onEnterSplitMode={terminalWorkspaceController.enterSplitMode}
+              onExitSplitMode={terminalWorkspaceController.exitSplitMode}
+              onOpenAiAssistant={handleOpenAiAssistant}
+              onOpenHelpDialog={openHelpDialog}
+              onOpenPendingGates={() => setIsPendingGatePanelOpen(true)}
+              onOpenNewConnection={openNewConnection}
+              onOpenSftp={(nodeId) => openSftpForNodeId(nodeId, activeSessionId)}
+              onSelectSession={setActiveSessionId}
+              onToggleSidebar={() => setIsSidebarCollapsed((current) => !current)}
+            />
+          ) : null}
+
+          <TerminalWorkspaceBody
             activeSessionId={activeSessionId}
             agentSessionLock={agentSessionLock}
-            isMacShortcutPlatform={typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)}
-            pendingInteractionCount={agentRun.pendingInteractions.length}
+            focusedPane={terminalWorkspaceController.focusedPane}
+            paneSessionIds={terminalWorkspaceController.paneSessionIds}
+            sessions={sessions}
+            sidebarCollapsed={isSidebarCollapsed}
             visible={isTerminalWorkspaceVisible}
-            onCloseSession={handleCloseSession}
+            splitContainerRef={terminalWorkspaceController.splitContainerRef}
+            splitLayout={terminalWorkspaceController.splitLayout}
+            splitRatio={terminalWorkspaceController.splitRatio}
+            terminalRefs={terminalWorkspaceController.terminalRefs}
+            onDividerMouseDown={terminalWorkspaceController.handleDividerMouseDown}
+            onFocusEmptyPane={terminalWorkspaceController.handleFocusEmptyPane}
             onOpenNodeDashboard={openNodeDashboardForNodeId}
-            onOpenPendingGates={() => setIsPendingGatePanelOpen(true)}
             onOpenNewConnection={openNewConnection}
-            onOpenSftp={(nodeId) => openSftpForNodeId(nodeId, activeSessionId)}
-            onSelectSession={setActiveSessionId}
+            onPointerFocusPane={terminalWorkspaceController.handlePointerFocusPane}
             onSessionStatusChange={handleSessionStatusChange}
             onToggleSidebar={() => setIsSidebarCollapsed((current) => !current)}
-            onOpenAiAssistant={handleOpenAiAssistant}
-            onOpenHelpDialog={openHelpDialog}
-            sidebarCollapsed={isSidebarCollapsed}
-            sessions={sessions}
           />
         </div>
 
-        {primaryView.state.mode === 'sftp' ? (
-          <section className="absolute inset-0 flex min-h-screen min-w-0 flex-1 flex-col bg-[var(--app-bg-elevated)]">
-            <div className="border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] px-5 py-4">
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-[var(--app-text-primary)]">SFTP</div>
-                  <div className="truncate text-sm text-[var(--app-text-secondary)]">
-                    {savedProfiles.find((profile) => profile.id === primaryView.state.nodeId)?.name
-                      ?? primaryView.state.nodeId
-                      ?? '未选择节点'}
-                  </div>
-                </div>
-                <button
-                  className="rounded-md border border-[var(--app-border-default)] px-3 py-1.5 text-sm text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-bg-elevated3)]"
-                  onClick={handleCloseSftp}
-                  type="button"
-                >
-                  返回终端
-                </button>
-              </div>
-            </div>
-            <div className="flex flex-1 items-center justify-center px-6 text-sm text-[var(--app-text-secondary)]">
-              SFTP 主视图状态已接入，完整文件管理 UI 将在 Task 6 实现。
-            </div>
-          </section>
+        {primaryView.state.mode === 'sftp' && primaryView.state.nodeId ? (
+          <div className="absolute inset-0">
+            <SftpFileManagerView
+              nodeId={primaryView.state.nodeId}
+              nodeName={
+                savedProfiles.find((profile) => profile.id === primaryView.state.nodeId)?.name
+                ?? primaryView.state.nodeId
+              }
+              onClose={handleCloseSftp}
+            />
+          </div>
         ) : null}
       </div>
 

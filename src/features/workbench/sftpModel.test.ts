@@ -3,6 +3,8 @@ import test from 'node:test';
 
 import type { SftpDirectoryEntry } from './types.js';
 import {
+  buildDefaultSftpDrawerTab,
+  buildTransferQueueSummary,
   classifySftpActionRisk,
   sortSftpEntries,
 } from './sftpModel.js';
@@ -88,4 +90,42 @@ void test('classifySftpActionRisk escalates destructive and overwrite flows', ()
     }),
     'direct'
   );
+});
+
+void test('buildDefaultSftpDrawerTab prefers preview for files and metadata for directories', () => {
+  assert.equal(
+    buildDefaultSftpDrawerTab({
+      kind: 'file',
+      previewable: true,
+    }),
+    'preview'
+  );
+  assert.equal(
+    buildDefaultSftpDrawerTab({
+      kind: 'directory',
+      previewable: false,
+    }),
+    'metadata'
+  );
+});
+
+void test('buildTransferQueueSummary aggregates running and failed tasks', () => {
+  const summary = buildTransferQueueSummary([
+    {
+      taskId: '1',
+      status: 'running',
+      transferredBytes: 50,
+      totalBytes: 100,
+    },
+    {
+      taskId: '2',
+      status: 'failed',
+      transferredBytes: 0,
+      totalBytes: 200,
+    },
+  ] as never);
+
+  assert.equal(summary.runningCount, 1);
+  assert.equal(summary.failedCount, 1);
+  assert.equal(summary.totalBytes, 300);
 });
