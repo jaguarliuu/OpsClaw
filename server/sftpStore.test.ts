@@ -77,10 +77,10 @@ void test('sftpStore persists host keys and resumable transfer tasks', async () 
     transferredBytes: 512,
     lastConfirmedOffset: 512,
     chunkSize: 262144,
-    status: 'paused',
+    status: 'awaiting_approval',
     retryCount: 1,
     errorMessage: null,
-    checksumStatus: 'pending',
+    checksumStatus: 'mismatch',
   });
 
   await resetSqliteDatabaseForTests();
@@ -93,7 +93,8 @@ void test('sftpStore persists host keys and resumable transfer tasks', async () 
   assert.equal(hostKey?.fingerprint, 'SHA256:abc');
   assert.equal(resumable.length, 1);
   assert.equal(resumable[0]?.lastConfirmedOffset, 512);
-  assert.equal(resumable[0]?.status, 'paused');
+  assert.equal(resumable[0]?.status, 'awaiting_approval');
+  assert.equal(resumable[0]?.checksumStatus, 'mismatch');
 });
 
 void test('database migration fails fast when legacy transfer task rows contain invalid status', async () => {

@@ -6,12 +6,12 @@ export const SFTP_TRANSFER_STATUSES = [
   'running',
   'paused',
   'retrying',
+  'awaiting_approval',
   'completed',
   'failed',
   'cancelled',
-  'canceled',
 ] as const;
-export const SFTP_CHECKSUM_STATUSES = ['pending', 'matched', 'mismatched', 'skipped', 'failed'] as const;
+export const SFTP_CHECKSUM_STATUSES = ['pending', 'matched', 'mismatch', 'skipped'] as const;
 
 export type SftpTransferDirection = (typeof SFTP_TRANSFER_DIRECTIONS)[number];
 export type SftpTransferStatus = (typeof SFTP_TRANSFER_STATUSES)[number];
@@ -345,7 +345,7 @@ export async function createSftpStore() {
           SELECT *
           FROM sftp_transfer_tasks
           WHERE node_id = :nodeId
-            AND status IN ('queued', 'running', 'paused', 'retrying')
+            AND status IN ('queued', 'running', 'paused', 'retrying', 'awaiting_approval')
           ORDER BY updated_at DESC
         `,
         mapTransferTaskRow,

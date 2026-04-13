@@ -73,12 +73,12 @@ const SFTP_TRANSFER_STATUSES = [
   'running',
   'paused',
   'retrying',
+  'awaiting_approval',
   'completed',
   'failed',
   'cancelled',
-  'canceled',
 ] as const;
-const SFTP_CHECKSUM_STATUSES = ['pending', 'matched', 'mismatched', 'skipped', 'failed'] as const;
+const SFTP_CHECKSUM_STATUSES = ['pending', 'matched', 'mismatch', 'skipped'] as const;
 
 const LLM_PROVIDERS_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS llm_providers (
