@@ -1,4 +1,4 @@
-import { clipboard, contextBridge } from 'electron';
+import { clipboard, contextBridge, ipcRenderer } from 'electron';
 
 import { decodeRuntimeArgument } from './runtimeArgument.js';
 
@@ -13,4 +13,9 @@ contextBridge.exposeInMainWorld('__OPSCLAW_CLIPBOARD__', {
   writeText: (text: string) => {
     clipboard.writeText(text);
   },
+});
+
+contextBridge.exposeInMainWorld('__OPSCLAW_FILE_DIALOG__', {
+  pickFiles: (options?: unknown) => ipcRenderer.invoke('opsclaw:file-dialog:open', options),
+  pickSavePath: (options?: unknown) => ipcRenderer.invoke('opsclaw:file-dialog:save', options),
 });

@@ -217,9 +217,22 @@ export type OpsClawDesktopClipboard = {
   writeText: (text: string) => Promise<void>;
 };
 
+export type OpsClawDesktopFileDialog = {
+  pickFiles: (options?: {
+    title?: string;
+    filters?: Array<{ name: string; extensions: string[] }>;
+    multiSelections?: boolean;
+  }) => Promise<{ canceled: boolean; paths: string[] }>;
+  pickSavePath: (options?: {
+    title?: string;
+    defaultPath?: string;
+  }) => Promise<{ canceled: boolean; path: string | null }>;
+};
+
 declare global {
   interface Window {
     __OPSCLAW_CLIPBOARD__?: OpsClawDesktopClipboard;
+    __OPSCLAW_FILE_DIALOG__?: OpsClawDesktopFileDialog;
     __OPSCLAW_RUNTIME__?: OpsClawDesktopRuntime;
   }
 }
