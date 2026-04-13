@@ -46,8 +46,19 @@ export type SftpConnectionManager = {
 type NodeStore = {
   getNodeWithSecrets: (nodeId: string) => StoredNodeWithSecrets | null;
 };
+export type HostKeyObservation = {
+  algorithm: string;
+  fingerprint: string;
+};
 
-export type CreateSftpClient = (node: StoredNodeWithSecrets) => Promise<SftpConnectionClient>;
+export type SftpClientCreationOptions = {
+  onHostKey: (observation: HostKeyObservation) => Promise<void>;
+};
+
+export type CreateSftpClient = (
+  node: StoredNodeWithSecrets,
+  options: SftpClientCreationOptions
+) => Promise<SftpConnectionClient>;
 
 function readNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
@@ -184,11 +195,12 @@ function wrapSftpClient(client: Client, sftp: SFTPWrapper): SftpConnectionClient
 
 async function createSsh2SftpClient(
   node: StoredNodeWithSecrets,
-  sftpStore: Pick<SftpStore, 'upsertHostKey'>
+  options: SftpClientCreationOptions
 ) {
   return new Promise<SftpConnectionClient>((resolve, reject) => {
     const client = new Client();
     let settled = false;
+    let hostKeyVerificationPromise: Promise<void> | null = null;
 
     const settleReject = (error: Error) => {
       if (settled) {
@@ -210,28 +222,41 @@ async function createSsh2SftpClient(
         return;
       }
 
-      void sftpStore.upsertHostKey({
-        nodeId: node.id,
+      hostKeyVerificationPromise = options.onHostKey({
         algorithm: 'sha256',
         fingerprint: toFingerprint(key),
       });
     });
 
     client.on('ready', () => {
-      client.sftp((error, sftp) => {
-        if (error) {
-          settleReject(error);
+      void (async () => {
+        if (!hostKeyVerificationPromise) {
+          settleReject(new Error(`SFTP host key was not provided for node "${node.id}".`));
           return;
         }
 
-        if (settled) {
-          client.end();
+        try {
+          await hostKeyVerificationPromise;
+        } catch (error) {
+          settleReject(error instanceof Error ? error : new Error(String(error)));
           return;
         }
 
-        settled = true;
-        resolve(wrapSftpClient(client, sftp));
-      });
+        client.sftp((error, sftp) => {
+          if (error) {
+            settleReject(error);
+            return;
+          }
+
+          if (settled) {
+            client.end();
+            return;
+          }
+
+          settled = true;
+          resolve(wrapSftpClient(client, sftp));
+        });
+      })();
     });
 
     const connectOptions: ConnectConfig = {
@@ -263,13 +288,11 @@ async function createSsh2SftpClient(
 
 export function createSftpConnectionManager(dependencies: {
   nodeStore: NodeStore;
-  sftpStore: Pick<SftpStore, 'upsertHostKey'>;
+  sftpStore: Pick<SftpStore, 'getHostKey' | 'upsertHostKey'>;
   createClient?: CreateSftpClient;
 }) {
   const { nodeStore, sftpStore } = dependencies;
-  const createClient =
-    dependencies.createClient ??
-    ((node: StoredNodeWithSecrets) => createSsh2SftpClient(node, sftpStore));
+  const createClient = dependencies.createClient ?? createSsh2SftpClient;
   const activeConnections = new Map<string, SftpConnectionClient>();
   const pendingConnections = new Map<string, Promise<SftpConnectionClient>>();
 
@@ -279,7 +302,30 @@ export function createSftpConnectionManager(dependencies: {
       throw new Error('节点不存在。');
     }
 
-    return createClient(node);
+    const existingHostKey = await sftpStore.getHostKey(node.id);
+    let observedHostKey = false;
+
+    const onHostKey = async (observation: HostKeyObservation) => {
+      if (observedHostKey) {
+        return;
+      }
+      observedHostKey = true;
+
+      if (!existingHostKey) {
+        await sftpStore.upsertHostKey({
+          nodeId: node.id,
+          algorithm: observation.algorithm,
+          fingerprint: observation.fingerprint,
+        });
+        return;
+      }
+
+      if (existingHostKey.fingerprint !== observation.fingerprint) {
+        throw new Error(`SFTP host key mismatch for node "${node.id}". Connection rejected.`);
+      }
+    };
+
+    return createClient(node, { onHostKey });
   };
 
   return {

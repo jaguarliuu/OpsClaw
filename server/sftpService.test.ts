@@ -272,6 +272,9 @@ void test('sftpConnectionManager reuses connection by nodeId and exposes manager
       },
     },
     sftpStore: {
+      async getHostKey() {
+        return null;
+      },
       async upsertHostKey() {},
     },
     createClient,
@@ -295,4 +298,162 @@ void test('sftpConnectionManager reuses connection by nodeId and exposes manager
     'rmdir:node-a:/a/old-dir',
     'readDirectory:node-b:/b',
   ]);
+});
+
+void test('sftpConnectionManager persists first-seen host key fingerprint', async () => {
+  const upserts: Array<{ nodeId: string; algorithm: string; fingerprint: string }> = [];
+  const createClient: CreateSftpClient = async (_node, options) => {
+    await options.onHostKey({
+      algorithm: 'ssh-ed25519',
+      fingerprint: 'SHA256:first',
+    });
+    return createFakeConnection();
+  };
+
+  const manager = createSftpConnectionManager({
+    nodeStore: {
+      getNodeWithSecrets(nodeId) {
+        return {
+          id: nodeId,
+          name: nodeId,
+          groupId: null,
+          groupName: '默认',
+          jumpHostId: null,
+          host: '127.0.0.1',
+          port: 22,
+          username: 'root',
+          authMode: 'password',
+          note: '',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          password: 'secret',
+          privateKey: null,
+          passphrase: null,
+        };
+      },
+    },
+    sftpStore: {
+      async getHostKey() {
+        return null;
+      },
+      async upsertHostKey(input) {
+        upserts.push(input);
+      },
+    },
+    createClient,
+  });
+
+  await manager.getOrCreate('node-1');
+  assert.deepEqual(upserts, [
+    {
+      nodeId: 'node-1',
+      algorithm: 'ssh-ed25519',
+      fingerprint: 'SHA256:first',
+    },
+  ]);
+});
+
+void test('sftpConnectionManager allows matching stored fingerprint without rewriting record', async () => {
+  const upserts: Array<{ nodeId: string; algorithm: string; fingerprint: string }> = [];
+  const createClient: CreateSftpClient = async (_node, options) => {
+    await options.onHostKey({
+      algorithm: 'ssh-ed25519',
+      fingerprint: 'SHA256:stable',
+    });
+    return createFakeConnection();
+  };
+
+  const manager = createSftpConnectionManager({
+    nodeStore: {
+      getNodeWithSecrets(nodeId) {
+        return {
+          id: nodeId,
+          name: nodeId,
+          groupId: null,
+          groupName: '默认',
+          jumpHostId: null,
+          host: '127.0.0.1',
+          port: 22,
+          username: 'root',
+          authMode: 'password',
+          note: '',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          password: 'secret',
+          privateKey: null,
+          passphrase: null,
+        };
+      },
+    },
+    sftpStore: {
+      async getHostKey() {
+        return {
+          nodeId: 'node-1',
+          algorithm: 'ssh-ed25519',
+          fingerprint: 'SHA256:stable',
+          seenAt: '2026-01-01T00:00:00.000Z',
+        };
+      },
+      async upsertHostKey(input) {
+        upserts.push(input);
+      },
+    },
+    createClient,
+  });
+
+  await manager.getOrCreate('node-1');
+  assert.deepEqual(upserts, []);
+});
+
+void test('sftpConnectionManager rejects changed host key fingerprint', async () => {
+  const createClient: CreateSftpClient = async (_node, options) => {
+    await options.onHostKey({
+      algorithm: 'ssh-ed25519',
+      fingerprint: 'SHA256:changed',
+    });
+    return createFakeConnection();
+  };
+
+  const manager = createSftpConnectionManager({
+    nodeStore: {
+      getNodeWithSecrets(nodeId) {
+        return {
+          id: nodeId,
+          name: nodeId,
+          groupId: null,
+          groupName: '默认',
+          jumpHostId: null,
+          host: '127.0.0.1',
+          port: 22,
+          username: 'root',
+          authMode: 'password',
+          note: '',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          password: 'secret',
+          privateKey: null,
+          passphrase: null,
+        };
+      },
+    },
+    sftpStore: {
+      async getHostKey() {
+        return {
+          nodeId: 'node-1',
+          algorithm: 'ssh-ed25519',
+          fingerprint: 'SHA256:stable',
+          seenAt: '2026-01-01T00:00:00.000Z',
+        };
+      },
+      async upsertHostKey() {},
+    },
+    createClient,
+  });
+
+  await assert.rejects(
+    async () => {
+      await manager.getOrCreate('node-1');
+    },
+    /host key.*mismatch|host key.*changed/i
+  );
 });
