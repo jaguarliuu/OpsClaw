@@ -6,10 +6,12 @@ import {
   Folder,
   FolderPlus,
   RefreshCw,
+  Trash2,
   Upload,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { InteractionCard } from '@/features/workbench/InteractionCard';
 import { SftpRightDrawer } from '@/features/workbench/SftpRightDrawer';
 import {
   buildTransferQueueSummary,
@@ -137,6 +139,10 @@ export function SftpFileManagerView({
               <Upload className="mr-1 h-4 w-4" />
               上传
             </Button>
+            <Button onClick={model.handleDeleteIntent} size="sm" type="button" variant="ghost">
+              <Trash2 className="mr-1 h-4 w-4" />
+              删除
+            </Button>
             <Button
               onClick={() => void model.handleDownloadIntent()}
               size="sm"
@@ -155,6 +161,9 @@ export function SftpFileManagerView({
               <FolderPlus className="mr-1 h-4 w-4" />
               新建目录
             </Button>
+            <span className={cn('text-xs', SETTINGS_TEXT_TERTIARY_CLASS)}>
+              已选 {model.selectedPaths.length} 项，按 Ctrl/Cmd + 点击可多选。
+            </span>
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-1 text-sm text-neutral-400">
@@ -185,6 +194,37 @@ export function SftpFileManagerView({
         </div>
 
         <div className="grid gap-4 px-4 py-4">
+          {model.pendingApproval ? (
+            <div className={cn(SETTINGS_PANEL_CLASS, 'overflow-hidden')}>
+              <div className="flex items-center justify-between gap-3 border-b border-[var(--app-border-default)] px-4 py-3">
+                <div>
+                  <div className={cn('text-xs uppercase tracking-[0.2em]', SETTINGS_TEXT_TERTIARY_CLASS)}>
+                    Approval Required
+                  </div>
+                  <div className={cn('mt-1 text-sm font-medium', SETTINGS_TEXT_PRIMARY_CLASS)}>
+                    待确认的 SFTP 操作
+                  </div>
+                </div>
+                <Button onClick={() => model.dismissApproval()} size="sm" type="button" variant="ghost">
+                  稍后处理
+                </Button>
+              </div>
+              <div className="p-4">
+                <InteractionCard
+                  request={model.pendingApproval}
+                  onSubmit={(actionId, payload) => {
+                    if (actionId === 'approve') {
+                      model.confirmApproval(actionId, payload);
+                      return;
+                    }
+
+                    model.dismissApproval('reject');
+                  }}
+                />
+              </div>
+            </div>
+          ) : null}
+
           <div className="grid gap-3 md:grid-cols-4">
             <button
               type="button"
@@ -273,7 +313,11 @@ export function SftpFileManagerView({
                   <button
                     key={entry.path}
                     type="button"
-                    onClick={() => model.selectEntry(entry)}
+                    onClick={(event) =>
+                      model.selectEntry(entry, {
+                        additive: event.metaKey || event.ctrlKey,
+                      })
+                    }
                     onDoubleClick={() => model.openDirectory(entry)}
                     className={cn(
                       'grid w-full grid-cols-[minmax(0,1.8fr)_120px_140px_180px] gap-3 border-b border-[var(--app-border-default)]/70 px-4 py-3 text-left transition-colors',

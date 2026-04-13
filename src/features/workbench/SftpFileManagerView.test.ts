@@ -21,3 +21,18 @@ void test('sftp file manager only mounts right drawer while drawer is open', () 
 
   assert.match(source, /\{model\.drawerOpen \? \(\s*<SftpRightDrawer/);
 });
+
+void test('sftp file manager reuses InteractionCard for local approvals', () => {
+  const source = readSftpFileManagerViewSource();
+
+  assert.match(source, /import \{ InteractionCard \} from ['"]@\/features\/workbench\/InteractionCard['"]/);
+  assert.match(source, /\{model\.pendingApproval \? \(/);
+  assert.match(source, /<InteractionCard/);
+});
+
+void test('sftp file manager exposes a delete entry point', () => {
+  const source = readSftpFileManagerViewSource();
+
+  assert.match(source, /删除/);
+  assert.match(source, /model\.handleDeleteIntent/);
+});
