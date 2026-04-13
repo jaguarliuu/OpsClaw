@@ -7,7 +7,7 @@ import {
   normalizeSaveDialogResult,
 } from './nativeDialogs.js';
 
-test('normalizeOpenDialogResult preserves exact dialog paths and preserves cancellation', () => {
+test('normalizeOpenDialogResult strips empty entries while preserving exact non-empty paths', () => {
   assert.deepEqual(
     normalizeOpenDialogResult({
       canceled: false,
@@ -15,7 +15,7 @@ test('normalizeOpenDialogResult preserves exact dialog paths and preserves cance
     }),
     {
       canceled: false,
-      paths: ['/tmp/a.txt', '', '   ', '/tmp/with-trailing-space '],
+      paths: ['/tmp/a.txt', '   ', '/tmp/with-trailing-space '],
     }
   );
 

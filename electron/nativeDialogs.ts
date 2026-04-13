@@ -37,7 +37,7 @@ export function normalizeOpenDialogResult(input: {
 }): NativeOpenDialogResult {
   return {
     canceled: input.canceled,
-    paths: input.canceled ? [] : input.filePaths,
+    paths: input.canceled ? [] : input.filePaths.filter((path) => path !== ''),
   };
 }
 
