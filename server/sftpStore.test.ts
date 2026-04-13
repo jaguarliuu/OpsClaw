@@ -280,3 +280,121 @@ void test('database migration fails fast when legacy transfer task rows contain 
     /Invalid sftp_transfer_tasks status value/
   );
 });
+
+void test('database initialization can recover after migration failure once db file is replaced', async () => {
+  const { seedSqliteDatabaseFileForTests, getSqliteDatabase } = await import('./database.js');
+
+  await seedSqliteDatabaseFileForTests((database) => {
+    database.run(`
+      CREATE TABLE groups (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    database.run(`
+      CREATE TABLE nodes (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        group_name TEXT NOT NULL DEFAULT '默认',
+        group_id TEXT REFERENCES groups(id),
+        host TEXT NOT NULL,
+        port INTEGER NOT NULL DEFAULT 22,
+        username TEXT NOT NULL,
+        auth_mode TEXT NOT NULL,
+        password TEXT,
+        private_key TEXT,
+        passphrase TEXT,
+        password_encrypted TEXT,
+        private_key_encrypted TEXT,
+        passphrase_encrypted TEXT,
+        note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    database.run(`
+      INSERT INTO nodes (
+        id, name, group_name, host, port, username, auth_mode, note, created_at, updated_at
+      ) VALUES (
+        'node-recovery', 'node-recovery', '默认', '127.0.0.1', 22, 'root', 'password', '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
+      );
+    `);
+    database.run(`
+      CREATE TABLE sftp_transfer_tasks (
+        task_id TEXT PRIMARY KEY,
+        node_id TEXT NOT NULL,
+        direction TEXT NOT NULL,
+        local_path TEXT NOT NULL,
+        remote_path TEXT NOT NULL,
+        temp_local_path TEXT,
+        temp_remote_path TEXT,
+        total_bytes INTEGER,
+        transferred_bytes INTEGER NOT NULL,
+        last_confirmed_offset INTEGER NOT NULL,
+        chunk_size INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        retry_count INTEGER NOT NULL,
+        error_message TEXT,
+        checksum_status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    database.run(`
+      INSERT INTO sftp_transfer_tasks (
+        task_id, node_id, direction, local_path, remote_path, temp_local_path, temp_remote_path,
+        total_bytes, transferred_bytes, last_confirmed_offset, chunk_size, status, retry_count,
+        error_message, checksum_status, created_at, updated_at
+      ) VALUES (
+        'broken-task', 'node-recovery', 'upload', '/tmp/a.txt', '/root/a.txt', NULL, '/root/.tmp',
+        1024, 512, 512, 262144, 'invalid_status', 0,
+        NULL, 'pending', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
+      );
+    `);
+  });
+
+  await assert.rejects(
+    async () => {
+      await getSqliteDatabase();
+    },
+    /Invalid sftp_transfer_tasks status value/
+  );
+
+  await seedSqliteDatabaseFileForTests((database) => {
+    database.run(`
+      CREATE TABLE groups (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    database.run(`
+      CREATE TABLE nodes (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        group_name TEXT NOT NULL DEFAULT '默认',
+        group_id TEXT REFERENCES groups(id),
+        host TEXT NOT NULL,
+        port INTEGER NOT NULL DEFAULT 22,
+        username TEXT NOT NULL,
+        auth_mode TEXT NOT NULL,
+        password TEXT,
+        private_key TEXT,
+        passphrase TEXT,
+        password_encrypted TEXT,
+        private_key_encrypted TEXT,
+        passphrase_encrypted TEXT,
+        note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+  });
+
+  const sqlite = await getSqliteDatabase();
+  const rows = sqlite.database.exec(`SELECT COUNT(*) AS count FROM nodes;`)[0]?.values ?? [];
+  assert.equal(rows[0]?.[0], 0);
+});

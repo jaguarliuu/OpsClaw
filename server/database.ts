@@ -977,7 +977,14 @@ async function createDatabase(): Promise<SqliteDatabase> {
 
 export function getSqliteDatabase() {
   if (!databasePromise) {
-    databasePromise = createDatabase();
+    const initializingPromise = createDatabase();
+    const recoverablePromise = initializingPromise.catch((error) => {
+      if (databasePromise === recoverablePromise) {
+        databasePromise = null;
+      }
+      throw error;
+    });
+    databasePromise = recoverablePromise;
   }
 
   return databasePromise;
@@ -988,9 +995,15 @@ export async function resetSqliteDatabaseForTests() {
     return;
   }
 
-  const sqlite = await databasePromise;
-  await sqlite.close();
+  const currentPromise = databasePromise;
   databasePromise = null;
+
+  try {
+    const sqlite = await currentPromise;
+    await sqlite.close();
+  } catch {
+    // Initialization can fail during migration checks; reset should still clear cache.
+  }
 }
 
 export async function removeSqliteDatabaseFileForTests() {
