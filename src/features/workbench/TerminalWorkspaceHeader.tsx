@@ -31,6 +31,7 @@ type TerminalWorkspaceHeaderProps = {
   onOpenHelpDialog: () => void;
   onOpenPendingGates: () => void;
   onOpenNewConnection: () => void;
+  onOpenSftp: (nodeId: string) => void;
   onSelectSession: (sessionId: string) => void;
   onToggleSidebar: () => void;
 };
@@ -93,6 +94,7 @@ export function TerminalWorkspaceHeader({
   onOpenHelpDialog,
   onOpenPendingGates,
   onOpenNewConnection,
+  onOpenSftp,
   onSelectSession,
   onToggleSidebar,
 }: TerminalWorkspaceHeaderProps) {
@@ -243,6 +245,17 @@ export function TerminalWorkspaceHeader({
 
       <div className="flex items-center justify-end border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] px-4 text-sm text-neutral-500">
         <div className="flex items-center gap-2">
+          {activeSession?.nodeId ? (
+            <Button
+              className="h-7 px-2 text-xs text-neutral-300"
+              onClick={() => onOpenSftp(activeSession.nodeId!)}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              SFTP
+            </Button>
+          ) : null}
           {activeSession ? (
             <>
               <span className="rounded-full border border-[var(--app-border-default)] bg-neutral-900 px-2.5 py-1 text-xs">

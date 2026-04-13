@@ -37,6 +37,7 @@ type TerminalWorkspaceProps = {
   sidebarCollapsed: boolean;
   onCloseSession: (sessionId: string) => void;
   onOpenNodeDashboard: (nodeId: string) => void;
+  onOpenSftp: (nodeId: string) => void;
   onOpenNewConnection: () => void;
   onOpenPendingGates: () => void;
   onToggleSidebar: () => void;
@@ -56,6 +57,7 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
   sidebarCollapsed,
   onCloseSession,
   onOpenNodeDashboard,
+  onOpenSftp,
   onOpenNewConnection,
   onOpenPendingGates,
   onToggleSidebar,
@@ -217,6 +219,7 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
         onOpenHelpDialog={onOpenHelpDialog}
         onOpenPendingGates={onOpenPendingGates}
         onOpenNewConnection={onOpenNewConnection}
+        onOpenSftp={onOpenSftp}
         onSelectSession={onSelectSession}
         onToggleSidebar={onToggleSidebar}
       />

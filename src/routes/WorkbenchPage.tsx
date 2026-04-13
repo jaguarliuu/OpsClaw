@@ -35,6 +35,7 @@ import { useAgentRun } from '@/features/workbench/useAgentRun';
 import { useWorkbenchShellState } from '@/features/workbench/useWorkbenchShellState';
 import { useWorkbenchSessions } from '@/features/workbench/useWorkbenchSessions';
 import { useWorkbenchWorkspaceData } from '@/features/workbench/useWorkbenchWorkspaceData';
+import { useWorkbenchPrimaryView } from '@/features/workbench/useWorkbenchPrimaryView';
 import { TerminalWorkspace, type TerminalWorkspaceHandle } from '@/features/workbench/TerminalWorkspace';
 
 import { SessionTree } from '@/features/workbench/SessionTree';
@@ -177,6 +178,10 @@ export function WorkbenchPage() {
   const shouldRenderMoveDialog = useDeferredMount(moveDialogProfile !== null);
   const nodeStatusDashboard = useNodeStatusDashboard();
   const shouldRenderNodeStatusDashboard = useDeferredMount(nodeStatusDashboard.open);
+  const primaryView = useWorkbenchPrimaryView({
+    activeSessionId,
+    sessions,
+  });
 
   const openNodeDashboardForNodeId = (nodeId: string | null | undefined) => {
     if (!nodeId) {
@@ -194,6 +199,17 @@ export function WorkbenchPage() {
     openNodeDashboardForNodeId(
       sessions.find((session) => session.id === activeSessionId)?.nodeId
     );
+  };
+
+  const openSftpForNodeId = (
+    nodeId: string | null | undefined,
+    sessionId?: string | null
+  ) => {
+    if (!nodeId) {
+      return;
+    }
+
+    primaryView.openSftp(nodeId, sessionId);
   };
 
   const handleSelectProfile = (profile: SavedConnectionProfile) => {
@@ -267,6 +283,7 @@ export function WorkbenchPage() {
         onDeleteProfile={handleDeleteProfile}
         onEditProfile={handleEditProfile}
         onOpenNodeDashboard={openNodeDashboardForProfile}
+        onOpenSftp={(profile) => openSftpForNodeId(profile.id)}
         onMoveProfileToGroup={handleMoveProfileToGroup}
         onOpenNewConnection={openNewConnection}
         onOpenCsvImport={openCsvImport}
@@ -284,24 +301,52 @@ export function WorkbenchPage() {
         sessions={sessions}
       />
 
-      <TerminalWorkspace
-        ref={terminalWorkspaceRef}
-        activeSessionId={activeSessionId}
-        agentSessionLock={agentSessionLock}
-        isMacShortcutPlatform={typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)}
-        pendingInteractionCount={agentRun.pendingInteractions.length}
-        onCloseSession={handleCloseSession}
-        onOpenNodeDashboard={openNodeDashboardForNodeId}
-        onOpenPendingGates={() => setIsPendingGatePanelOpen(true)}
-        onOpenNewConnection={openNewConnection}
-        onSelectSession={setActiveSessionId}
-        onSessionStatusChange={handleSessionStatusChange}
-        onToggleSidebar={() => setIsSidebarCollapsed((current) => !current)}
-        onOpenAiAssistant={handleOpenAiAssistant}
-        onOpenHelpDialog={openHelpDialog}
-        sidebarCollapsed={isSidebarCollapsed}
-        sessions={sessions}
-      />
+      {primaryView.state.mode === 'terminal' ? (
+        <TerminalWorkspace
+          ref={terminalWorkspaceRef}
+          activeSessionId={activeSessionId}
+          agentSessionLock={agentSessionLock}
+          isMacShortcutPlatform={typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)}
+          pendingInteractionCount={agentRun.pendingInteractions.length}
+          onCloseSession={handleCloseSession}
+          onOpenNodeDashboard={openNodeDashboardForNodeId}
+          onOpenPendingGates={() => setIsPendingGatePanelOpen(true)}
+          onOpenNewConnection={openNewConnection}
+          onOpenSftp={(nodeId) => openSftpForNodeId(nodeId, activeSessionId)}
+          onSelectSession={setActiveSessionId}
+          onSessionStatusChange={handleSessionStatusChange}
+          onToggleSidebar={() => setIsSidebarCollapsed((current) => !current)}
+          onOpenAiAssistant={handleOpenAiAssistant}
+          onOpenHelpDialog={openHelpDialog}
+          sidebarCollapsed={isSidebarCollapsed}
+          sessions={sessions}
+        />
+      ) : (
+        <section className="flex min-h-screen min-w-0 flex-1 flex-col bg-[var(--app-bg-elevated)]">
+          <div className="border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] px-5 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-[var(--app-text-primary)]">SFTP</div>
+                <div className="truncate text-sm text-[var(--app-text-secondary)]">
+                  {savedProfiles.find((profile) => profile.id === primaryView.state.nodeId)?.name
+                    ?? primaryView.state.nodeId
+                    ?? '未选择节点'}
+                </div>
+              </div>
+              <button
+                className="rounded-md border border-[var(--app-border-default)] px-3 py-1.5 text-sm text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-bg-elevated3)]"
+                onClick={primaryView.closeSftp}
+                type="button"
+              >
+                返回终端
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-1 items-center justify-center px-6 text-sm text-[var(--app-text-secondary)]">
+            SFTP 主视图状态已接入，完整文件管理 UI 将在 Task 6 实现。
+          </div>
+        </section>
+      )}
 
       {shouldRenderPendingGatePanel ? (
         <PendingInteractionPanel
