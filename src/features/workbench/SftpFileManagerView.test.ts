@@ -36,3 +36,10 @@ void test('sftp file manager exposes a delete entry point', () => {
   assert.match(source, /删除/);
   assert.match(source, /model\.handleDeleteIntent/);
 });
+
+void test('sftp file manager renders row selected state from selectedPaths', () => {
+  const source = readSftpFileManagerViewSource();
+
+  assert.match(source, /const isSelected = model\.selectedPaths\.includes\(entry\.path\);/);
+  assert.doesNotMatch(source, /const isSelected = model\.selectedEntry\?\.path === entry\.path;/);
+});

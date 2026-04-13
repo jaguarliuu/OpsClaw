@@ -308,7 +308,7 @@ export function SftpFileManagerView({
 
             <div className="max-h-[calc(100vh-320px)] overflow-y-auto">
               {model.directory?.items.map((entry) => {
-                const isSelected = model.selectedEntry?.path === entry.path;
+                const isSelected = model.selectedPaths.includes(entry.path);
                 return (
                   <button
                     key={entry.path}

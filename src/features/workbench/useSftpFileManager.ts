@@ -48,6 +48,28 @@ function getLocalFileName(filePath: string) {
   return filePath.split(/[/\\]/).filter(Boolean).pop() ?? filePath;
 }
 
+function readBatchDeleteRemotePaths(approval: InteractionRequest): string[] {
+  if (approval.metadata.kind !== 'batch_delete' || !Array.isArray(approval.metadata.remotePaths)) {
+    return [];
+  }
+
+  return approval.metadata.remotePaths.filter((path): path is string => typeof path === 'string');
+}
+
+function arePathListsEqual(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function buildApprovalNotice(
   approval: InteractionRequest,
   action: 'approve' | 'reject' | 'dismiss'
@@ -121,6 +143,48 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
 
   const directoryRequestIdRef = useRef(0);
   const tasksRequestIdRef = useRef(0);
+  const selectedPathsRef = useRef<string[]>([]);
+  const pendingApprovalRef = useRef<InteractionRequest | null>(null);
+
+  useEffect(() => {
+    selectedPathsRef.current = selectedPaths;
+  }, [selectedPaths]);
+
+  useEffect(() => {
+    pendingApprovalRef.current = pendingApproval;
+  }, [pendingApproval]);
+
+  useEffect(() => {
+    if (!nodeId || pendingApproval?.metadata.kind !== 'batch_delete') {
+      return;
+    }
+
+    const visiblePathSet = new Set((directory?.items ?? []).map((item) => item.path));
+    const selectedPathSet = new Set(
+      selectedPaths.filter((selectedPath) => visiblePathSet.has(selectedPath))
+    );
+    const currentApprovalPaths = readBatchDeleteRemotePaths(pendingApproval);
+    const nextApprovalPaths = currentApprovalPaths.filter((path) => selectedPathSet.has(path));
+
+    if (arePathListsEqual(currentApprovalPaths, nextApprovalPaths)) {
+      return;
+    }
+
+    if (nextApprovalPaths.length === 0) {
+      setPendingApproval(null);
+      setNotice('待确认的批量删除条目已失效，请重新选择。');
+      return;
+    }
+
+    setPendingApproval(
+      buildSftpApprovalRequest({
+        kind: 'batch_delete',
+        nodeId,
+        remotePaths: nextApprovalPaths,
+      })
+    );
+    setNotice('部分待确认条目已失效，审批范围已更新为当前可见选中项。');
+  }, [directory?.items, nodeId, pendingApproval, selectedPaths]);
 
   useEffect(() => {
     if (!open) {
@@ -155,11 +219,47 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
         return;
       }
 
+      const nextItemPathSet = new Set(payload.items.map((item) => item.path));
+      const sortedItems = sortSftpEntries(payload.items);
+
       setDirectory({
         ...payload,
         path: normalizeSftpPath(payload.path),
-        items: sortSftpEntries(payload.items),
+        items: sortedItems,
       });
+
+      const currentSelectedPaths = selectedPathsRef.current;
+      const nextSelectedPaths = currentSelectedPaths.filter((selectedPath) =>
+        nextItemPathSet.has(selectedPath)
+      );
+      if (!arePathListsEqual(currentSelectedPaths, nextSelectedPaths)) {
+        setSelectedPaths(nextSelectedPaths);
+      }
+
+      const currentPendingApproval = pendingApprovalRef.current;
+      if (currentPendingApproval?.metadata.kind === 'batch_delete') {
+        const selectedPathSet = new Set(nextSelectedPaths);
+        const currentApprovalPaths = readBatchDeleteRemotePaths(currentPendingApproval);
+        const nextApprovalPaths = currentApprovalPaths.filter(
+          (approvalPath) => nextItemPathSet.has(approvalPath) && selectedPathSet.has(approvalPath)
+        );
+
+        if (!arePathListsEqual(currentApprovalPaths, nextApprovalPaths)) {
+          if (nextApprovalPaths.length === 0) {
+            setPendingApproval(null);
+            setNotice('待确认的批量删除条目已失效，请重新选择。');
+          } else {
+            setPendingApproval(
+              buildSftpApprovalRequest({
+                kind: 'batch_delete',
+                nodeId,
+                remotePaths: nextApprovalPaths,
+              })
+            );
+            setNotice('部分待确认条目已失效，审批范围已更新为当前可见选中项。');
+          }
+        }
+      }
     } catch (error) {
       if (directoryRequestIdRef.current !== requestId) {
         return;
@@ -270,7 +370,6 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
     setDrawerOpen(false);
     setDirectory(null);
     setNotice(null);
-    setPendingApproval(null);
   }, []);
 
   const openPath = useCallback((nextPath: string) => {
@@ -278,7 +377,6 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
     setSelectedPaths([]);
     setDrawerOpen(false);
     setDirectory(null);
-    setPendingApproval(null);
   }, []);
 
   const openParentDirectory = useCallback(() => {
@@ -332,7 +430,6 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
     try {
       const result = await pickUploadFiles();
       if (result.canceled || result.paths.length === 0) {
-        setPendingApproval(null);
         setNotice('已取消上传。');
         return;
       }
@@ -361,7 +458,6 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
       }
 
       setNotice(`已选择 ${result.paths.length} 个本地文件，传输入口将在下一步接入。`);
-      setPendingApproval(null);
       setDrawerOpen(true);
       setDrawerTab('tasks');
     } catch (error) {
@@ -399,15 +495,19 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
       return;
     }
 
-    if (selectedPaths.length === 0) {
-      setPendingApproval(null);
+    const visiblePathSet = new Set((directory?.items ?? []).map((item) => item.path));
+    const visibleSelectedPaths = selectedPaths.filter((selectedPath) =>
+      visiblePathSet.has(selectedPath)
+    );
+
+    if (visibleSelectedPaths.length === 0) {
       setNotice('先选择要删除的远端条目。');
       return;
     }
 
     const risk = classifySftpActionRisk({
       action: 'delete',
-      selectionCount: selectedPaths.length,
+      selectionCount: visibleSelectedPaths.length,
       overwriting: false,
     });
 
@@ -416,7 +516,7 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
         buildSftpApprovalRequest({
           kind: 'batch_delete',
           nodeId,
-          remotePaths: selectedPaths,
+          remotePaths: visibleSelectedPaths,
         })
       );
       setNotice('批量删除需要先确认，确认前不会执行远端删除。');
@@ -424,10 +524,9 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
     }
 
     setNotice(
-      `已请求删除 ${selectedPaths[0]}。当前版本尚未接入删除 API，未执行远端删除。`
+      `已请求删除 ${visibleSelectedPaths[0]}。当前版本尚未接入删除 API，未执行远端删除。`
     );
-    setPendingApproval(null);
-  }, [nodeId, selectedPaths]);
+  }, [directory?.items, nodeId, selectedPaths]);
 
   return {
     confirmApproval,
