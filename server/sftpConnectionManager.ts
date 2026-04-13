@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { Client, type ConnectConfig, type SFTPWrapper } from 'ssh2';
+import ssh2, { Client, type ConnectConfig, type SFTPWrapper } from 'ssh2';
 
 import type { SftpStore } from './http/support.js';
 import type { StoredNodeWithSecrets } from './nodeStore.js';
@@ -61,6 +61,27 @@ export type CreateSftpClient = (
   options: SftpClientCreationOptions
 ) => Promise<SftpConnectionClient>;
 
+type HostVerifierCallback = (verified: boolean) => void;
+
+type Ssh2ClientLike = {
+  on: (event: string, handler: (...args: unknown[]) => void) => Ssh2ClientLike;
+  sftp: (callback: (error: Error | null, sftp: SFTPWrapper) => void) => void;
+  connect: (options: ConnectConfig) => void;
+  end: () => void;
+};
+
+type ParseKeyFn = (key: Buffer) => unknown;
+
+type Ssh2RuntimeDependencies = {
+  createClient: () => Ssh2ClientLike;
+  parseKey: ParseKeyFn;
+};
+
+const defaultSsh2RuntimeDependencies: Ssh2RuntimeDependencies = {
+  createClient: () => new Client() as unknown as Ssh2ClientLike,
+  parseKey: (key) => ssh2.utils.parseKey(key),
+};
+
 function readNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
@@ -93,6 +114,30 @@ function mapStats(stats: unknown): SftpFileMetadata {
 
 function toFingerprint(hostKey: Buffer) {
   return `SHA256:${createHash('sha256').update(hostKey).digest('base64').replace(/=+$/, '')}`;
+}
+
+function readParsedKeyType(parsedKey: unknown): string | null {
+  if (!parsedKey || typeof parsedKey !== 'object') {
+    return null;
+  }
+
+  const value = parsedKey as { type?: unknown };
+  return typeof value.type === 'string' && value.type.trim().length > 0 ? value.type : null;
+}
+
+function parseHostKeyAlgorithm(parseKey: ParseKeyFn, hostKey: Buffer) {
+  const parsed = parseKey(hostKey);
+  if (Array.isArray(parsed)) {
+    for (const entry of parsed) {
+      const keyType = readParsedKeyType(entry);
+      if (keyType) {
+        return keyType;
+      }
+    }
+    return 'unknown';
+  }
+
+  return readParsedKeyType(parsed) ?? 'unknown';
 }
 
 function wrapSftpClient(client: Client, sftp: SFTPWrapper): SftpConnectionClient {
@@ -196,12 +241,13 @@ function wrapSftpClient(client: Client, sftp: SFTPWrapper): SftpConnectionClient
 
 async function createSsh2SftpClient(
   node: StoredNodeWithSecrets,
-  options: SftpClientCreationOptions
+  options: SftpClientCreationOptions,
+  ssh2Runtime: Ssh2RuntimeDependencies
 ) {
   return new Promise<SftpConnectionClient>((resolve, reject) => {
-    const client = new Client();
+    const client = ssh2Runtime.createClient();
     let settled = false;
-    let hostKeyVerificationPromise: Promise<void> | null = null;
+    let hostVerificationError: Error | null = null;
 
     const settleReject = (error: Error) => {
       if (settled) {
@@ -214,50 +260,27 @@ async function createSsh2SftpClient(
     };
 
     client.on('error', (error) => {
-      settleReject(error);
-    });
-
-    client.on('hostkeys', (hostKeys) => {
-      const key = hostKeys[0];
-      if (!Buffer.isBuffer(key)) {
-        return;
-      }
-
-      hostKeyVerificationPromise = options.onHostKey({
-        algorithm: 'sha256',
-        fingerprint: toFingerprint(key),
-      });
+      const normalizedError =
+        hostVerificationError ??
+        (error instanceof Error ? error : new Error(String(error)));
+      settleReject(normalizedError);
     });
 
     client.on('ready', () => {
-      void (async () => {
-        if (!hostKeyVerificationPromise) {
-          settleReject(new Error(`SFTP host key was not provided for node "${node.id}".`));
+      client.sftp((error, sftp) => {
+        if (error) {
+          settleReject(error);
           return;
         }
 
-        try {
-          await hostKeyVerificationPromise;
-        } catch (error) {
-          settleReject(error instanceof Error ? error : new Error(String(error)));
+        if (settled) {
+          client.end();
           return;
         }
 
-        client.sftp((error, sftp) => {
-          if (error) {
-            settleReject(error);
-            return;
-          }
-
-          if (settled) {
-            client.end();
-            return;
-          }
-
-          settled = true;
-          resolve(wrapSftpClient(client, sftp));
-        });
-      })();
+        settled = true;
+        resolve(wrapSftpClient(client as Client, sftp));
+      });
     });
 
     const connectOptions: ConnectConfig = {
@@ -278,6 +301,21 @@ async function createSsh2SftpClient(
       connectOptions.privateKey = node.privateKey;
       connectOptions.passphrase = node.passphrase ?? undefined;
     }
+    connectOptions.hostVerifier = (key: Buffer | string, callback?: HostVerifierCallback) => {
+      const hostKey = Buffer.isBuffer(key) ? key : Buffer.from(key, 'hex');
+      const algorithm = parseHostKeyAlgorithm(ssh2Runtime.parseKey, hostKey);
+      const fingerprint = toFingerprint(hostKey);
+
+      void options
+        .onHostKey({ algorithm, fingerprint })
+        .then(() => {
+          callback?.(true);
+        })
+        .catch((error) => {
+          hostVerificationError = error instanceof Error ? error : new Error(String(error));
+          callback?.(false);
+        });
+    };
 
     try {
       client.connect(connectOptions);
@@ -291,9 +329,17 @@ export function createSftpConnectionManager(dependencies: {
   nodeStore: NodeStore;
   sftpStore: Pick<SftpStore, 'getHostKey' | 'upsertHostKey'>;
   createClient?: CreateSftpClient;
+  ssh2?: Partial<Ssh2RuntimeDependencies>;
 }) {
   const { nodeStore, sftpStore } = dependencies;
-  const createClient = dependencies.createClient ?? createSsh2SftpClient;
+  const ssh2Runtime: Ssh2RuntimeDependencies = {
+    ...defaultSsh2RuntimeDependencies,
+    ...dependencies.ssh2,
+  };
+  const createClient =
+    dependencies.createClient ??
+    ((node: StoredNodeWithSecrets, options: SftpClientCreationOptions) =>
+      createSsh2SftpClient(node, options, ssh2Runtime));
   const activeConnections = new Map<string, SftpConnectionClient>();
   const pendingConnections = new Map<string, Promise<SftpConnectionClient>>();
 

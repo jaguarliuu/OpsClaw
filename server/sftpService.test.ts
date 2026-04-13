@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import {
@@ -56,6 +57,60 @@ function createFakeConnection(): SftpConnectionClient & {
       operations.push('end');
     },
   };
+}
+
+type ConnectPayload = {
+  hostVerifier?: ((key: Buffer, callback?: (verified: boolean) => void) => boolean | void) | undefined;
+};
+
+class FakeSsh2ClientForHostVerifier {
+  readonly handlers = new Map<string, Array<(value?: unknown) => void>>();
+  readonly sftpConnection = createFakeConnection();
+  readonly connectCalls: ConnectPayload[] = [];
+  hostKey: Buffer = Buffer.from('host-key-default');
+
+  on(event: string, handler: (value?: unknown) => void) {
+    const list = this.handlers.get(event) ?? [];
+    list.push(handler);
+    this.handlers.set(event, list);
+    return this;
+  }
+
+  connect(options: ConnectPayload) {
+    this.connectCalls.push(options);
+    const verifier = options.hostVerifier;
+    if (!verifier) {
+      this.emit('error', new Error('missing hostVerifier'));
+      return;
+    }
+
+    const verdict = verifier(this.hostKey, (verified) => {
+      if (!verified) {
+        this.emit('error', new Error('Host rejected'));
+        return;
+      }
+
+      this.emit('ready');
+    });
+    if (verdict === false) {
+      this.emit('error', new Error('Host rejected'));
+    }
+  }
+
+  sftp(callback: (error: Error | null, sftp: SftpConnectionClient) => void) {
+    callback(null, this.sftpConnection);
+  }
+
+  end() {
+    this.sftpConnection.end();
+  }
+
+  private emit(event: string, value?: unknown) {
+    const list = this.handlers.get(event) ?? [];
+    for (const handler of list) {
+      handler(value);
+    }
+  }
 }
 
 void test('sftpService listDirectory normalizes entry type, permissions and metadata', async () => {
@@ -461,5 +516,121 @@ void test('sftpConnectionManager rejects changed host key fingerprint', async ()
       await manager.getOrCreate('node-1');
     },
     /host key.*mismatch|host key.*changed/i
+  );
+});
+
+void test('sftpConnectionManager default ssh2 path verifies via hostVerifier and persists first-seen parsed algorithm', async () => {
+  const upserts: Array<{ nodeId: string; algorithm: string; fingerprint: string }> = [];
+  const fakeClient = new FakeSsh2ClientForHostVerifier();
+  const parseKeyCalls: Buffer[] = [];
+
+  const manager = createSftpConnectionManager({
+    nodeStore: {
+      getNodeWithSecrets(nodeId) {
+        return {
+          id: nodeId,
+          name: nodeId,
+          groupId: null,
+          groupName: '默认',
+          jumpHostId: null,
+          host: '127.0.0.1',
+          port: 22,
+          username: 'root',
+          authMode: 'password',
+          note: '',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          password: 'secret',
+          privateKey: null,
+          passphrase: null,
+        };
+      },
+    },
+    sftpStore: {
+      async getHostKey() {
+        return null;
+      },
+      async upsertHostKey(input) {
+        upserts.push(input);
+      },
+    },
+    ssh2: {
+      createClient() {
+        return fakeClient as never;
+      },
+      parseKey(input) {
+        parseKeyCalls.push(input);
+        return { type: 'ssh-ed25519' } as never;
+      },
+    },
+  });
+
+  await manager.getOrCreate('node-default-1');
+
+  const expectedFingerprint = `SHA256:${createHash('sha256').update(fakeClient.hostKey).digest('base64').replace(/=+$/, '')}`;
+  assert.equal(fakeClient.connectCalls.length, 1);
+  assert.equal(typeof fakeClient.connectCalls[0]?.hostVerifier, 'function');
+  assert.deepEqual(parseKeyCalls, [fakeClient.hostKey]);
+  assert.deepEqual(upserts, [
+    {
+      nodeId: 'node-default-1',
+      algorithm: 'ssh-ed25519',
+      fingerprint: expectedFingerprint,
+    },
+  ]);
+});
+
+void test('sftpConnectionManager default ssh2 path rejects changed fingerprint at hostVerifier time', async () => {
+  const fakeClient = new FakeSsh2ClientForHostVerifier();
+  const expectedFingerprint = `SHA256:${createHash('sha256').update(fakeClient.hostKey).digest('base64').replace(/=+$/, '')}`;
+
+  const manager = createSftpConnectionManager({
+    nodeStore: {
+      getNodeWithSecrets(nodeId) {
+        return {
+          id: nodeId,
+          name: nodeId,
+          groupId: null,
+          groupName: '默认',
+          jumpHostId: null,
+          host: '127.0.0.1',
+          port: 22,
+          username: 'root',
+          authMode: 'password',
+          note: '',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          password: 'secret',
+          privateKey: null,
+          passphrase: null,
+        };
+      },
+    },
+    sftpStore: {
+      async getHostKey() {
+        return {
+          nodeId: 'node-default-2',
+          algorithm: 'ssh-ed25519',
+          fingerprint: `${expectedFingerprint}-different`,
+          seenAt: '2026-01-01T00:00:00.000Z',
+        };
+      },
+      async upsertHostKey() {},
+    },
+    ssh2: {
+      createClient() {
+        return fakeClient as never;
+      },
+      parseKey() {
+        return { type: 'ssh-ed25519' } as never;
+      },
+    },
+  });
+
+  await assert.rejects(
+    async () => {
+      await manager.getOrCreate('node-default-2');
+    },
+    /host key.*mismatch/i
   );
 });
