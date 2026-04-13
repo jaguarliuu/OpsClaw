@@ -86,6 +86,10 @@ export function SftpRightDrawer({
   tasksError: string | null;
   tasksLoading: boolean;
 }) {
+  if (!open) {
+    return null;
+  }
+
   const previewable = selectedEntry ? isSftpEntryPreviewable(selectedEntry) : false;
 
   return (
@@ -111,8 +115,7 @@ export function SftpRightDrawer({
         {TAB_CONFIG.map((item) => {
           const Icon = item.icon;
           const disabled =
-            !open
-            || ((!selectedEntry && item.id !== 'tasks') || (item.id === 'preview' && !previewable));
+            (!selectedEntry && item.id !== 'tasks') || (item.id === 'preview' && !previewable);
 
           return (
             <button
@@ -136,11 +139,7 @@ export function SftpRightDrawer({
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        {!open && tab !== 'tasks' ? (
-          <EmptyDrawerState text="从目录列表选择文件或目录后，在这里查看预览和元数据。" />
-        ) : null}
-
-        {open && tab === 'preview' ? (
+        {tab === 'preview' ? (
           previewable && selectedEntry ? (
             <div className="space-y-3">
               <div className={cn(SETTINGS_SUBPANEL_CLASS, 'px-4 py-4')}>
@@ -160,7 +159,7 @@ export function SftpRightDrawer({
           )
         ) : null}
 
-        {open && tab === 'metadata' && selectedEntry ? (
+        {tab === 'metadata' && selectedEntry ? (
           <div className="space-y-3">
             {[
               ['路径', selectedEntry.path],
@@ -181,7 +180,7 @@ export function SftpRightDrawer({
           </div>
         ) : null}
 
-        {open && tab === 'permissions' && selectedEntry ? (
+        {tab === 'permissions' && selectedEntry ? (
           <div className="space-y-3">
             <div className={cn(SETTINGS_SUBPANEL_CLASS, 'px-4 py-4')}>
               <div className={cn('text-sm font-medium', SETTINGS_TEXT_PRIMARY_CLASS)}>

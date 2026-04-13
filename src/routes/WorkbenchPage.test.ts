@@ -18,14 +18,23 @@ void test('hides terminal workspace without collapsing layout when sftp is activ
   const source = readWorkbenchSource();
 
   assert.doesNotMatch(source, /display:\s*'none'/);
-  assert.match(source, /visibility:\s*'hidden'/);
-  assert.match(source, /pointerEvents:\s*'none'/);
+  assert.match(source, /visibility:\s*isTerminalWorkspaceVisible \? 'visible' : 'hidden'/);
+  assert.match(source, /pointer-events-none/);
   assert.match(source, /<TerminalWorkspace[\s\S]*visible=\{isTerminalWorkspaceVisible\}/);
+});
+
+void test('blurs active terminal focus when terminal workspace is hidden for sftp', () => {
+  const source = readWorkbenchSource();
+
+  assert.match(source, /isTerminalWorkspaceVisible \|\| typeof document === 'undefined'/);
+  assert.match(source, /const activeElement = document\.activeElement/);
+  assert.match(source, /container\.contains\(activeElement\)/);
+  assert.match(source, /activeElement\.blur\(\)/);
 });
 
 void test('restores active terminal session from primary view state when closing sftp', () => {
   const source = readWorkbenchSource();
 
   assert.match(source, /setActiveSessionId\(primaryView\.state\.sessionId\)/);
-  assert.match(source, /onClick=\{handleCloseSftp\}/);
+  assert.match(source, /onClose=\{handleCloseSftp\}/);
 });

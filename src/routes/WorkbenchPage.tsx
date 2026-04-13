@@ -55,6 +55,7 @@ export function WorkbenchPage() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isPendingGatePanelOpen, setIsPendingGatePanelOpen] = useState(false);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  const runtimeCarrierRef = useRef<HTMLDivElement | null>(null);
   const terminalWorkspaceRef = useRef<TerminalWorkspaceHandle | null>(null);
   const {
     closeAiAssistant,
@@ -254,6 +255,22 @@ export function WorkbenchPage() {
     ? sessions.find((session) => session.id === activeSessionId) ?? null
     : null;
 
+  useEffect(() => {
+    if (isTerminalWorkspaceVisible || typeof document === 'undefined') {
+      return;
+    }
+
+    const container = runtimeCarrierRef.current;
+    if (!container) {
+      return;
+    }
+
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement && container.contains(activeElement)) {
+      activeElement.blur();
+    }
+  }, [isTerminalWorkspaceVisible]);
+
   terminalWorkspaceRef.current = {
     sendCommandToActive: terminalWorkspaceController.sendCommandToActive,
     executeCommandOnSession: terminalWorkspaceController.executeCommandOnSession,
@@ -332,6 +349,7 @@ export function WorkbenchPage() {
       <div className="relative min-h-screen min-w-0 flex-1">
         <div
           aria-hidden={!isTerminalWorkspaceVisible}
+          ref={runtimeCarrierRef}
           className={
             isTerminalWorkspaceVisible
               ? 'grid min-h-screen min-w-0 flex-1 bg-[var(--app-bg-elevated)]'
@@ -344,6 +362,7 @@ export function WorkbenchPage() {
                   ? 'calc(42px + env(titlebar-area-height, 0px)) 38px minmax(0,1fr)'
                   : '42px 38px minmax(0,1fr)'
                 : 'minmax(0,1fr)',
+            visibility: isTerminalWorkspaceVisible ? 'visible' : 'hidden',
           }}
         >
           {isTerminalWorkspaceVisible ? (

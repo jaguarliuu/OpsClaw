@@ -90,7 +90,12 @@ export function SftpFileManagerView({
   const queueSummary = buildTransferQueueSummary(model.tasks);
 
   return (
-    <section className="grid min-h-screen min-w-0 flex-1 grid-cols-[minmax(0,1fr)_360px] bg-[var(--app-bg-elevated)]">
+    <section
+      className={cn(
+        'grid min-h-screen min-w-0 flex-1 bg-[var(--app-bg-elevated)]',
+        model.drawerOpen ? 'grid-cols-[minmax(0,1fr)_360px]' : 'grid-cols-[minmax(0,1fr)]'
+      )}
+    >
       <div className="flex min-w-0 flex-col">
         <div className="border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] px-5 py-4">
           <div className="flex items-center justify-between gap-4">
@@ -300,16 +305,18 @@ export function SftpFileManagerView({
         </div>
       </div>
 
-      <SftpRightDrawer
-        onClose={model.closeDrawer}
-        onSelectTab={model.selectDrawerTab}
-        open={model.drawerOpen}
-        selectedEntry={model.selectedEntry}
-        tab={model.drawerTab}
-        tasks={model.tasks}
-        tasksError={model.tasksError}
-        tasksLoading={model.isTasksLoading}
-      />
+      {model.drawerOpen ? (
+        <SftpRightDrawer
+          onClose={model.closeDrawer}
+          onSelectTab={model.selectDrawerTab}
+          open={model.drawerOpen}
+          selectedEntry={model.selectedEntry}
+          tab={model.drawerTab}
+          tasks={model.tasks}
+          tasksError={model.tasksError}
+          tasksLoading={model.isTasksLoading}
+        />
+      ) : null}
     </section>
   );
 }
