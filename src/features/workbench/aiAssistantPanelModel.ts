@@ -258,6 +258,19 @@ export function shouldEnableAiAssistantSend(input: {
   return input.mode === 'chat' || input.selectedSessionId !== null;
 }
 
+export function getInlineAiAssistantInteraction(
+  interaction: InteractionRequest | null
+) {
+  if (
+    interaction?.interactionKind === 'terminal_wait' &&
+    (interaction.status === 'open' || interaction.status === 'expired')
+  ) {
+    return interaction;
+  }
+
+  return null;
+}
+
 export function shouldPresentAiAssistantInteractionDialog(
   interaction: InteractionRequest | null
 ) {

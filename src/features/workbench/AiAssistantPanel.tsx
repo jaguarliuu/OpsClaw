@@ -24,6 +24,7 @@ import type { UseAgentRunResult } from './useAgentRun';
 import {
   createAiAssistantInputImeState,
   getAiAssistantHeaderActionsState,
+  getInlineAiAssistantInteraction,
   getAiAssistantPrimaryActionState,
   getAgentStepBudgetHint,
   getAiAssistantThemeClasses,
@@ -435,6 +436,7 @@ export function AiAssistantPanel({
   )
     ? agentRun.activeInteraction
     : null;
+  const activeInlineInteraction = getInlineAiAssistantInteraction(agentRun.activeInteraction);
   const resolvedSelectedModel = getValidAiAssistantModelValue(modelOptions, selectedModel);
   const resolvedSelectedSessionId = getValidAiAssistantSessionId(
     sessions,
@@ -658,7 +660,8 @@ export function AiAssistantPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 relative">
-        {((mode === 'agent' && agentItems.length === 0) || (mode === 'chat' && chatMessages.length === 0)) && (
+        {((mode === 'agent' && agentItems.length === 0 && activeInlineInteraction === null) ||
+          (mode === 'chat' && chatMessages.length === 0)) && (
           <div className="flex flex-col items-center h-full max-w-md mx-auto pt-8 px-4">
             <div className="w-14 h-14 bg-neutral-800/50 rounded-[1.25rem] flex items-center justify-center mb-6 shadow-inner border border-neutral-700/50">
               <WandSparkles className="w-6 h-6 text-neutral-300" />
@@ -702,11 +705,29 @@ export function AiAssistantPanel({
           </div>
         )}
         {mode === 'agent'
-          ? agentItems.map((item) => (
-              <div key={item.id}>
-                <AgentTimelineCard item={item} themeMode={appTheme.mode} />
-              </div>
-            ))
+          ? (
+              <>
+                {activeInlineInteraction ? (
+                  <InteractionCard
+                    request={activeInlineInteraction}
+                    disabled={isRunning}
+                    onSubmit={(actionId, payload) =>
+                      submitInteraction(
+                        activeInlineInteraction.runId,
+                        activeInlineInteraction.id,
+                        actionId,
+                        payload
+                      )
+                    }
+                  />
+                ) : null}
+                {agentItems.map((item) => (
+                  <div key={item.id}>
+                    <AgentTimelineCard item={item} themeMode={appTheme.mode} />
+                  </div>
+                ))}
+              </>
+            )
           : chatMessages.map((msg, i) => (
               <div
                 key={i}

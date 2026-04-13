@@ -492,6 +492,25 @@ export class SessionRegistry {
     );
   }
 
+  cancelPendingExecutionWait(sessionId: string) {
+    const session = this.sessions.get(sessionId);
+    if (!session?.pendingExecution) {
+      throw new Error('当前会话没有等待中的命令。');
+    }
+
+    if (
+      session.pendingExecution.state !== 'awaiting_human_input' &&
+      session.pendingExecution.state !== 'suspended_waiting_for_input'
+    ) {
+      throw new Error('当前命令不处于可取消的人工输入等待状态。');
+    }
+
+    this.clearPendingExecution(session, '用户取消了等待中的交互命令。', {
+      sendInterrupt: true,
+      logEvent: 'execute_command_human_input_cancelled',
+    });
+  }
+
   getTranscript(sessionId: string, maxChars?: number) {
     const session = this.sessions.get(sessionId);
     if (!session) {

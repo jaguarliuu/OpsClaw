@@ -3,10 +3,12 @@ import test from 'node:test';
 
 import {
   createSshTerminalImeState,
+  isSearchableCommandHistoryEntry,
   markSshTerminalImeCompositionEnd,
   markSshTerminalImeCompositionStart,
   resolveSshTerminalClipboardShortcut,
   resolveSshTerminalInput,
+  shouldRecordSshTerminalCommand,
   shouldBlockSshTerminalCompositionConfirm,
   shouldConfirmSshTerminalPaste,
   shouldToggleSshTerminalSearchShortcut,
@@ -221,6 +223,32 @@ void test('resolveSshTerminalInput accepts a suggestion on Tab and forwards only
       suggestionQuery: null,
     }
   );
+});
+
+void test('shouldRecordSshTerminalCommand blocks recording when the terminal is prompting for a password-like secret', () => {
+  assert.equal(
+    shouldRecordSshTerminalCommand({
+      command: 'root123',
+      transcriptTail: 'Password: ',
+    }),
+    false
+  );
+
+  assert.equal(
+    shouldRecordSshTerminalCommand({
+      command: 'sudo systemctl restart nginx',
+      transcriptTail: 'ubuntu@host:~$ ',
+    }),
+    true
+  );
+});
+
+void test('isSearchableCommandHistoryEntry hides obvious secret values and explicit credential commands', () => {
+  assert.equal(isSearchableCommandHistoryEntry('root123'), false);
+  assert.equal(isSearchableCommandHistoryEntry('mysql --password=secret'), false);
+  assert.equal(isSearchableCommandHistoryEntry('curl https://user:pass@example.com'), false);
+  assert.equal(isSearchableCommandHistoryEntry('ls'), true);
+  assert.equal(isSearchableCommandHistoryEntry('sudo systemctl restart nginx'), true);
 });
 
 void test('resolveSshTerminalInput records the buffered command on Enter and clears local input state', () => {

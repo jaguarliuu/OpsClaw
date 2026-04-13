@@ -11,6 +11,103 @@ export type CommandHistoryRecord = {
   createdAt: string;
 };
 
+const SAFE_SINGLE_TOKEN_COMMANDS = new Set([
+  'ls',
+  'cd',
+  'pwd',
+  'top',
+  'htop',
+  'vim',
+  'vi',
+  'nano',
+  'cat',
+  'less',
+  'more',
+  'tail',
+  'head',
+  'grep',
+  'find',
+  'ps',
+  'df',
+  'du',
+  'free',
+  'clear',
+  'exit',
+  'history',
+  'ssh',
+  'scp',
+  'curl',
+  'wget',
+  'git',
+  'docker',
+  'kubectl',
+  'systemctl',
+  'journalctl',
+  'service',
+  'apt',
+  'apt-get',
+  'yum',
+  'dnf',
+  'apk',
+  'bash',
+  'sh',
+  'zsh',
+  'python',
+  'python3',
+  'node',
+  'npm',
+  'pnpm',
+  'mysql',
+  'redis-cli',
+  'tmux',
+  'screen',
+  'whoami',
+  'uname',
+  'env',
+  'printenv',
+]);
+
+const SENSITIVE_COMMAND_PATTERN =
+  /(^|\s)(?:[A-Z_]*?(?:PASSWORD|PASSWD|PASSPHRASE|TOKEN|SECRET|API_KEY))=|--(?:password|passwd|passphrase|token|secret|api-key)(?:=|\s+)|https?:\/\/[^/\s:@]+:[^/\s@]+@/i;
+
+function isSingleTokenCommand(command: string) {
+  return !/\s/.test(command);
+}
+
+function looksLikeStandaloneSecretValue(command: string) {
+  if (!isSingleTokenCommand(command)) {
+    return false;
+  }
+
+  const normalized = command.trim().toLowerCase();
+  if (!normalized || SAFE_SINGLE_TOKEN_COMMANDS.has(normalized)) {
+    return false;
+  }
+
+  if (!/^[a-z0-9._@-]{4,128}$/i.test(normalized)) {
+    return false;
+  }
+
+  return true;
+}
+
+function isSearchableCommandHistoryEntry(command: string) {
+  const normalized = command.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  if (SENSITIVE_COMMAND_PATTERN.test(normalized)) {
+    return false;
+  }
+
+  if (looksLikeStandaloneSecretValue(normalized)) {
+    return false;
+  }
+
+  return true;
+}
+
 function readString(value: unknown, field: string): string {
   if (typeof value !== 'string') throw new Error(`${field} is not a string`);
   return value;
@@ -103,8 +200,12 @@ export async function createCommandHistoryStore() {
 
     const lower = q.toLowerCase();
     const filtered = lower
-      ? rows.filter((r) => r.command.toLowerCase().includes(lower))
-      : rows;
+      ? rows.filter(
+          (r) =>
+            isSearchableCommandHistoryEntry(r.command) &&
+            r.command.toLowerCase().includes(lower)
+        )
+      : rows.filter((r) => isSearchableCommandHistoryEntry(r.command));
 
     return filtered
       .sort((a, b) => frecency(b.rank, b.lastUsed) - frecency(a.rank, a.lastUsed))

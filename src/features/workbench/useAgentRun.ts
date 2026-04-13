@@ -348,14 +348,7 @@ export function useAgentRun() {
         throw new Error('当前交互动作不存在或已失效。');
       }
 
-      const normalizedAction: InteractionAction['kind'] =
-        selectedAction === 'cancel'
-          ? 'reject'
-          : selectedAction === 'acknowledge'
-            ? 'submit'
-            : selectedAction;
-
-      await submitInteraction(runIdToContinue, requestId, [normalizedAction], payload);
+      await submitInteraction(runIdToContinue, requestId, [selectedAction], payload);
     },
     [submitInteraction]
   );

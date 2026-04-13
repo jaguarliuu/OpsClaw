@@ -292,6 +292,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
       sessionNodeIdRef,
       settingsRef,
       terminalRef,
+      transcriptRef,
       toggleSearch,
       quickScriptsRef,
       onOpenNodeDashboard: () => {

@@ -55,6 +55,7 @@ type AgentRuntimeDependencies = {
       sessionId: string
     ) => { state: string; command: string; startMarker: string } | null;
     resumePendingExecutionWait?: (sessionId: string, timeoutMs: number) => void;
+    cancelPendingExecutionWait?: (sessionId: string) => void;
   };
   streamAgentContext?: typeof streamAgentContext;
   completeAgentContext?: typeof completeAgentContext;
@@ -794,9 +795,39 @@ export class OpsAgentRuntime {
       throw new Error('指定 run 当前没有待处理的 interaction。');
     }
     if (options.pause.interaction.source === 'terminal_wait') {
-      if (options.action.selectedAction !== 'continue_waiting') {
-        throw new Error('terminal_wait interaction 只能继续等待。');
+      if (
+        options.action.selectedAction !== 'continue_waiting' &&
+        options.action.selectedAction !== 'cancel'
+      ) {
+        throw new Error('terminal_wait interaction 仅支持继续等待或取消。');
       }
+      if (options.action.selectedAction === 'cancel') {
+        if (snapshot.activeInteraction.status !== 'rejected') {
+          throw new Error('terminal_wait interaction 尚未被取消。');
+        }
+        if (!this.dependencies.sessions.cancelPendingExecutionWait) {
+          throw new Error('当前运行环境不支持取消等待中的命令。');
+        }
+
+        this.dependencies.sessions.cancelPendingExecutionWait(snapshot.sessionId);
+        void options.pause.continuation.waitForCompletion?.(options.signal).catch(() => undefined);
+
+        options.emit({
+          type: 'interaction_rejected',
+          runId: options.runId,
+          request: snapshot.activeInteraction,
+          timestamp: Date.now(),
+        });
+        this.agentRunRegistry.markRunCancelled(options.runId);
+        this.pausedRuns.delete(options.runId);
+        options.emit({
+          type: 'run_cancelled',
+          runId: options.runId,
+          timestamp: Date.now(),
+        });
+        return { kind: 'failed' };
+      }
+
       if (snapshot.activeInteraction.status !== 'open') {
         throw new Error('terminal_wait interaction 当前不处于等待状态。');
       }

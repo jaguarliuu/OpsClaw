@@ -143,6 +143,12 @@ export function createInteractionRequest(input: {
           kind: 'continue_waiting',
           style: 'primary',
         },
+        {
+          id: 'cancel',
+          label: '取消等待',
+          kind: 'cancel',
+          style: 'secondary',
+        },
       ],
       openedAt,
       deadlineAt: openedAt + input.source.context.timeoutMs,

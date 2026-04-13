@@ -2521,6 +2521,153 @@ test('提交 continue_waiting 会继续等待同一个 terminal_wait interaction
   assert.equal(runtime.getRunSnapshot(runId)?.state, 'completed');
 });
 
+test('terminal_wait interaction 支持 cancel 并会取消等待中的 run', async () => {
+  const registry = createToolRegistry();
+  registry.registerProvider(sessionToolProvider);
+
+  const initialEvents: unknown[] = [];
+  const resumedEvents: unknown[] = [];
+  let pendingStateChecks = 0;
+  let cancelCalls = 0;
+
+  const runtime = new OpsAgentRuntime({
+    toolRegistry: registry,
+    toolExecutor: new ToolExecutor(registry),
+    fileMemory: {
+      async readGlobalMemory() {
+        return {
+          scope: 'global',
+          id: null,
+          title: '全局记忆',
+          path: '/tmp/MEMORY.md',
+          content: '',
+          exists: false,
+          updatedAt: null,
+        };
+      },
+    } as never,
+    getNodeById() {
+      return null;
+    },
+    sessions: {
+      getSession(sessionId: string) {
+        return {
+          sessionId,
+          nodeId: null,
+          host: '10.0.0.8',
+          port: 22,
+          username: 'ubuntu',
+          status: 'connected' as const,
+        };
+      },
+      listSessions() {
+        return [];
+      },
+      getTranscript() {
+        return '';
+      },
+      getPendingExecutionDebug() {
+        pendingStateChecks += 1;
+        return {
+          state: pendingStateChecks >= 2 ? 'suspended_waiting_for_input' : 'awaiting_human_input',
+          command: 'sudo passwd root',
+          startMarker: '__OPSCLAW_CMD_START_test__',
+        };
+      },
+      cancelPendingExecutionWait() {
+        cancelCalls += 1;
+      },
+      async executeCommand() {
+        return new Promise(() => undefined);
+      },
+    } as never,
+    completeAgentContext: async () =>
+      createAssistantMessage({
+        stopReason: 'toolUse',
+        content: [
+          {
+            type: 'toolCall',
+            id: 'call-1',
+            name: 'session.run_command',
+            arguments: {
+              sessionId: 'session-1',
+              command: 'sudo passwd root',
+            },
+          },
+        ],
+      }),
+  });
+
+  await runtime.run(
+    {
+      providerId: 'provider-1',
+      provider: createProvider(),
+      model: 'qwen-plus',
+      task: '设置 root 密码',
+      sessionId: 'session-1',
+    },
+    event => {
+      initialEvents.push(event);
+    },
+    new AbortController().signal
+  );
+
+  const openedInteractionEvent = initialEvents.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'interaction_requested'
+  ) as { runId?: unknown; request?: { id?: unknown } } | undefined;
+
+  const runId =
+    typeof openedInteractionEvent?.runId === 'string' ? openedInteractionEvent.runId : null;
+  const requestId =
+    openedInteractionEvent?.request && typeof openedInteractionEvent.request.id === 'string'
+      ? openedInteractionEvent.request.id
+      : null;
+
+  assert.ok(runId);
+  assert.ok(requestId);
+  assert.equal(runtime.getRunSnapshot(runId)?.state, 'suspended');
+
+  const snapshot = runtime.submitInteraction(runId, requestId, {
+    selectedAction: 'cancel',
+    payload: {},
+  });
+  assert.equal(snapshot?.activeInteraction?.status, 'rejected');
+
+  await runtime.streamContinuation(
+    runId,
+    event => {
+      resumedEvents.push(event);
+    },
+    new AbortController().signal
+  );
+
+  const rejectedInteractionEvent = resumedEvents.find(
+    event =>
+      typeof event === 'object' &&
+      event !== null &&
+      'type' in event &&
+      (event as { type?: unknown }).type === 'interaction_rejected'
+  ) as { request?: { status?: unknown } } | undefined;
+
+  assert.equal(cancelCalls, 1);
+  assert.equal(rejectedInteractionEvent?.request?.status, 'rejected');
+  assert.equal(runtime.getRunSnapshot(runId)?.state, 'cancelled');
+  assert.equal(
+    resumedEvents.some(
+      event =>
+        typeof event === 'object' &&
+        event !== null &&
+        'type' in event &&
+        (event as { type?: unknown }).type === 'run_cancelled'
+    ),
+    true
+  );
+});
+
 test('提交确认字段后会恢复 parameter_confirmation interaction，并在需要时继续进入 approval interaction', async () => {
   const registry = createToolRegistry();
   registry.registerProvider(sessionToolProvider);

@@ -15,6 +15,7 @@ type SessionRegistryInternals = SessionRegistry & {
     | null;
   noteUserInput: (sessionId: string, payload: string) => void;
   resumePendingExecutionWait: (sessionId: string, timeoutMs: number) => void;
+  cancelPendingExecutionWait: (sessionId: string) => void;
 };
 
 function waitForMicrotask() {
@@ -246,6 +247,48 @@ test('resumePendingExecutionWait 会重新挂起等待并允许命令稍后完�
   const result = await execution;
 
   assert.match(result.output, /Logged in/);
+  assert.equal(internals.getPendingExecutionDebug('session-1'), null);
+});
+
+test('cancelPendingExecutionWait 会中断挂起中的交互命令并拒绝原 promise', async () => {
+  const registry = new SessionRegistry();
+  const internals = getRegistryInternals(registry);
+  const sentPayloads: string[] = [];
+
+  registry.registerSession({
+    sessionId: 'session-1',
+    host: '10.0.0.8',
+    port: 22,
+    username: 'ubuntu',
+    sendInput(payload) {
+      sentPayloads.push(payload);
+    },
+  });
+  registry.updateSessionStatus('session-1', 'connected');
+
+  const execution = registry.executeCommand('session-1', 'python interactive.py', {
+    timeoutMs: 200,
+    humanInputTimeoutMs: 30,
+  } as never);
+
+  await waitForMicrotask();
+
+  const markers = extractMarkers(sentPayloads[0] ?? '');
+  registry.appendTerminalData('session-1', `\n${markers.startMarker}\nPassword: `);
+  internals.noteUserInput('session-1', 'secret');
+  internals.noteUserInput('session-1', '\n');
+
+  await waitFor(60);
+
+  assert.equal(
+    internals.getPendingExecutionDebug('session-1')?.state,
+    'suspended_waiting_for_input'
+  );
+
+  internals.cancelPendingExecutionWait('session-1');
+
+  await assert.rejects(execution, /用户取消了等待中的交互命令/);
+  assert.equal(sentPayloads.includes('\u0003'), true);
   assert.equal(internals.getPendingExecutionDebug('session-1'), null);
 });
 

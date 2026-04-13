@@ -189,7 +189,9 @@ export function createAgentRunRegistry(options?: {
 
     rejectInteraction(input: { runId: string; interactionId: string }) {
       const { run, interaction } = getRequiredInteraction(input.runId, input.interactionId);
-      if (interaction.status !== 'open') {
+      const canRejectTerminalWait =
+        interaction.interactionKind === 'terminal_wait' && interaction.status === 'expired';
+      if (interaction.status !== 'open' && !canRejectTerminalWait) {
         throw new Error('只能 reject 当前处于 open 状态的 interaction。');
       }
 
