@@ -231,6 +231,11 @@ export function WorkbenchPage() {
     }
   };
 
+  const handleCloseSftp = () => {
+    setActiveSessionId(primaryView.state.sessionId);
+    primaryView.closeSftp();
+  };
+
   useKeyboardShortcuts({
     onToggleQuickConnect: toggleQuickConnect,
     onToggleCommandHistory: toggleHistoryPanel,
@@ -301,52 +306,58 @@ export function WorkbenchPage() {
         sessions={sessions}
       />
 
-      {primaryView.state.mode === 'terminal' ? (
-        <TerminalWorkspace
-          ref={terminalWorkspaceRef}
-          activeSessionId={activeSessionId}
-          agentSessionLock={agentSessionLock}
-          isMacShortcutPlatform={typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)}
-          pendingInteractionCount={agentRun.pendingInteractions.length}
-          onCloseSession={handleCloseSession}
-          onOpenNodeDashboard={openNodeDashboardForNodeId}
-          onOpenPendingGates={() => setIsPendingGatePanelOpen(true)}
-          onOpenNewConnection={openNewConnection}
-          onOpenSftp={(nodeId) => openSftpForNodeId(nodeId, activeSessionId)}
-          onSelectSession={setActiveSessionId}
-          onSessionStatusChange={handleSessionStatusChange}
-          onToggleSidebar={() => setIsSidebarCollapsed((current) => !current)}
-          onOpenAiAssistant={handleOpenAiAssistant}
-          onOpenHelpDialog={openHelpDialog}
-          sidebarCollapsed={isSidebarCollapsed}
-          sessions={sessions}
-        />
-      ) : (
-        <section className="flex min-h-screen min-w-0 flex-1 flex-col bg-[var(--app-bg-elevated)]">
-          <div className="border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] px-5 py-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <div className="text-sm font-medium text-[var(--app-text-primary)]">SFTP</div>
-                <div className="truncate text-sm text-[var(--app-text-secondary)]">
-                  {savedProfiles.find((profile) => profile.id === primaryView.state.nodeId)?.name
-                    ?? primaryView.state.nodeId
-                    ?? '未选择节点'}
+      <div className="relative min-h-screen min-w-0 flex-1">
+        <div
+          style={primaryView.state.mode === 'sftp' ? { display: 'none' } : undefined}
+        >
+          <TerminalWorkspace
+            ref={terminalWorkspaceRef}
+            activeSessionId={activeSessionId}
+            agentSessionLock={agentSessionLock}
+            isMacShortcutPlatform={typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)}
+            pendingInteractionCount={agentRun.pendingInteractions.length}
+            onCloseSession={handleCloseSession}
+            onOpenNodeDashboard={openNodeDashboardForNodeId}
+            onOpenPendingGates={() => setIsPendingGatePanelOpen(true)}
+            onOpenNewConnection={openNewConnection}
+            onOpenSftp={(nodeId) => openSftpForNodeId(nodeId, activeSessionId)}
+            onSelectSession={setActiveSessionId}
+            onSessionStatusChange={handleSessionStatusChange}
+            onToggleSidebar={() => setIsSidebarCollapsed((current) => !current)}
+            onOpenAiAssistant={handleOpenAiAssistant}
+            onOpenHelpDialog={openHelpDialog}
+            sidebarCollapsed={isSidebarCollapsed}
+            sessions={sessions}
+          />
+        </div>
+
+        {primaryView.state.mode === 'sftp' ? (
+          <section className="absolute inset-0 flex min-h-screen min-w-0 flex-1 flex-col bg-[var(--app-bg-elevated)]">
+            <div className="border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] px-5 py-4">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-[var(--app-text-primary)]">SFTP</div>
+                  <div className="truncate text-sm text-[var(--app-text-secondary)]">
+                    {savedProfiles.find((profile) => profile.id === primaryView.state.nodeId)?.name
+                      ?? primaryView.state.nodeId
+                      ?? '未选择节点'}
+                  </div>
                 </div>
+                <button
+                  className="rounded-md border border-[var(--app-border-default)] px-3 py-1.5 text-sm text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-bg-elevated3)]"
+                  onClick={handleCloseSftp}
+                  type="button"
+                >
+                  返回终端
+                </button>
               </div>
-              <button
-                className="rounded-md border border-[var(--app-border-default)] px-3 py-1.5 text-sm text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-bg-elevated3)]"
-                onClick={primaryView.closeSftp}
-                type="button"
-              >
-                返回终端
-              </button>
             </div>
-          </div>
-          <div className="flex flex-1 items-center justify-center px-6 text-sm text-[var(--app-text-secondary)]">
-            SFTP 主视图状态已接入，完整文件管理 UI 将在 Task 6 实现。
-          </div>
-        </section>
-      )}
+            <div className="flex flex-1 items-center justify-center px-6 text-sm text-[var(--app-text-secondary)]">
+              SFTP 主视图状态已接入，完整文件管理 UI 将在 Task 6 实现。
+            </div>
+          </section>
+        ) : null}
+      </div>
 
       {shouldRenderPendingGatePanel ? (
         <PendingInteractionPanel
