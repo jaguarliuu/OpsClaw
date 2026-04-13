@@ -341,7 +341,22 @@ export function createSftpConnectionManager(dependencies: {
     ((node: StoredNodeWithSecrets, options: SftpClientCreationOptions) =>
       createSsh2SftpClient(node, options, ssh2Runtime));
   const activeConnections = new Map<string, SftpConnectionClient>();
-  const pendingConnections = new Map<string, Promise<SftpConnectionClient>>();
+  const connectionGenerations = new Map<string, number>();
+  type PendingConnectionEntry = {
+    generation: number;
+    promise: Promise<SftpConnectionClient>;
+  };
+  const pendingConnections = new Map<string, PendingConnectionEntry>();
+
+  const readGeneration = (nodeId: string) => connectionGenerations.get(nodeId) ?? 0;
+  const bumpGeneration = (nodeId: string) => {
+    connectionGenerations.set(nodeId, readGeneration(nodeId) + 1);
+  };
+  const clearPendingIfOwned = (nodeId: string, owner: PendingConnectionEntry) => {
+    if (pendingConnections.get(nodeId) === owner) {
+      pendingConnections.delete(nodeId);
+    }
+  };
 
   const createConnection = async (nodeId: string) => {
     const node = nodeStore.getNodeWithSecrets(nodeId);
@@ -382,26 +397,38 @@ export function createSftpConnectionManager(dependencies: {
         return active;
       }
 
+      const generation = readGeneration(nodeId);
       const pending = pendingConnections.get(nodeId);
       if (pending) {
-        return pending;
+        return pending.promise;
       }
 
+      const owner: PendingConnectionEntry = {
+        generation,
+        promise: Promise.resolve(null as unknown as SftpConnectionClient),
+      };
       const creating = createConnection(nodeId)
         .then((connection) => {
+          clearPendingIfOwned(nodeId, owner);
+          if (readGeneration(nodeId) !== generation) {
+            connection.end();
+            return connection;
+          }
+
           activeConnections.set(nodeId, connection);
-          pendingConnections.delete(nodeId);
           return connection;
         })
         .catch((error) => {
-          pendingConnections.delete(nodeId);
+          clearPendingIfOwned(nodeId, owner);
           throw error;
         });
-      pendingConnections.set(nodeId, creating);
+      owner.promise = creating;
+      pendingConnections.set(nodeId, owner);
       return creating;
     },
 
     async closeNode(nodeId: string) {
+      bumpGeneration(nodeId);
       const active = activeConnections.get(nodeId);
       if (active) {
         active.end();
@@ -415,6 +442,12 @@ export function createSftpConnectionManager(dependencies: {
     },
 
     async destroyAll() {
+      for (const nodeId of new Set<string>([
+        ...activeConnections.keys(),
+        ...pendingConnections.keys(),
+      ])) {
+        bumpGeneration(nodeId);
+      }
       for (const connection of activeConnections.values()) {
         connection.end();
       }

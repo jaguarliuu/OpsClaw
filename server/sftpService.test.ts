@@ -59,6 +59,25 @@ function createFakeConnection(): SftpConnectionClient & {
   };
 }
 
+function createDeferred<T>() {
+  let resolve: ((value: T | PromiseLike<T>) => void) | null = null;
+  let reject: ((reason?: unknown) => void) | null = null;
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve;
+    reject = innerReject;
+  });
+
+  return {
+    promise,
+    resolve(value: T) {
+      resolve?.(value);
+    },
+    reject(error: unknown) {
+      reject?.(error);
+    },
+  };
+}
+
 type ConnectPayload = {
   hostVerifier?: ((key: Buffer, callback?: (verified: boolean) => void) => boolean | void) | undefined;
 };
@@ -633,4 +652,114 @@ void test('sftpConnectionManager default ssh2 path rejects changed fingerprint a
     },
     /host key.*mismatch/i
   );
+});
+
+void test('sftpConnectionManager closeNode prevents late pending connect from becoming active', async () => {
+  const deferred = createDeferred<SftpConnectionClient>();
+  const lateConnection = createFakeConnection();
+  const nextConnection = createFakeConnection();
+  let createCount = 0;
+  const createClient: CreateSftpClient = async () => {
+    createCount += 1;
+    if (createCount === 1) {
+      return deferred.promise;
+    }
+    return nextConnection;
+  };
+
+  const manager = createSftpConnectionManager({
+    nodeStore: {
+      getNodeWithSecrets(nodeId) {
+        return {
+          id: nodeId,
+          name: nodeId,
+          groupId: null,
+          groupName: '默认',
+          jumpHostId: null,
+          host: '127.0.0.1',
+          port: 22,
+          username: 'root',
+          authMode: 'password',
+          note: '',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          password: 'secret',
+          privateKey: null,
+          passphrase: null,
+        };
+      },
+    },
+    sftpStore: {
+      async getHostKey() {
+        return null;
+      },
+      async upsertHostKey() {},
+    },
+    createClient,
+  });
+
+  const pending = manager.getOrCreate('node-pending-close');
+  await manager.closeNode('node-pending-close');
+  deferred.resolve(lateConnection);
+  await pending;
+
+  assert.deepEqual(lateConnection.operations, ['end']);
+  await manager.listDirectory('node-pending-close', '/next');
+  assert.equal(lateConnection.operations.filter((item) => item.startsWith('readDirectory')).length, 0);
+  assert.deepEqual(nextConnection.operations, ['readDirectory:/next']);
+});
+
+void test('sftpConnectionManager destroyAll prevents late pending connect from becoming active', async () => {
+  const deferred = createDeferred<SftpConnectionClient>();
+  const lateConnection = createFakeConnection();
+  const nextConnection = createFakeConnection();
+  let createCount = 0;
+  const createClient: CreateSftpClient = async () => {
+    createCount += 1;
+    if (createCount === 1) {
+      return deferred.promise;
+    }
+    return nextConnection;
+  };
+
+  const manager = createSftpConnectionManager({
+    nodeStore: {
+      getNodeWithSecrets(nodeId) {
+        return {
+          id: nodeId,
+          name: nodeId,
+          groupId: null,
+          groupName: '默认',
+          jumpHostId: null,
+          host: '127.0.0.1',
+          port: 22,
+          username: 'root',
+          authMode: 'password',
+          note: '',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          password: 'secret',
+          privateKey: null,
+          passphrase: null,
+        };
+      },
+    },
+    sftpStore: {
+      async getHostKey() {
+        return null;
+      },
+      async upsertHostKey() {},
+    },
+    createClient,
+  });
+
+  const pending = manager.getOrCreate('node-pending-all');
+  await manager.destroyAll();
+  deferred.resolve(lateConnection);
+  await pending;
+
+  assert.deepEqual(lateConnection.operations, ['end']);
+  await manager.listDirectory('node-pending-all', '/next');
+  assert.equal(lateConnection.operations.filter((item) => item.startsWith('readDirectory')).length, 0);
+  assert.deepEqual(nextConnection.operations, ['readDirectory:/next']);
 });
