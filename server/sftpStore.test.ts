@@ -28,7 +28,7 @@ test.after(async () => {
 });
 
 void test('sftpStore persists host keys and resumable transfer tasks', async () => {
-  const { getSqliteDatabase } = await import('./database.js');
+  const { getSqliteDatabase, resetSqliteDatabaseForTests } = await import('./database.js');
   const now = new Date().toISOString();
   const { database } = await getSqliteDatabase();
   database.run(
@@ -79,10 +79,15 @@ void test('sftpStore persists host keys and resumable transfer tasks', async () 
     checksumStatus: 'pending',
   });
 
-  const hostKey = await store.getHostKey('node-1');
-  const resumable = await store.listResumableTasks('node-1');
+  await resetSqliteDatabaseForTests();
+
+  const { createSftpStore: createSftpStoreAfterReload } = await import('./sftpStore.js');
+  const reloadedStore = await createSftpStoreAfterReload();
+  const hostKey = await reloadedStore.getHostKey('node-1');
+  const resumable = await reloadedStore.listResumableTasks('node-1');
 
   assert.equal(hostKey?.fingerprint, 'SHA256:abc');
+  assert.equal(resumable.length, 1);
   assert.equal(resumable[0]?.lastConfirmedOffset, 512);
   assert.equal(resumable[0]?.status, 'paused');
 });
