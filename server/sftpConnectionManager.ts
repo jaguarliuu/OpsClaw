@@ -412,7 +412,9 @@ export function createSftpConnectionManager(dependencies: {
           clearPendingIfOwned(nodeId, owner);
           if (readGeneration(nodeId) !== generation) {
             connection.end();
-            return connection;
+            throw new Error(
+              `SFTP connection for node "${nodeId}" was closed while connecting.`
+            );
           }
 
           activeConnections.set(nodeId, connection);

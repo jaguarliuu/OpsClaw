@@ -654,7 +654,7 @@ void test('sftpConnectionManager default ssh2 path rejects changed fingerprint a
   );
 });
 
-void test('sftpConnectionManager closeNode prevents late pending connect from becoming active', async () => {
+void test('sftpConnectionManager closeNode rejects stale pending getOrCreate result', async () => {
   const deferred = createDeferred<SftpConnectionClient>();
   const lateConnection = createFakeConnection();
   const nextConnection = createFakeConnection();
@@ -701,7 +701,12 @@ void test('sftpConnectionManager closeNode prevents late pending connect from be
   const pending = manager.getOrCreate('node-pending-close');
   await manager.closeNode('node-pending-close');
   deferred.resolve(lateConnection);
-  await pending;
+  await assert.rejects(
+    async () => {
+      await pending;
+    },
+    /closed|stale|cancel/i
+  );
 
   assert.deepEqual(lateConnection.operations, ['end']);
   await manager.listDirectory('node-pending-close', '/next');
@@ -709,7 +714,7 @@ void test('sftpConnectionManager closeNode prevents late pending connect from be
   assert.deepEqual(nextConnection.operations, ['readDirectory:/next']);
 });
 
-void test('sftpConnectionManager destroyAll prevents late pending connect from becoming active', async () => {
+void test('sftpConnectionManager destroyAll rejects stale pending manager operation', async () => {
   const deferred = createDeferred<SftpConnectionClient>();
   const lateConnection = createFakeConnection();
   const nextConnection = createFakeConnection();
@@ -753,10 +758,15 @@ void test('sftpConnectionManager destroyAll prevents late pending connect from b
     createClient,
   });
 
-  const pending = manager.getOrCreate('node-pending-all');
+  const pending = manager.listDirectory('node-pending-all', '/pending');
   await manager.destroyAll();
   deferred.resolve(lateConnection);
-  await pending;
+  await assert.rejects(
+    async () => {
+      await pending;
+    },
+    /closed|stale|cancel/i
+  );
 
   assert.deepEqual(lateConnection.operations, ['end']);
   await manager.listDirectory('node-pending-all', '/next');
