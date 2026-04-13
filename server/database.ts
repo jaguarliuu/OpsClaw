@@ -127,6 +127,39 @@ const sftpTransferDirectionSet = new Set<string>(SFTP_TRANSFER_DIRECTIONS);
 const sftpTransferStatusSet = new Set<string>(SFTP_TRANSFER_STATUSES);
 const sftpChecksumStatusSet = new Set<string>(SFTP_CHECKSUM_STATUSES);
 
+function normalizeSql(sql: string) {
+  return sql.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function parseCheckInValues(tableSql: string, columnName: string) {
+  const normalized = normalizeSql(tableSql);
+  const match = normalized.match(new RegExp(`${columnName}\\s+in\\s*\\(([^)]*)\\)`));
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const values = match[1]
+    .split(',')
+    .map((item) => item.trim())
+    .map((item) => item.replace(/^'/, '').replace(/'$/, ''))
+    .filter(Boolean);
+
+  return new Set(values);
+}
+
+function hasExpectedCheckEnumValues(tableSql: string, columnName: string, expectedValues: readonly string[]) {
+  const actualValues = parseCheckInValues(tableSql, columnName);
+  if (!actualValues) {
+    return false;
+  }
+
+  if (actualValues.size !== expectedValues.length) {
+    return false;
+  }
+
+  return expectedValues.every((value) => actualValues.has(value.toLowerCase()));
+}
+
 function toSqlRows(
   result: Array<{ columns: string[]; values: SqliteValue[][] }>
 ) {
@@ -386,9 +419,9 @@ function ensureSftpTransferTasksTable(database: SqlDatabaseHandle) {
   } else {
     const hasRequiredColumns = requiredColumns.every((column) => columns.has(column));
     const hasEnumChecks =
-      tableSql.includes(`direction IN (`) &&
-      tableSql.includes(`status IN (`) &&
-      tableSql.includes(`checksum_status IN (`);
+      hasExpectedCheckEnumValues(tableSql, 'direction', SFTP_TRANSFER_DIRECTIONS) &&
+      hasExpectedCheckEnumValues(tableSql, 'status', SFTP_TRANSFER_STATUSES) &&
+      hasExpectedCheckEnumValues(tableSql, 'checksum_status', SFTP_CHECKSUM_STATUSES);
     const hasCounterChecks =
       tableSql.includes(`total_bytes IS NULL OR total_bytes >= 0`) &&
       tableSql.includes(`transferred_bytes >= 0`) &&
