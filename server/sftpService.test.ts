@@ -62,38 +62,53 @@ void test('sftpService listDirectory normalizes entry type, permissions and meta
   const connection = createFakeConnection();
   const service = createSftpService({
     connectionManager: {
-      async getOrCreate() {
-        return connection;
+      async listDirectory(_nodeId, path) {
+        return connection.readDirectory(path);
+      },
+      async stat(_nodeId, path) {
+        return connection.stat(path);
+      },
+      async mkdir(_nodeId, path) {
+        return connection.mkdir(path);
+      },
+      async rename(_nodeId, fromPath, toPath) {
+        return connection.rename(fromPath, toPath);
+      },
+      async unlink(_nodeId, path) {
+        return connection.unlink(path);
+      },
+      async rmdir(_nodeId, path) {
+        return connection.rmdir(path);
       },
     },
   });
 
-  const result = await service.listDirectory('node-1', '/srv');
+  const result = await service.listDirectory({ nodeId: 'node-1', path: '/srv' });
 
   assert.equal(result.path, '/srv');
-  assert.deepEqual(result.entries, [
+  assert.deepEqual(result.items, [
     {
       name: 'app.log',
       path: '/srv/app.log',
-      type: 'file',
+      kind: 'file',
       size: 128,
-      modifiedAt: '2024-03-09T16:01:40.000Z',
+      mtimeMs: 1710000100000,
       permissions: '-rw-r--r--',
     },
     {
       name: 'current',
       path: '/srv/current',
-      type: 'symlink',
+      kind: 'symlink',
       size: 7,
-      modifiedAt: '2024-03-09T16:03:20.000Z',
+      mtimeMs: 1710000200000,
       permissions: 'lrwxrwxrwx',
     },
     {
       name: 'logs',
       path: '/srv/logs',
-      type: 'directory',
+      kind: 'directory',
       size: 0,
-      modifiedAt: '2024-03-09T16:00:00.000Z',
+      mtimeMs: 1710000000000,
       permissions: 'drwxr-xr-x',
     },
   ]);
@@ -102,33 +117,40 @@ void test('sftpService listDirectory normalizes entry type, permissions and meta
 void test('sftpService validates destructive operation inputs and rejects empty delete targets', async () => {
   const service = createSftpService({
     connectionManager: {
-      async getOrCreate() {
-        return createFakeConnection();
+      async listDirectory() {
+        return [];
       },
+      async stat() {
+        return { mode: 0o100644 };
+      },
+      async mkdir() {},
+      async rename() {},
+      async unlink() {},
+      async rmdir() {},
     },
   });
 
   await assert.rejects(
     async () => {
-      await service.deletePaths('node-1', []);
+      await service.deletePaths({ nodeId: 'node-1', paths: [] });
     },
     /删除目标不能为空/
   );
   await assert.rejects(
     async () => {
-      await service.deletePaths('node-1', [' ', '\n']);
+      await service.deletePaths({ nodeId: 'node-1', paths: [' ', '\n'] });
     },
     /删除目标不能为空/
   );
   await assert.rejects(
     async () => {
-      await service.renamePath('node-1', '', '/next/path');
+      await service.renamePath({ nodeId: 'node-1', fromPath: '', toPath: '/next/path' });
     },
     /原路径不能为空/
   );
   await assert.rejects(
     async () => {
-      await service.renamePath('node-1', '/old/path', ' ');
+      await service.renamePath({ nodeId: 'node-1', fromPath: '/old/path', toPath: ' ' });
     },
     /目标路径不能为空/
   );
@@ -138,13 +160,24 @@ void test('sftpService deletePaths dispatches file and directory deletions by me
   const connection = createFakeConnection();
   const service = createSftpService({
     connectionManager: {
-      async getOrCreate() {
-        return connection;
+      async listDirectory() {
+        return [];
+      },
+      async stat(_nodeId, path) {
+        return connection.stat(path);
+      },
+      async mkdir() {},
+      async rename() {},
+      async unlink(_nodeId, path) {
+        return connection.unlink(path);
+      },
+      async rmdir(_nodeId, path) {
+        return connection.rmdir(path);
       },
     },
   });
 
-  const result = await service.deletePaths('node-1', ['/srv/logs', '/srv/app.log']);
+  const result = await service.deletePaths({ nodeId: 'node-1', paths: ['/srv/logs', '/srv/app.log'] });
 
   assert.deepEqual(result, { deletedPaths: ['/srv/logs', '/srv/app.log'] });
   assert.deepEqual(connection.operations, [
@@ -155,21 +188,63 @@ void test('sftpService deletePaths dispatches file and directory deletions by me
   ]);
 });
 
-void test('sftpConnectionManager reuses connection by nodeId and isolates different nodes', async () => {
-  const connectCalls: string[] = [];
-  const createClient: CreateSftpClient = async (node) => {
-    connectCalls.push(node.id);
-    return {
-      async readDirectory() {
+void test('sftpService getMetadata returns normalized metadata shape', async () => {
+  const service = createSftpService({
+    connectionManager: {
+      async listDirectory() {
         return [];
       },
-      async stat() {
-        return { mode: 0o100644 };
+      async stat(_nodeId, path) {
+        if (path === '/srv/logs') {
+          return { mode: 0o040755, size: 0, mtime: 1710000000 };
+        }
+
+        return { mode: 0o100644, size: 1, mtime: 1710000100 };
       },
       async mkdir() {},
       async rename() {},
       async unlink() {},
       async rmdir() {},
+    },
+  });
+
+  const result = await service.getMetadata({ nodeId: 'node-1', path: '/srv/logs' });
+  assert.deepEqual(result, {
+    name: 'logs',
+    path: '/srv/logs',
+    kind: 'directory',
+    size: 0,
+    mtimeMs: 1710000000000,
+    permissions: 'drwxr-xr-x',
+  });
+});
+
+void test('sftpConnectionManager reuses connection by nodeId and exposes manager-level wrappers', async () => {
+  const connectCalls: string[] = [];
+  const operations: string[] = [];
+  const createClient: CreateSftpClient = async (node) => {
+    connectCalls.push(node.id);
+    return {
+      async readDirectory(path) {
+        operations.push(`readDirectory:${node.id}:${path}`);
+        return [];
+      },
+      async stat(path) {
+        operations.push(`stat:${node.id}:${path}`);
+        return { mode: 0o100644 };
+      },
+      async mkdir(path) {
+        operations.push(`mkdir:${node.id}:${path}`);
+      },
+      async rename(fromPath, toPath) {
+        operations.push(`rename:${node.id}:${fromPath}->${toPath}`);
+      },
+      async unlink(path) {
+        operations.push(`unlink:${node.id}:${path}`);
+      },
+      async rmdir(path) {
+        operations.push(`rmdir:${node.id}:${path}`);
+      },
       end() {},
     };
   };
@@ -202,11 +277,22 @@ void test('sftpConnectionManager reuses connection by nodeId and isolates differ
     createClient,
   });
 
-  const nodeA1 = await manager.getOrCreate('node-a');
-  const nodeA2 = await manager.getOrCreate('node-a');
-  const nodeB = await manager.getOrCreate('node-b');
+  await manager.listDirectory('node-a', '/a');
+  await manager.stat('node-a', '/a/file.txt');
+  await manager.mkdir('node-a', '/a/new');
+  await manager.rename('node-a', '/a/old', '/a/new');
+  await manager.unlink('node-a', '/a/file.txt');
+  await manager.rmdir('node-a', '/a/old-dir');
+  await manager.listDirectory('node-b', '/b');
 
-  assert.equal(nodeA1, nodeA2);
-  assert.notEqual(nodeA1, nodeB);
   assert.deepEqual(connectCalls, ['node-a', 'node-b']);
+  assert.deepEqual(operations, [
+    'readDirectory:node-a:/a',
+    'stat:node-a:/a/file.txt',
+    'mkdir:node-a:/a/new',
+    'rename:node-a:/a/old->/a/new',
+    'unlink:node-a:/a/file.txt',
+    'rmdir:node-a:/a/old-dir',
+    'readDirectory:node-b:/b',
+  ]);
 });

@@ -1,7 +1,6 @@
 import path from 'node:path';
 
 import type {
-  SftpConnectionClient,
   SftpConnectionManager,
   SftpDirectoryEntry,
   SftpFileMetadata,
@@ -22,13 +21,25 @@ export type SftpPathType = 'file' | 'directory' | 'symlink' | 'other';
 export type SftpDirectoryItem = {
   name: string;
   path: string;
-  type: SftpPathType;
+  kind: SftpPathType;
   size: number | null;
-  modifiedAt: string | null;
+  mtimeMs: number | null;
   permissions: string | null;
 };
 
-type SftpConnectionProvider = Pick<SftpConnectionManager, 'getOrCreate'>;
+export type SftpMetadataItem = {
+  name: string;
+  path: string;
+  kind: SftpPathType;
+  size: number | null;
+  mtimeMs: number | null;
+  permissions: string | null;
+};
+
+type SftpConnectionProvider = Pick<
+  SftpConnectionManager,
+  'listDirectory' | 'stat' | 'mkdir' | 'rename' | 'unlink' | 'rmdir'
+>;
 
 const POSIX_PATH = path.posix;
 const FILE_TYPE_MASK = 0o170000;
@@ -45,12 +56,12 @@ function normalizePath(value: string, label: string) {
   return POSIX_PATH.normalize(trimmed);
 }
 
-function toIsoTime(epochSeconds: number | undefined) {
+function toMtimeMs(epochSeconds: number | undefined) {
   if (typeof epochSeconds !== 'number' || !Number.isFinite(epochSeconds)) {
     return null;
   }
 
-  return new Date(epochSeconds * 1000).toISOString();
+  return epochSeconds * 1000;
 }
 
 function formatPermissions(mode: number | undefined) {
@@ -134,23 +145,20 @@ function toItem(parentPath: string, entry: SftpDirectoryEntry): SftpDirectoryIte
   return {
     name: entry.filename,
     path: normalizedPath,
-    type: inferPathType(entry.attrs, entry.longname),
+    kind: inferPathType(entry.attrs, entry.longname),
     size: typeof entry.attrs.size === 'number' ? entry.attrs.size : null,
-    modifiedAt: toIsoTime(entry.attrs.mtime),
+    mtimeMs: toMtimeMs(entry.attrs.mtime),
     permissions: formatPermissions(entry.attrs.mode),
   };
 }
 
-async function requireConnection(
-  connectionManager: SftpConnectionProvider,
-  nodeId: string
-): Promise<SftpConnectionClient> {
+function normalizeNodeId(nodeId: string) {
   const trimmedNodeId = nodeId.trim();
   if (!trimmedNodeId) {
     throw new SftpServiceError(400, '节点 ID 不能为空。');
   }
 
-  return connectionManager.getOrCreate(trimmedNodeId);
+  return trimmedNodeId;
 }
 
 export function createSftpService(dependencies: {
@@ -159,76 +167,81 @@ export function createSftpService(dependencies: {
   const { connectionManager } = dependencies;
 
   return {
-    async listDirectory(nodeId: string, remotePath: string) {
-      const normalizedPath = normalizePath(remotePath, '目录路径');
-      const connection = await requireConnection(connectionManager, nodeId);
-      const entries = await connection.readDirectory(normalizedPath);
+    async listDirectory(input: { nodeId: string; path: string }) {
+      const nodeId = normalizeNodeId(input.nodeId);
+      const normalizedPath = normalizePath(input.path, '目录路径');
+      const entries = await connectionManager.listDirectory(nodeId, normalizedPath);
       const normalizedEntries = entries
         .map((entry) => toItem(normalizedPath, entry))
         .sort((left, right) => left.name.localeCompare(right.name));
 
       return {
         path: normalizedPath,
-        entries: normalizedEntries,
+        items: normalizedEntries,
       };
     },
 
-    async getMetadata(nodeId: string, remotePath: string) {
-      const normalizedPath = normalizePath(remotePath, '路径');
-      const connection = await requireConnection(connectionManager, nodeId);
-      const metadata = await connection.stat(normalizedPath);
+    async getMetadata(input: { nodeId: string; path: string }): Promise<SftpMetadataItem> {
+      const nodeId = normalizeNodeId(input.nodeId);
+      const normalizedPath = normalizePath(input.path, '路径');
+      const metadata = await connectionManager.stat(nodeId, normalizedPath);
 
       return {
         name: POSIX_PATH.basename(normalizedPath) || normalizedPath,
         path: normalizedPath,
-        type: inferPathType(metadata),
+        kind: inferPathType(metadata),
         size: typeof metadata.size === 'number' ? metadata.size : null,
-        modifiedAt: toIsoTime(metadata.mtime),
+        mtimeMs: toMtimeMs(metadata.mtime),
         permissions: formatPermissions(metadata.mode),
       };
     },
 
-    async createDirectory(nodeId: string, remotePath: string) {
-      const normalizedPath = normalizePath(remotePath, '目录路径');
-      const connection = await requireConnection(connectionManager, nodeId);
-      await connection.mkdir(normalizedPath);
+    async createDirectory(input: { nodeId: string; path: string }) {
+      const nodeId = normalizeNodeId(input.nodeId);
+      const normalizedPath = normalizePath(input.path, '目录路径');
+      await connectionManager.mkdir(nodeId, normalizedPath);
 
       return { path: normalizedPath };
     },
 
-    async renamePath(nodeId: string, sourcePath: string, targetPath: string) {
-      const normalizedSourcePath = normalizePath(sourcePath, '原路径');
-      const normalizedTargetPath = normalizePath(targetPath, '目标路径');
-      const connection = await requireConnection(connectionManager, nodeId);
-      await connection.rename(normalizedSourcePath, normalizedTargetPath);
+    async renamePath(input: { nodeId: string; fromPath: string; toPath: string }) {
+      const nodeId = normalizeNodeId(input.nodeId);
+      const normalizedSourcePath = normalizePath(input.fromPath, '原路径');
+      const normalizedTargetPath = normalizePath(input.toPath, '目标路径');
+      await connectionManager.rename(nodeId, normalizedSourcePath, normalizedTargetPath);
 
       return {
-        sourcePath: normalizedSourcePath,
-        targetPath: normalizedTargetPath,
+        fromPath: normalizedSourcePath,
+        toPath: normalizedTargetPath,
       };
     },
 
-    async deletePaths(nodeId: string, targets: string[]) {
-      if (!Array.isArray(targets)) {
+    async deletePaths(input: { nodeId: string; paths: string[] }) {
+      const nodeId = normalizeNodeId(input.nodeId);
+      if (!Array.isArray(input.paths)) {
         throw new SftpServiceError(400, '删除目标不能为空。');
       }
 
       const normalizedTargets = Array.from(
-        new Set(targets.map((target) => target.trim()).filter(Boolean).map((target) => POSIX_PATH.normalize(target)))
+        new Set(
+          input.paths
+            .map((target) => target.trim())
+            .filter(Boolean)
+            .map((target) => POSIX_PATH.normalize(target))
+        )
       );
       if (normalizedTargets.length === 0) {
         throw new SftpServiceError(400, '删除目标不能为空。');
       }
 
-      const connection = await requireConnection(connectionManager, nodeId);
       for (const targetPath of normalizedTargets) {
-        const metadata = await connection.stat(targetPath);
+        const metadata = await connectionManager.stat(nodeId, targetPath);
         const type = inferPathType(metadata);
         if (type === 'directory') {
-          await connection.rmdir(targetPath);
+          await connectionManager.rmdir(nodeId, targetPath);
           continue;
         }
-        await connection.unlink(targetPath);
+        await connectionManager.unlink(nodeId, targetPath);
       }
 
       return {

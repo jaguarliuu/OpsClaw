@@ -33,6 +33,12 @@ export type SftpConnectionClient = {
 
 export type SftpConnectionManager = {
   getOrCreate: (nodeId: string) => Promise<SftpConnectionClient>;
+  listDirectory: (nodeId: string, path: string) => Promise<SftpDirectoryEntry[]>;
+  stat: (nodeId: string, path: string) => Promise<SftpFileMetadata>;
+  mkdir: (nodeId: string, path: string) => Promise<void>;
+  rename: (nodeId: string, sourcePath: string, targetPath: string) => Promise<void>;
+  unlink: (nodeId: string, path: string) => Promise<void>;
+  rmdir: (nodeId: string, path: string) => Promise<void>;
   destroy: (nodeId: string) => Promise<void>;
   destroyAll: () => Promise<void>;
 };
@@ -317,6 +323,36 @@ export function createSftpConnectionManager(dependencies: {
       }
       activeConnections.clear();
       pendingConnections.clear();
+    },
+
+    async listDirectory(nodeId: string, path: string) {
+      const connection = await this.getOrCreate(nodeId);
+      return connection.readDirectory(path);
+    },
+
+    async stat(nodeId: string, path: string) {
+      const connection = await this.getOrCreate(nodeId);
+      return connection.stat(path);
+    },
+
+    async mkdir(nodeId: string, path: string) {
+      const connection = await this.getOrCreate(nodeId);
+      await connection.mkdir(path);
+    },
+
+    async rename(nodeId: string, sourcePath: string, targetPath: string) {
+      const connection = await this.getOrCreate(nodeId);
+      await connection.rename(sourcePath, targetPath);
+    },
+
+    async unlink(nodeId: string, path: string) {
+      const connection = await this.getOrCreate(nodeId);
+      await connection.unlink(path);
+    },
+
+    async rmdir(nodeId: string, path: string) {
+      const connection = await this.getOrCreate(nodeId);
+      await connection.rmdir(path);
     },
   };
 }
