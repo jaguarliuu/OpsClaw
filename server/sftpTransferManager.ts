@@ -148,6 +148,10 @@ export function createSftpTransferManager(dependencies: {
       const handle = await fs.open(input.localPath, 'r');
 
       try {
+        if (totalBytes === 0) {
+          await connectionManager.writeChunk(input.nodeId, tempRemotePath, Buffer.alloc(0), 0);
+        }
+
         while (offset < totalBytes) {
           const nextChunkSize = Math.min(chunkSize, totalBytes - offset);
           const buffer = Buffer.alloc(nextChunkSize);

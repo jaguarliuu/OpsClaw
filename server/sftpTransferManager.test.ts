@@ -350,3 +350,42 @@ void test('uploadFile blocks rename when final temp remote size does not match e
   assert.equal(task?.errorMessage, 'Remote temp file size mismatch before finalize.');
   assert.equal(task?.tempRemotePath, '/remote/.opsclaw-upload-task-final-size-mismatch.tmp');
 });
+
+void test('uploadFile succeeds for zero-byte files by creating an empty temp artifact before finalize', async () => {
+  const localPath = path.join(tempRoot, 'empty-source.txt');
+  await fs.writeFile(localPath, '', 'utf8');
+
+  const connectionManager = createFakeConnectionManager();
+  const store = createFakeStore();
+  const { createSftpTransferManager } = await import('./sftpTransferManager.js');
+  const manager = createSftpTransferManager({
+    sftpStore: store,
+    connectionManager,
+  });
+
+  const result = await manager.uploadFile({
+    taskId: 'task-empty',
+    nodeId: 'node-1',
+    localPath,
+    remotePath: '/remote/file.txt',
+    chunkSize: 2,
+  });
+
+  assert.deepEqual(connectionManager.writeCalls, [
+    {
+      path: '/remote/.opsclaw-upload-task-empty.tmp',
+      offset: 0,
+      chunk: '',
+    },
+  ]);
+  assert.deepEqual(connectionManager.renameCalls, [
+    {
+      fromPath: '/remote/.opsclaw-upload-task-empty.tmp',
+      toPath: '/remote/file.txt',
+    },
+  ]);
+  assert.equal(connectionManager.files.get('/remote/file.txt')?.length, 0);
+  assert.equal(result.status, 'completed');
+  assert.equal(result.totalBytes, 0);
+  assert.equal(result.transferredBytes, 0);
+});
