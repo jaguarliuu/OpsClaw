@@ -134,13 +134,13 @@ void test('sftpService validates destructive operation inputs and rejects empty 
     async () => {
       await service.deletePaths({ nodeId: 'node-1', paths: [] });
     },
-    /删除目标不能为空/
+    /至少选择一个目标/
   );
   await assert.rejects(
     async () => {
       await service.deletePaths({ nodeId: 'node-1', paths: [' ', '\n'] });
     },
-    /删除目标不能为空/
+    /至少选择一个目标/
   );
   await assert.rejects(
     async () => {
@@ -245,7 +245,9 @@ void test('sftpConnectionManager reuses connection by nodeId and exposes manager
       async rmdir(path) {
         operations.push(`rmdir:${node.id}:${path}`);
       },
-      end() {},
+      end() {
+        operations.push(`end:${node.id}`);
+      },
     };
   };
 
@@ -281,6 +283,8 @@ void test('sftpConnectionManager reuses connection by nodeId and exposes manager
   });
 
   await manager.listDirectory('node-a', '/a');
+  await manager.closeNode('node-a');
+  await manager.listDirectory('node-a', '/a-2');
   await manager.stat('node-a', '/a/file.txt');
   await manager.mkdir('node-a', '/a/new');
   await manager.rename('node-a', '/a/old', '/a/new');
@@ -288,9 +292,11 @@ void test('sftpConnectionManager reuses connection by nodeId and exposes manager
   await manager.rmdir('node-a', '/a/old-dir');
   await manager.listDirectory('node-b', '/b');
 
-  assert.deepEqual(connectCalls, ['node-a', 'node-b']);
+  assert.deepEqual(connectCalls, ['node-a', 'node-a', 'node-b']);
   assert.deepEqual(operations, [
     'readDirectory:node-a:/a',
+    'end:node-a',
+    'readDirectory:node-a:/a-2',
     'stat:node-a:/a/file.txt',
     'mkdir:node-a:/a/new',
     'rename:node-a:/a/old->/a/new',

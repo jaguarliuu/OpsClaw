@@ -39,6 +39,7 @@ export type SftpConnectionManager = {
   rename: (nodeId: string, sourcePath: string, targetPath: string) => Promise<void>;
   unlink: (nodeId: string, path: string) => Promise<void>;
   rmdir: (nodeId: string, path: string) => Promise<void>;
+  closeNode: (nodeId: string) => Promise<void>;
   destroy: (nodeId: string) => Promise<void>;
   destroyAll: () => Promise<void>;
 };
@@ -354,13 +355,17 @@ export function createSftpConnectionManager(dependencies: {
       return creating;
     },
 
-    async destroy(nodeId: string) {
+    async closeNode(nodeId: string) {
       const active = activeConnections.get(nodeId);
       if (active) {
         active.end();
       }
       activeConnections.delete(nodeId);
       pendingConnections.delete(nodeId);
+    },
+
+    async destroy(nodeId: string) {
+      await this.closeNode(nodeId);
     },
 
     async destroyAll() {

@@ -219,7 +219,7 @@ export function createSftpService(dependencies: {
     async deletePaths(input: { nodeId: string; paths: string[] }) {
       const nodeId = normalizeNodeId(input.nodeId);
       if (!Array.isArray(input.paths)) {
-        throw new SftpServiceError(400, '删除目标不能为空。');
+        throw new SftpServiceError(400, '至少选择一个目标。');
       }
 
       const normalizedTargets = Array.from(
@@ -231,7 +231,7 @@ export function createSftpService(dependencies: {
         )
       );
       if (normalizedTargets.length === 0) {
-        throw new SftpServiceError(400, '删除目标不能为空。');
+        throw new SftpServiceError(400, '至少选择一个目标。');
       }
 
       for (const targetPath of normalizedTargets) {
