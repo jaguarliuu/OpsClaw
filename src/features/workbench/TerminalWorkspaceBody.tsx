@@ -21,6 +21,7 @@ type TerminalWorkspaceBodyProps = {
   paneSessionIds: PaneSessionIds;
   sessions: LiveSession[];
   sidebarCollapsed: boolean;
+  visible: boolean;
   splitContainerRef: RefObject<HTMLDivElement | null>;
   splitLayout: SplitLayout;
   splitRatio: number;
@@ -45,6 +46,7 @@ export function TerminalWorkspaceBody({
   paneSessionIds,
   sessions,
   sidebarCollapsed,
+  visible,
   splitContainerRef,
   splitLayout,
   splitRatio,
@@ -89,6 +91,7 @@ export function TerminalWorkspaceBody({
                   active={session.id === activeSessionId}
                   agentSessionLock={agentSessionLock?.sessionId === session.id ? agentSessionLock : null}
                   key={session.id}
+                  visible={visible}
                   onOpenNodeDashboard={onOpenNodeDashboard}
                   onStatusChange={onSessionStatusChange}
                   ref={(handle) => {
@@ -105,6 +108,7 @@ export function TerminalWorkspaceBody({
                   active={false}
                   agentSessionLock={agentSessionLock?.sessionId === session.id ? agentSessionLock : null}
                   key={session.id}
+                  visible={false}
                   onOpenNodeDashboard={onOpenNodeDashboard}
                   onStatusChange={onSessionStatusChange}
                   ref={(handle) => {
@@ -138,6 +142,7 @@ export function TerminalWorkspaceBody({
                   active={renderState.isFocusedPane}
                   agentSessionLock={agentSessionLock?.sessionId === session.id ? agentSessionLock : null}
                   show={true}
+                  visible={visible}
                   onOpenNodeDashboard={onOpenNodeDashboard}
                   onStatusChange={onSessionStatusChange}
                   ref={(handle) => {

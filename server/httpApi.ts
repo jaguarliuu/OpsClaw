@@ -7,6 +7,7 @@ import { registerMemoryRoutes } from './http/memoryRoutes.js';
 import { registerNodeDashboardRoutes } from './http/nodeDashboardRoutes.js';
 import { registerNodeRoutes } from './http/nodeRoutes.js';
 import { registerScriptRoutes } from './http/scriptRoutes.js';
+import { registerSftpRoutes } from './http/sftpRoutes.js';
 import type { HttpApiDependencies } from './http/support.js';
 
 export function registerOpsClawHttpApi(app: Express, dependencies: HttpApiDependencies) {
@@ -67,4 +68,5 @@ export function registerOpsClawHttpApi(app: Express, dependencies: HttpApiDepend
   registerAgentRoutes(app, dependencies);
   registerMemoryRoutes(app, dependencies);
   registerScriptRoutes(app, dependencies);
+  registerSftpRoutes(app, dependencies);
 }

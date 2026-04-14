@@ -12,6 +12,7 @@ import {
   getAiAssistantPrimaryActionState,
   getAgentStepBudgetHint,
   getAiAssistantThemeClasses,
+  getInlineAiAssistantInteraction,
   getPreferredAiAssistantModelValue,
   markAiAssistantInputCompositionEnd,
   markAiAssistantInputCompositionStart,
@@ -257,6 +258,29 @@ void test('shouldPresentAiAssistantInteractionDialog only opens native cards for
   );
 
   assert.equal(shouldPresentAiAssistantInteractionDialog(null), false);
+});
+
+void test('getInlineAiAssistantInteraction exposes terminal_wait interactions inline in the panel', () => {
+  const terminalWait = makeInteractionRequest({
+    interactionKind: 'terminal_wait',
+    status: 'open',
+  });
+
+  assert.equal(getInlineAiAssistantInteraction(terminalWait), terminalWait);
+  assert.equal(
+    getInlineAiAssistantInteraction(
+      makeInteractionRequest({ interactionKind: 'terminal_wait', status: 'expired' })
+    )?.status,
+    'expired'
+  );
+  assert.equal(getInlineAiAssistantInteraction(makeInteractionRequest()), null);
+  assert.equal(
+    getInlineAiAssistantInteraction(
+      makeInteractionRequest({ interactionKind: 'terminal_wait', status: 'resolved' })
+    ),
+    null
+  );
+  assert.equal(getInlineAiAssistantInteraction(null), null);
 });
 
 void test('shouldSubmitAiAssistantOnEnter ignores Shift+Enter and IME confirmation Enter', () => {

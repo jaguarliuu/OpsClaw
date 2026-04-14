@@ -8,6 +8,7 @@ import {
   buildGroupTree,
   defaultGroupName,
 } from '@/features/workbench/workbenchPageModel';
+import { buildDesktopWindowChromeLayout } from '@/features/workbench/desktopWindowChromeModel';
 import { useDeferredMount } from '@/features/workbench/useDeferredMount';
 import { scheduleIdleTask } from '@/features/workbench/idleTaskScheduler';
 import { useKeyboardShortcuts } from '@/features/workbench/useKeyboardShortcuts';
@@ -35,7 +36,12 @@ import { useAgentRun } from '@/features/workbench/useAgentRun';
 import { useWorkbenchShellState } from '@/features/workbench/useWorkbenchShellState';
 import { useWorkbenchSessions } from '@/features/workbench/useWorkbenchSessions';
 import { useWorkbenchWorkspaceData } from '@/features/workbench/useWorkbenchWorkspaceData';
-import { TerminalWorkspace, type TerminalWorkspaceHandle } from '@/features/workbench/TerminalWorkspace';
+import { useWorkbenchPrimaryView } from '@/features/workbench/useWorkbenchPrimaryView';
+import { type TerminalWorkspaceHandle } from '@/features/workbench/TerminalWorkspace';
+import { TerminalWorkspaceBody } from '@/features/workbench/TerminalWorkspaceBody';
+import { TerminalWorkspaceHeader } from '@/features/workbench/TerminalWorkspaceHeader';
+import { SftpFileManagerView } from '@/features/workbench/SftpFileManagerView';
+import { useTerminalWorkspaceController } from '@/features/workbench/useTerminalWorkspaceController';
 
 import { SessionTree } from '@/features/workbench/SessionTree';
 import type {
@@ -49,6 +55,7 @@ export function WorkbenchPage() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isPendingGatePanelOpen, setIsPendingGatePanelOpen] = useState(false);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  const runtimeCarrierRef = useRef<HTMLDivElement | null>(null);
   const terminalWorkspaceRef = useRef<TerminalWorkspaceHandle | null>(null);
   const {
     closeAiAssistant,
@@ -177,6 +184,19 @@ export function WorkbenchPage() {
   const shouldRenderMoveDialog = useDeferredMount(moveDialogProfile !== null);
   const nodeStatusDashboard = useNodeStatusDashboard();
   const shouldRenderNodeStatusDashboard = useDeferredMount(nodeStatusDashboard.open);
+  const primaryView = useWorkbenchPrimaryView({
+    activeSessionId,
+    sessions,
+  });
+  const terminalWorkspaceController = useTerminalWorkspaceController({
+    activeSessionId,
+    onSelectSession: setActiveSessionId,
+    sessions,
+  });
+  const desktopWindowChrome = buildDesktopWindowChromeLayout({
+    runtime: window.__OPSCLAW_RUNTIME__,
+    location: window.location,
+  });
 
   const openNodeDashboardForNodeId = (nodeId: string | null | undefined) => {
     if (!nodeId) {
@@ -196,6 +216,17 @@ export function WorkbenchPage() {
     );
   };
 
+  const openSftpForNodeId = (
+    nodeId: string | null | undefined,
+    sessionId?: string | null
+  ) => {
+    if (!nodeId) {
+      return;
+    }
+
+    primaryView.openSftp(nodeId, sessionId);
+  };
+
   const handleSelectProfile = (profile: SavedConnectionProfile) => {
     setSelectedProfileId(profile.id);
   };
@@ -213,6 +244,36 @@ export function WorkbenchPage() {
     if (!isAiAssistantOpen) {
       toggleAiAssistant();
     }
+  };
+
+  const handleCloseSftp = () => {
+    setActiveSessionId(primaryView.state.sessionId);
+    primaryView.closeSftp();
+  };
+  const isTerminalWorkspaceVisible = primaryView.state.mode !== 'sftp';
+  const activeSession = activeSessionId
+    ? sessions.find((session) => session.id === activeSessionId) ?? null
+    : null;
+
+  useEffect(() => {
+    if (isTerminalWorkspaceVisible || typeof document === 'undefined') {
+      return;
+    }
+
+    const container = runtimeCarrierRef.current;
+    if (!container) {
+      return;
+    }
+
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement && container.contains(activeElement)) {
+      activeElement.blur();
+    }
+  }, [isTerminalWorkspaceVisible]);
+
+  terminalWorkspaceRef.current = {
+    sendCommandToActive: terminalWorkspaceController.sendCommandToActive,
+    executeCommandOnSession: terminalWorkspaceController.executeCommandOnSession,
   };
 
   useKeyboardShortcuts({
@@ -267,6 +328,7 @@ export function WorkbenchPage() {
         onDeleteProfile={handleDeleteProfile}
         onEditProfile={handleEditProfile}
         onOpenNodeDashboard={openNodeDashboardForProfile}
+        onOpenSftp={(profile) => openSftpForNodeId(profile.id)}
         onMoveProfileToGroup={handleMoveProfileToGroup}
         onOpenNewConnection={openNewConnection}
         onOpenCsvImport={openCsvImport}
@@ -284,24 +346,85 @@ export function WorkbenchPage() {
         sessions={sessions}
       />
 
-      <TerminalWorkspace
-        ref={terminalWorkspaceRef}
-        activeSessionId={activeSessionId}
-        agentSessionLock={agentSessionLock}
-        isMacShortcutPlatform={typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)}
-        pendingInteractionCount={agentRun.pendingInteractions.length}
-        onCloseSession={handleCloseSession}
-        onOpenNodeDashboard={openNodeDashboardForNodeId}
-        onOpenPendingGates={() => setIsPendingGatePanelOpen(true)}
-        onOpenNewConnection={openNewConnection}
-        onSelectSession={setActiveSessionId}
-        onSessionStatusChange={handleSessionStatusChange}
-        onToggleSidebar={() => setIsSidebarCollapsed((current) => !current)}
-        onOpenAiAssistant={handleOpenAiAssistant}
-        onOpenHelpDialog={openHelpDialog}
-        sidebarCollapsed={isSidebarCollapsed}
-        sessions={sessions}
-      />
+      <div className="relative min-h-screen min-w-0 flex-1">
+        <div
+          aria-hidden={!isTerminalWorkspaceVisible}
+          ref={runtimeCarrierRef}
+          className={
+            isTerminalWorkspaceVisible
+              ? 'grid min-h-screen min-w-0 flex-1 bg-[var(--app-bg-elevated)]'
+              : 'pointer-events-none absolute inset-0 grid min-h-screen min-w-0 flex-1 bg-[var(--app-bg-elevated)]'
+          }
+          style={{
+            gridTemplateRows:
+              isTerminalWorkspaceVisible
+                ? desktopWindowChrome.topBarStyle
+                  ? 'calc(42px + env(titlebar-area-height, 0px)) 38px minmax(0,1fr)'
+                  : '42px 38px minmax(0,1fr)'
+                : 'minmax(0,1fr)',
+            visibility: isTerminalWorkspaceVisible ? 'visible' : 'hidden',
+          }}
+        >
+          {isTerminalWorkspaceVisible ? (
+            <TerminalWorkspaceHeader
+              activeSession={activeSession}
+              activeSessionId={activeSessionId}
+              desktopInteractiveStyle={desktopWindowChrome.interactiveStyle}
+              desktopTopBarStyle={desktopWindowChrome.topBarStyle}
+              desktopWindowControlsInsetStyle={desktopWindowChrome.windowControlsInsetStyle}
+              isMacShortcutPlatform={typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform)}
+              pendingInteractionCount={agentRun.pendingInteractions.length}
+              sessions={sessions}
+              sidebarCollapsed={isSidebarCollapsed}
+              splitLayout={terminalWorkspaceController.splitLayout}
+              onCloseSession={handleCloseSession}
+              onEnterSplitMode={terminalWorkspaceController.enterSplitMode}
+              onExitSplitMode={terminalWorkspaceController.exitSplitMode}
+              onOpenAiAssistant={handleOpenAiAssistant}
+              onOpenHelpDialog={openHelpDialog}
+              onOpenPendingGates={() => setIsPendingGatePanelOpen(true)}
+              onOpenNewConnection={openNewConnection}
+              onOpenSftp={(nodeId) => openSftpForNodeId(nodeId, activeSessionId)}
+              onSelectSession={setActiveSessionId}
+              onToggleSidebar={() => setIsSidebarCollapsed((current) => !current)}
+            />
+          ) : null}
+
+          <TerminalWorkspaceBody
+            activeSessionId={activeSessionId}
+            agentSessionLock={agentSessionLock}
+            focusedPane={terminalWorkspaceController.focusedPane}
+            paneSessionIds={terminalWorkspaceController.paneSessionIds}
+            sessions={sessions}
+            sidebarCollapsed={isSidebarCollapsed}
+            visible={isTerminalWorkspaceVisible}
+            splitContainerRef={terminalWorkspaceController.splitContainerRef}
+            splitLayout={terminalWorkspaceController.splitLayout}
+            splitRatio={terminalWorkspaceController.splitRatio}
+            terminalRefs={terminalWorkspaceController.terminalRefs}
+            onDividerMouseDown={terminalWorkspaceController.handleDividerMouseDown}
+            onFocusEmptyPane={terminalWorkspaceController.handleFocusEmptyPane}
+            onOpenNodeDashboard={openNodeDashboardForNodeId}
+            onOpenNewConnection={openNewConnection}
+            onPointerFocusPane={terminalWorkspaceController.handlePointerFocusPane}
+            onSessionStatusChange={handleSessionStatusChange}
+            onToggleSidebar={() => setIsSidebarCollapsed((current) => !current)}
+          />
+        </div>
+
+        {primaryView.state.mode === 'sftp' && primaryView.state.nodeId ? (
+          <div className="absolute inset-0">
+            <SftpFileManagerView
+              nodeId={primaryView.state.nodeId}
+              nodeName={
+                savedProfiles.find((profile) => profile.id === primaryView.state.nodeId)?.name
+                ?? primaryView.state.nodeId
+              }
+              onClose={handleCloseSftp}
+            />
+          </div>
+        ) : null}
+      </div>
 
       {shouldRenderPendingGatePanel ? (
         <PendingInteractionPanel

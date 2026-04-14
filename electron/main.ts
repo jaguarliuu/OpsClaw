@@ -1,4 +1,4 @@
-import { app, dialog } from 'electron';
+import { app, dialog, ipcMain } from 'electron';
 
 import {
   resolveRendererIndexHtmlPath,
@@ -6,6 +6,7 @@ import {
   type StartedBackendProcess,
 } from './backendProcess.js';
 import { createFileLogger } from './fileLogger.js';
+import { registerNativeDialogHandlers } from './nativeDialogs.js';
 import { OPSCLAW_APP_NAME } from './constants.js';
 import { resolveBackendLogFilePath, resolveMainLogFilePath } from './logPaths.js';
 import { resolvePreloadPath } from './mainRuntimePaths.js';
@@ -15,6 +16,7 @@ let backendProcess: StartedBackendProcess | null = null;
 let mainWindow: Awaited<ReturnType<typeof createMainWindow>> | null = null;
 let quitting = false;
 let logger: ReturnType<typeof createFileLogger> | null = null;
+let nativeDialogHandlersRegistered = false;
 
 function focusMainWindow() {
   if (!mainWindow) {
@@ -39,6 +41,11 @@ async function stopBackendProcess() {
 }
 
 async function bootstrapDesktopApp() {
+  if (!nativeDialogHandlersRegistered) {
+    registerNativeDialogHandlers(() => mainWindow, { dialog, ipcMain });
+    nativeDialogHandlersRegistered = true;
+  }
+
   const dataDir = app.getPath('userData');
   logger = createFileLogger(resolveMainLogFilePath(dataDir));
   const resourcesPath = app.isPackaged ? process.resourcesPath : process.cwd();

@@ -67,6 +67,18 @@ export type SqlDatabaseHandle = {
 };
 
 const LLM_PROVIDER_TYPES = ['zhipu', 'minimax', 'qwen', 'deepseek', 'openai_compatible'] as const;
+const SFTP_TRANSFER_DIRECTIONS = ['upload', 'download'] as const;
+const SFTP_TRANSFER_STATUSES = [
+  'queued',
+  'running',
+  'paused',
+  'retrying',
+  'awaiting_approval',
+  'completed',
+  'failed',
+  'cancelled',
+] as const;
+const SFTP_CHECKSUM_STATUSES = ['pending', 'matched', 'mismatch', 'skipped'] as const;
 
 const LLM_PROVIDERS_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS llm_providers (
@@ -87,6 +99,67 @@ const LLM_PROVIDERS_TABLE_SQL = `
   );
 `;
 
+const SFTP_TRANSFER_TASKS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS sftp_transfer_tasks (
+    task_id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    direction TEXT NOT NULL CHECK (direction IN (${SFTP_TRANSFER_DIRECTIONS.map((value) => `'${value}'`).join(', ')})),
+    local_path TEXT NOT NULL,
+    remote_path TEXT NOT NULL,
+    temp_local_path TEXT,
+    temp_remote_path TEXT,
+    total_bytes INTEGER CHECK (total_bytes IS NULL OR total_bytes >= 0),
+    transferred_bytes INTEGER NOT NULL CHECK (transferred_bytes >= 0),
+    last_confirmed_offset INTEGER NOT NULL CHECK (last_confirmed_offset >= 0),
+    chunk_size INTEGER NOT NULL CHECK (chunk_size > 0),
+    status TEXT NOT NULL CHECK (status IN (${SFTP_TRANSFER_STATUSES.map((value) => `'${value}'`).join(', ')})),
+    retry_count INTEGER NOT NULL CHECK (retry_count >= 0),
+    error_message TEXT,
+    checksum_status TEXT NOT NULL CHECK (checksum_status IN (${SFTP_CHECKSUM_STATUSES.map((value) => `'${value}'`).join(', ')})),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (total_bytes IS NULL OR transferred_bytes <= total_bytes),
+    CHECK (last_confirmed_offset <= transferred_bytes)
+  );
+`;
+
+const sftpTransferDirectionSet = new Set<string>(SFTP_TRANSFER_DIRECTIONS);
+const sftpTransferStatusSet = new Set<string>(SFTP_TRANSFER_STATUSES);
+const sftpChecksumStatusSet = new Set<string>(SFTP_CHECKSUM_STATUSES);
+
+function normalizeSql(sql: string) {
+  return sql.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function parseCheckInValues(tableSql: string, columnName: string) {
+  const normalized = normalizeSql(tableSql);
+  const match = normalized.match(new RegExp(`${columnName}\\s+in\\s*\\(([^)]*)\\)`));
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const values = match[1]
+    .split(',')
+    .map((item) => item.trim())
+    .map((item) => item.replace(/^'/, '').replace(/'$/, ''))
+    .filter(Boolean);
+
+  return new Set(values);
+}
+
+function hasExpectedCheckEnumValues(tableSql: string, columnName: string, expectedValues: readonly string[]) {
+  const actualValues = parseCheckInValues(tableSql, columnName);
+  if (!actualValues) {
+    return false;
+  }
+
+  if (actualValues.size !== expectedValues.length) {
+    return false;
+  }
+
+  return expectedValues.every((value) => actualValues.has(value.toLowerCase()));
+}
+
 function toSqlRows(
   result: Array<{ columns: string[]; values: SqliteValue[][] }>
 ) {
@@ -106,6 +179,14 @@ function toSqlRows(
 
 function readString(value: SqliteValue, field: string) {
   if (typeof value !== 'string') {
+    throw new Error(`Invalid ${field} value.`);
+  }
+
+  return value;
+}
+
+function readNumber(value: SqliteValue, field: string) {
+  if (typeof value !== 'number') {
     throw new Error(`Invalid ${field} value.`);
   }
 
@@ -167,6 +248,42 @@ function readNullableString(value: SqliteValue, field: string) {
 
   if (typeof value !== 'string') {
     throw new Error(`Invalid ${field} value.`);
+  }
+
+  return value;
+}
+
+function readNullableNumber(value: SqliteValue, field: string) {
+  if (value === null) {
+    return null;
+  }
+
+  if (typeof value !== 'number') {
+    throw new Error(`Invalid ${field} value.`);
+  }
+
+  return value;
+}
+
+function readSftpTransferDirection(value: SqliteValue) {
+  if (typeof value !== 'string' || !sftpTransferDirectionSet.has(value)) {
+    throw new Error(`Invalid sftp_transfer_tasks direction value: ${String(value)}.`);
+  }
+
+  return value;
+}
+
+function readSftpTransferStatus(value: SqliteValue) {
+  if (typeof value !== 'string' || !sftpTransferStatusSet.has(value)) {
+    throw new Error(`Invalid sftp_transfer_tasks status value: ${String(value)}.`);
+  }
+
+  return value;
+}
+
+function readSftpChecksumStatus(value: SqliteValue) {
+  if (typeof value !== 'string' || !sftpChecksumStatusSet.has(value)) {
+    throw new Error(`Invalid sftp_transfer_tasks checksum_status value: ${String(value)}.`);
   }
 
   return value;
@@ -257,6 +374,219 @@ function ensureCommandHistoryTable(database: SqlDatabaseHandle) {
   `);
   database.run(`CREATE INDEX IF NOT EXISTS idx_ch_node_id ON command_history(node_id);`);
   database.run(`CREATE INDEX IF NOT EXISTS idx_ch_last_used ON command_history(last_used DESC);`);
+}
+
+function ensureSftpHostKeysTable(database: SqlDatabaseHandle) {
+  database.run(`
+    CREATE TABLE IF NOT EXISTS sftp_host_keys (
+      node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+      algorithm TEXT NOT NULL,
+      fingerprint TEXT NOT NULL,
+      seen_at TEXT NOT NULL
+    );
+  `);
+}
+
+function ensureSftpTransferTasksTable(database: SqlDatabaseHandle) {
+  const tableInfo = queryTableInfo(database, 'sftp_transfer_tasks');
+  const columns = new Map(tableInfo.map((column) => [column.name, column]));
+  const tableRows = toSqlRows(
+    database.exec(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'sftp_transfer_tasks';`)
+  );
+  const tableSql = typeof tableRows[0]?.sql === 'string' ? tableRows[0].sql : '';
+  const requiredColumns = [
+    'task_id',
+    'node_id',
+    'direction',
+    'local_path',
+    'remote_path',
+    'temp_local_path',
+    'temp_remote_path',
+    'total_bytes',
+    'transferred_bytes',
+    'last_confirmed_offset',
+    'chunk_size',
+    'status',
+    'retry_count',
+    'error_message',
+    'checksum_status',
+    'created_at',
+    'updated_at',
+  ];
+
+  if (columns.size === 0) {
+    database.run(SFTP_TRANSFER_TASKS_TABLE_SQL);
+  } else {
+    const hasRequiredColumns = requiredColumns.every((column) => columns.has(column));
+    const hasEnumChecks =
+      hasExpectedCheckEnumValues(tableSql, 'direction', SFTP_TRANSFER_DIRECTIONS) &&
+      hasExpectedCheckEnumValues(tableSql, 'status', SFTP_TRANSFER_STATUSES) &&
+      hasExpectedCheckEnumValues(tableSql, 'checksum_status', SFTP_CHECKSUM_STATUSES);
+    const hasCounterChecks =
+      tableSql.includes(`total_bytes IS NULL OR total_bytes >= 0`) &&
+      tableSql.includes(`transferred_bytes >= 0`) &&
+      tableSql.includes(`last_confirmed_offset >= 0`) &&
+      tableSql.includes(`chunk_size > 0`) &&
+      tableSql.includes(`retry_count >= 0`) &&
+      tableSql.includes(`transferred_bytes <= total_bytes`) &&
+      tableSql.includes(`last_confirmed_offset <= transferred_bytes`);
+    const needsRebuild = !hasRequiredColumns || !hasEnumChecks || !hasCounterChecks;
+
+    if (needsRebuild) {
+      const canMigrateRows =
+        columns.has('task_id') &&
+        columns.has('node_id') &&
+        columns.has('direction') &&
+        columns.has('local_path') &&
+        columns.has('remote_path') &&
+        columns.has('transferred_bytes') &&
+        columns.has('last_confirmed_offset') &&
+        columns.has('chunk_size') &&
+        columns.has('status') &&
+        columns.has('retry_count') &&
+        columns.has('checksum_status') &&
+        columns.has('created_at') &&
+        columns.has('updated_at');
+
+      if (!canMigrateRows) {
+        const countRows = queryMany(
+          database,
+          `SELECT COUNT(*) AS count FROM sftp_transfer_tasks`,
+          (row) => readNumber(row.count, 'count')
+        );
+        const rowCount = countRows[0] ?? 0;
+        if (rowCount > 0) {
+          throw new Error(
+            'SFTP transfer tasks migration failed: legacy table is missing required columns with existing rows.'
+          );
+        }
+      }
+
+      const legacyRows = canMigrateRows
+        ? queryMany(
+            database,
+            `
+              SELECT
+                task_id,
+                node_id,
+                direction,
+                local_path,
+                remote_path,
+                ${columns.has('temp_local_path') ? 'temp_local_path' : 'NULL AS temp_local_path'},
+                ${columns.has('temp_remote_path') ? 'temp_remote_path' : 'NULL AS temp_remote_path'},
+                ${columns.has('total_bytes') ? 'total_bytes' : 'NULL AS total_bytes'},
+                transferred_bytes,
+                last_confirmed_offset,
+                chunk_size,
+                status,
+                retry_count,
+                ${columns.has('error_message') ? 'error_message' : 'NULL AS error_message'},
+                checksum_status,
+                created_at,
+                updated_at
+              FROM sftp_transfer_tasks
+            `,
+            (row) => {
+              const taskId = readString(row.task_id, 'task_id');
+              const totalBytes = readNullableNumber(row.total_bytes, 'total_bytes');
+              const transferredBytes = readNumber(row.transferred_bytes, 'transferred_bytes');
+              const lastConfirmedOffset = readNumber(row.last_confirmed_offset, 'last_confirmed_offset');
+              const chunkSize = readNumber(row.chunk_size, 'chunk_size');
+              const retryCount = readNumber(row.retry_count, 'retry_count');
+
+              if (totalBytes !== null && totalBytes < 0) {
+                throw new Error(`Invalid sftp_transfer_tasks total_bytes value for task "${taskId}".`);
+              }
+              if (transferredBytes < 0) {
+                throw new Error(`Invalid sftp_transfer_tasks transferred_bytes value for task "${taskId}".`);
+              }
+              if (lastConfirmedOffset < 0) {
+                throw new Error(`Invalid sftp_transfer_tasks last_confirmed_offset value for task "${taskId}".`);
+              }
+              if (chunkSize <= 0) {
+                throw new Error(`Invalid sftp_transfer_tasks chunk_size value for task "${taskId}".`);
+              }
+              if (retryCount < 0) {
+                throw new Error(`Invalid sftp_transfer_tasks retry_count value for task "${taskId}".`);
+              }
+              if (totalBytes !== null && transferredBytes > totalBytes) {
+                throw new Error(
+                  `Invalid sftp_transfer_tasks bytes relationship for task "${taskId}": transferred_bytes exceeds total_bytes.`
+                );
+              }
+              if (lastConfirmedOffset > transferredBytes) {
+                throw new Error(
+                  `Invalid sftp_transfer_tasks offset relationship for task "${taskId}": last_confirmed_offset exceeds transferred_bytes.`
+                );
+              }
+
+              return {
+                taskId,
+                nodeId: readString(row.node_id, 'node_id'),
+                direction: readSftpTransferDirection(row.direction),
+                localPath: readString(row.local_path, 'local_path'),
+                remotePath: readString(row.remote_path, 'remote_path'),
+                tempLocalPath: readNullableString(row.temp_local_path, 'temp_local_path'),
+                tempRemotePath: readNullableString(row.temp_remote_path, 'temp_remote_path'),
+                totalBytes,
+                transferredBytes,
+                lastConfirmedOffset,
+                chunkSize,
+                status: readSftpTransferStatus(row.status),
+                retryCount,
+                errorMessage: readNullableString(row.error_message, 'error_message'),
+                checksumStatus: readSftpChecksumStatus(row.checksum_status),
+                createdAt: readString(row.created_at, 'created_at'),
+                updatedAt: readString(row.updated_at, 'updated_at'),
+              };
+            }
+          )
+        : [];
+
+      database.run('ALTER TABLE sftp_transfer_tasks RENAME TO sftp_transfer_tasks_legacy;');
+      database.run(SFTP_TRANSFER_TASKS_TABLE_SQL);
+
+      for (const row of legacyRows) {
+        database.run(
+          `
+            INSERT INTO sftp_transfer_tasks (
+              task_id, node_id, direction, local_path, remote_path, temp_local_path, temp_remote_path,
+              total_bytes, transferred_bytes, last_confirmed_offset, chunk_size, status, retry_count,
+              error_message, checksum_status, created_at, updated_at
+            ) VALUES (
+              :taskId, :nodeId, :direction, :localPath, :remotePath, :tempLocalPath, :tempRemotePath,
+              :totalBytes, :transferredBytes, :lastConfirmedOffset, :chunkSize, :status, :retryCount,
+              :errorMessage, :checksumStatus, :createdAt, :updatedAt
+            );
+          `,
+          {
+            ':taskId': row.taskId,
+            ':nodeId': row.nodeId,
+            ':direction': row.direction,
+            ':localPath': row.localPath,
+            ':remotePath': row.remotePath,
+            ':tempLocalPath': row.tempLocalPath,
+            ':tempRemotePath': row.tempRemotePath,
+            ':totalBytes': row.totalBytes,
+            ':transferredBytes': row.transferredBytes,
+            ':lastConfirmedOffset': row.lastConfirmedOffset,
+            ':chunkSize': row.chunkSize,
+            ':status': row.status,
+            ':retryCount': row.retryCount,
+            ':errorMessage': row.errorMessage,
+            ':checksumStatus': row.checksumStatus,
+            ':createdAt': row.createdAt,
+            ':updatedAt': row.updatedAt,
+          }
+        );
+      }
+
+      database.run('DROP TABLE sftp_transfer_tasks_legacy;');
+    }
+  }
+
+  database.run(`CREATE INDEX IF NOT EXISTS idx_sftp_transfer_tasks_node_id ON sftp_transfer_tasks(node_id);`);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_sftp_transfer_tasks_status ON sftp_transfer_tasks(status);`);
 }
 
 function ensureLlmProvidersTable(database: SqlDatabaseHandle) {
@@ -614,6 +944,8 @@ async function createDatabase(): Promise<SqliteDatabase> {
   database.run(schema);
   ensureNodeCredentialColumns(database);
   ensureCommandHistoryTable(database);
+  ensureSftpHostKeysTable(database);
+  ensureSftpTransferTasksTable(database);
   ensureLlmProvidersTable(database);
   ensureScriptLibraryTable(database);
   ensureScriptLibraryAliasColumn(database);
@@ -645,7 +977,14 @@ async function createDatabase(): Promise<SqliteDatabase> {
 
 export function getSqliteDatabase() {
   if (!databasePromise) {
-    databasePromise = createDatabase();
+    const initializingPromise = createDatabase();
+    const recoverablePromise = initializingPromise.catch((error) => {
+      if (databasePromise === recoverablePromise) {
+        databasePromise = null;
+      }
+      throw error;
+    });
+    databasePromise = recoverablePromise;
   }
 
   return databasePromise;
@@ -656,9 +995,15 @@ export async function resetSqliteDatabaseForTests() {
     return;
   }
 
-  const sqlite = await databasePromise;
-  await sqlite.close();
+  const currentPromise = databasePromise;
   databasePromise = null;
+
+  try {
+    const sqlite = await currentPromise;
+    await sqlite.close();
+  } catch {
+    // Initialization can fail during migration checks; reset should still clear cache.
+  }
 }
 
 export async function removeSqliteDatabaseFileForTests() {

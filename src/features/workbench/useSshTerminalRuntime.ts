@@ -10,11 +10,14 @@ import {
 } from '@/features/workbench/sshTerminalCopyFeedbackModel';
 import {
   createSshTerminalImeState,
+  hasSensitiveTerminalPrompt,
+  isSearchableCommandHistoryEntry,
   markSshTerminalImeCompositionEnd,
   markSshTerminalImeCompositionStart,
   resolveSshTerminalClipboardShortcut,
   shouldBlockSshTerminalCompositionConfirm,
   shouldConfirmSshTerminalPaste,
+  shouldRecordSshTerminalCommand,
   shouldToggleSshTerminalSearchShortcut,
   resolveSshTerminalInput,
   type SshTerminalQuickScriptOverlayState,
@@ -58,6 +61,7 @@ type UseSshTerminalRuntimeOptions = {
     themeName: keyof typeof TERMINAL_THEMES;
   }>;
   terminalRef: MutableRefObject<Terminal | null>;
+  transcriptRef: MutableRefObject<string>;
   toggleSearch: () => void;
   quickScriptsRef: MutableRefObject<ScriptLibraryItem[]>;
   onOpenNodeDashboard: () => void;
@@ -88,6 +92,7 @@ export function useSshTerminalRuntime({
   sessionNodeIdRef,
   settingsRef,
   terminalRef,
+  transcriptRef,
   toggleSearch,
   quickScriptsRef,
   onOpenNodeDashboard,
@@ -222,6 +227,11 @@ export function useSshTerminalRuntime({
       return;
     }
 
+    if (hasSensitiveTerminalPrompt(transcriptRef.current)) {
+      setSuggestion(null);
+      return;
+    }
+
     if (suggestionTimerRef.current) {
       clearTimeout(suggestionTimerRef.current);
     }
@@ -234,8 +244,14 @@ export function useSshTerminalRuntime({
     suggestionTimerRef.current = setTimeout(() => {
       void searchCommands(input, sessionNodeIdRef.current)
         .then((results) => {
-          if (results.length > 0 && results[0].command.startsWith(input)) {
-            setSuggestion(results[0].command);
+          const nextSuggestion = results.find(
+            (item) =>
+              isSearchableCommandHistoryEntry(item.command) &&
+              item.command.startsWith(input)
+          );
+
+          if (nextSuggestion) {
+            setSuggestion(nextSuggestion.command);
           } else {
             setSuggestion(null);
           }
@@ -555,12 +571,19 @@ export function useSshTerminalRuntime({
           }
 
           if (!isAgentLockedRef.current && resolution.commandToRecord) {
-            void recordCommand({
-              command: resolution.commandToRecord,
-              nodeId: sessionNodeIdRef.current,
-            }).catch((error) => {
-              console.error('[SshTerminalRuntime] command-history:record_error', error);
-            });
+            if (
+              shouldRecordSshTerminalCommand({
+                command: resolution.commandToRecord,
+                transcriptTail: transcriptRef.current,
+              })
+            ) {
+              void recordCommand({
+                command: resolution.commandToRecord,
+                nodeId: sessionNodeIdRef.current,
+              }).catch((error) => {
+                console.error('[SshTerminalRuntime] command-history:record_error', error);
+              });
+            }
           }
 
           if (!isAgentLockedRef.current) {

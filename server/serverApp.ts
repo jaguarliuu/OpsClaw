@@ -12,6 +12,9 @@ import { createNodeInspectionService, type RunInspectionCommand } from './nodeIn
 import { createNodeInspectionStore } from './nodeInspectionStore.js';
 import { createNodeStore } from './nodeStore.js';
 import { createScriptLibraryStore } from './scriptLibraryStore.js';
+import { createSftpConnectionManager } from './sftpConnectionManager.js';
+import { createSftpService } from './sftpService.js';
+import { createSftpStore } from './sftpStore.js';
 
 export type CreateOpsClawServerAppOptions = {
   port?: number;
@@ -24,6 +27,14 @@ export async function createOpsClawServerApp(options: CreateOpsClawServerAppOpti
   const llmProviderStore = await createLlmProviderStore();
   const scriptLibraryStore = await createScriptLibraryStore();
   const nodeInspectionStore = await createNodeInspectionStore();
+  const sftpStore = await createSftpStore();
+  const sftpConnectionManager = createSftpConnectionManager({
+    nodeStore,
+    sftpStore,
+  });
+  const sftpService = createSftpService({
+    connectionManager: sftpConnectionManager,
+  });
   const runNodeInspectionCommand: RunInspectionCommand =
     options.runNodeInspectionCommand ??
     ((node, command) => runInspectionCommandOnNode(node, command, (id) => nodeStore.getNodeWithSecrets(id)));
@@ -49,6 +60,8 @@ export async function createOpsClawServerApp(options: CreateOpsClawServerAppOpti
     scriptLibraryStore,
     nodeInspectionStore,
     nodeInspectionService,
+    sftpStore,
+    sftpService,
     fileMemoryStore,
     agentRuntime,
   });
@@ -62,6 +75,9 @@ export async function createOpsClawServerApp(options: CreateOpsClawServerAppOpti
     scriptLibraryStore,
     nodeInspectionStore,
     nodeInspectionService,
+    sftpStore,
+    sftpConnectionManager,
+    sftpService,
     sessionRegistry,
   };
 }

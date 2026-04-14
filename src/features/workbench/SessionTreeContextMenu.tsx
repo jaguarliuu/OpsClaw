@@ -15,6 +15,7 @@ type SessionTreeContextMenuProps = {
   onDeleteProfile: (profile: SavedConnectionProfile) => void;
   onEditProfile: (profile: SavedConnectionProfile) => void;
   onOpenNodeDashboard: (profile: SavedConnectionProfile) => void;
+  onOpenSftp: (profile: SavedConnectionProfile) => void;
   onOpenCsvImport: () => void;
   onOpenNewConnection: () => void;
   onRenameGroup: (group: SavedConnectionGroup) => void;
@@ -31,6 +32,7 @@ export function SessionTreeContextMenu({
   onDeleteProfile,
   onEditProfile,
   onOpenNodeDashboard,
+  onOpenSftp,
   onMoveProfileToGroup,
   onOpenCsvImport,
   onOpenNewConnection,
@@ -142,6 +144,16 @@ export function SessionTreeContextMenu({
             type="button"
           >
             配置
+          </button>
+          <button
+            className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-bg-elevated3)]"
+            onClick={() => {
+              onOpenSftp(contextMenuState.profile);
+              onRequestClose();
+            }}
+            type="button"
+          >
+            打开 SFTP
           </button>
           <button
             className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-bg-elevated3)]"

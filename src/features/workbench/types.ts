@@ -54,6 +54,55 @@ export type TerminalCommandExecutionResult = {
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'error' | 'closed' | 'reconnecting';
 
+export type SftpEntryKind = 'file' | 'directory' | 'symlink' | 'other';
+
+export type SftpDirectoryEntry = {
+  name: string;
+  path: string;
+  kind: SftpEntryKind;
+  size: number | null;
+  mtimeMs: number | null;
+  permissions: string | null;
+};
+
+export type SftpDirectoryPayload = {
+  nodeId: string;
+  path: string;
+  items: SftpDirectoryEntry[];
+};
+
+export type SftpTransferDirection = 'upload' | 'download';
+export type SftpTransferStatus =
+  | 'queued'
+  | 'running'
+  | 'paused'
+  | 'retrying'
+  | 'awaiting_approval'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+export type SftpChecksumStatus = 'pending' | 'matched' | 'mismatch' | 'skipped';
+
+export type SftpTransferTask = {
+  taskId: string;
+  nodeId: string;
+  direction: SftpTransferDirection;
+  localPath: string;
+  remotePath: string;
+  tempLocalPath: string | null;
+  tempRemotePath: string | null;
+  totalBytes: number | null;
+  transferredBytes: number;
+  lastConfirmedOffset: number;
+  chunkSize: number;
+  status: SftpTransferStatus;
+  retryCount: number;
+  errorMessage: string | null;
+  checksumStatus: SftpChecksumStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type LiveSession = {
   id: string;
   label: string;
@@ -217,9 +266,22 @@ export type OpsClawDesktopClipboard = {
   writeText: (text: string) => Promise<void>;
 };
 
+export type OpsClawDesktopFileDialog = {
+  pickFiles: (options?: {
+    title?: string;
+    filters?: Array<{ name: string; extensions: string[] }>;
+    properties?: Array<'openFile' | 'multiSelections'>;
+  }) => Promise<{ canceled: boolean; paths: string[] }>;
+  pickSavePath: (options?: {
+    title?: string;
+    defaultPath?: string;
+  }) => Promise<{ canceled: boolean; path: string | null }>;
+};
+
 declare global {
   interface Window {
     __OPSCLAW_CLIPBOARD__?: OpsClawDesktopClipboard;
+    __OPSCLAW_FILE_DIALOG__?: OpsClawDesktopFileDialog;
     __OPSCLAW_RUNTIME__?: OpsClawDesktopRuntime;
   }
 }

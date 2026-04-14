@@ -35,8 +35,10 @@ type TerminalWorkspaceProps = {
   pendingInteractionCount: number;
   sessions: LiveSession[];
   sidebarCollapsed: boolean;
+  visible?: boolean;
   onCloseSession: (sessionId: string) => void;
   onOpenNodeDashboard: (nodeId: string) => void;
+  onOpenSftp: (nodeId: string) => void;
   onOpenNewConnection: () => void;
   onOpenPendingGates: () => void;
   onToggleSidebar: () => void;
@@ -54,8 +56,10 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
   pendingInteractionCount,
   sessions,
   sidebarCollapsed,
+  visible = true,
   onCloseSession,
   onOpenNodeDashboard,
+  onOpenSftp,
   onOpenNewConnection,
   onOpenPendingGates,
   onToggleSidebar,
@@ -217,6 +221,7 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
         onOpenHelpDialog={onOpenHelpDialog}
         onOpenPendingGates={onOpenPendingGates}
         onOpenNewConnection={onOpenNewConnection}
+        onOpenSftp={onOpenSftp}
         onSelectSession={onSelectSession}
         onToggleSidebar={onToggleSidebar}
       />
@@ -228,6 +233,7 @@ export const TerminalWorkspace = forwardRef<TerminalWorkspaceHandle, TerminalWor
         paneSessionIds={paneSessionIds}
         sessions={sessions}
         sidebarCollapsed={sidebarCollapsed}
+        visible={visible}
         splitContainerRef={splitContainerRef}
         splitLayout={splitLayout}
         splitRatio={splitRatio}

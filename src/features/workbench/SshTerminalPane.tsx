@@ -34,6 +34,7 @@ import { useSshTerminalSearch } from '@/features/workbench/useSshTerminalSearch'
 import { useSshTerminalRuntime } from '@/features/workbench/useSshTerminalRuntime';
 import { useSshTerminalViewport } from '@/features/workbench/useSshTerminalViewport';
 import { useTerminalSettings } from '@/features/workbench/useTerminalSettings';
+import { shouldRestoreSshTerminalViewport } from '@/features/workbench/sshTerminalPaneVisibilityModel';
 import { getAgentSessionLockBannerText } from '@/features/workbench/agentSessionModel';
 import type {
   AgentSessionLock,
@@ -48,6 +49,7 @@ type SshTerminalPaneProps = {
   active: boolean;
   agentSessionLock: AgentSessionLock | null;
   show?: boolean;
+  visible?: boolean;
   onOpenNodeDashboard: (nodeId: string) => void;
   onStatusChange: (sessionId: string, status: ConnectionStatus, errorMessage?: string) => void;
 };
@@ -73,6 +75,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
     active,
     agentSessionLock,
     show,
+    visible = true,
     onOpenNodeDashboard,
     onStatusChange,
   }, ref) {
@@ -94,6 +97,8 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
     const everConnectedRef = useRef(false);
     const inputBufferRef = useRef('');
     const transcriptRef = useRef('');
+    const wasActiveRef = useRef(false);
+    const wasVisibleRef = useRef(visible);
     const suggestionOverlayRef = useRef<HTMLDivElement | null>(null);
     const quickScriptsRef = useRef<ScriptLibraryItem[]>([]);
     const [isRuntimeReady, setIsRuntimeReady] = useState(false);
@@ -292,6 +297,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
       sessionNodeIdRef,
       settingsRef,
       terminalRef,
+      transcriptRef,
       toggleSearch,
       quickScriptsRef,
       onOpenNodeDashboard: () => {
@@ -336,7 +342,18 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
     });
 
     useEffect(() => {
-      if (!active) {
+      const wasActive = wasActiveRef.current;
+      const wasVisible = wasVisibleRef.current;
+      wasActiveRef.current = active;
+      wasVisibleRef.current = visible;
+
+      const becameActive = active && !wasActive;
+      const restoredVisibility = shouldRestoreSshTerminalViewport({
+        active,
+        visible,
+        wasVisible,
+      });
+      if (!(becameActive || restoredVisibility)) {
         return;
       }
 
@@ -349,7 +366,7 @@ export const SshTerminalPane = forwardRef<SshTerminalPaneHandle, SshTerminalPane
       resetViewportSize();
       scheduleFitAndResize();
       terminal.focus();
-    }, [active, resetViewportSize, scheduleFitAndResize]);
+    }, [active, visible, resetViewportSize, scheduleFitAndResize]);
 
     useEffect(() => {
       const terminal = terminalRef.current;

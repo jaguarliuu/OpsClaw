@@ -44,6 +44,24 @@ function getActionClassName(style: InteractionRequest['actions'][number]['style'
   return 'bg-amber-500 text-black hover:bg-amber-400';
 }
 
+function isInteractionActionDisabled(
+  request: InteractionRequest,
+  disabled: boolean
+) {
+  if (disabled) {
+    return true;
+  }
+
+  if (
+    request.interactionKind === 'terminal_wait' &&
+    request.status !== 'expired'
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 export function InteractionCard({
   request,
   disabled = false,
@@ -108,7 +126,7 @@ export function InteractionCard({
               <button
                 key={action.id}
                 type="button"
-                disabled={disabled}
+                disabled={isInteractionActionDisabled(request, disabled)}
                 onClick={() => {
                   const validation = validateInteractionSubmission({
                     request,

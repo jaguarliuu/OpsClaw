@@ -40,6 +40,7 @@ void test('route modules register their own route domains', async () => {
     { registerAgentRoutes },
     { registerMemoryRoutes },
     { registerScriptRoutes },
+    { registerSftpRoutes },
   ] = await Promise.all([
     import('./http/nodeRoutes.js'),
     import('./http/nodeDashboardRoutes.js'),
@@ -49,6 +50,7 @@ void test('route modules register their own route domains', async () => {
     import('./http/agentRoutes.js'),
     import('./http/memoryRoutes.js'),
     import('./http/scriptRoutes.js'),
+    import('./http/sftpRoutes.js'),
   ]);
 
   const routes: RegisteredRoute[] = [];
@@ -60,6 +62,8 @@ void test('route modules register their own route domains', async () => {
     scriptLibraryStore: {} as never,
     nodeInspectionStore: {} as never,
     nodeInspectionService: {} as never,
+    sftpStore: {} as never,
+    sftpService: {} as never,
     fileMemoryStore: {} as never,
     agentRuntime: {} as never,
   };
@@ -72,6 +76,7 @@ void test('route modules register their own route domains', async () => {
   registerAgentRoutes(app as never, deps);
   registerMemoryRoutes(app as never, deps);
   registerScriptRoutes(app as never, deps);
+  registerSftpRoutes(app as never, deps);
 
   assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/nodes'));
   assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/nodes/:id/dashboard'));
@@ -96,4 +101,9 @@ void test('route modules register their own route domains', async () => {
   assert.ok(routes.some((route) => route.method === 'post' && route.path === '/api/scripts'));
   assert.ok(routes.some((route) => route.method === 'put' && route.path === '/api/scripts/:id'));
   assert.ok(routes.some((route) => route.method === 'delete' && route.path === '/api/scripts/:id'));
+  assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/nodes/:id/sftp/list'));
+  assert.ok(
+    routes.some((route) => route.method === 'post' && route.path === '/api/nodes/:id/sftp/directories')
+  );
+  assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/nodes/:id/sftp/tasks'));
 });
