@@ -1,7 +1,8 @@
-import type { ComponentType } from 'react';
+import { useEffect, useState, type ComponentType } from 'react';
 import { Eye, FileText, FolderLock, ListTodo, X } from 'lucide-react';
 
 import { SftpTransferQueue } from '@/features/workbench/SftpTransferQueue';
+import { fetchSftpFilePreview } from '@/features/workbench/sftpApi';
 import {
   isSftpEntryPreviewable,
   type SftpDrawerTab,
@@ -68,6 +69,7 @@ function EmptyDrawerState({ text }: { text: string }) {
 }
 
 export function SftpRightDrawer({
+  nodeId,
   onClose,
   onSelectTab,
   open,
@@ -77,6 +79,7 @@ export function SftpRightDrawer({
   tasksError,
   tasksLoading,
 }: {
+  nodeId: string;
   onClose: () => void;
   onSelectTab: (tab: SftpDrawerTab) => void;
   open: boolean;
@@ -86,6 +89,31 @@ export function SftpRightDrawer({
   tasksError: string | null;
   tasksLoading: boolean;
 }) {
+  const [previewContent, setPreviewContent] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    if (tab !== 'preview' || !selectedEntry || !isSftpEntryPreviewable(selectedEntry)) {
+      return;
+    }
+
+    setPreviewContent(null);
+    setPreviewError(null);
+    setPreviewLoading(true);
+
+    fetchSftpFilePreview(nodeId, selectedEntry.path)
+      .then((result) => {
+        setPreviewContent(result.content);
+      })
+      .catch((error) => {
+        setPreviewError(error instanceof Error ? error.message : '读取文件内容失败。');
+      })
+      .finally(() => {
+        setPreviewLoading(false);
+      });
+  }, [nodeId, selectedEntry, tab]);
+
   if (!open) {
     return null;
   }
@@ -142,17 +170,19 @@ export function SftpRightDrawer({
         {tab === 'preview' ? (
           previewable && selectedEntry ? (
             <div className="space-y-3">
-              <div className={cn(SETTINGS_SUBPANEL_CLASS, 'px-4 py-4')}>
-                <div className={cn('text-sm font-medium', SETTINGS_TEXT_PRIMARY_CLASS)}>
-                  预览占位
+              {previewLoading ? (
+                <div className={cn(SETTINGS_PANEL_MUTED_CLASS, 'px-4 py-4 text-sm', SETTINGS_TEXT_SECONDARY_CLASS)}>
+                  正在读取文件内容...
                 </div>
-                <div className={cn('mt-2 text-sm leading-6', SETTINGS_TEXT_SECONDARY_CLASS)}>
-                  当前阶段仅完成预览 tab 和选中联动，文件内容预览接口将在后续任务中接入。
+              ) : previewError ? (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                  {previewError}
                 </div>
-              </div>
-              <div className={cn(SETTINGS_SUBPANEL_CLASS, 'px-4 py-4 text-xs', SETTINGS_TEXT_TERTIARY_CLASS)}>
-                {selectedEntry.path}
-              </div>
+              ) : (
+                <pre className={cn(SETTINGS_PANEL_MUTED_CLASS, 'overflow-x-auto whitespace-pre-wrap break-all px-4 py-4 text-xs leading-5', SETTINGS_TEXT_PRIMARY_CLASS)}>
+                  {previewContent}
+                </pre>
+              )}
             </div>
           ) : (
             <EmptyDrawerState text="该条目当前不支持文本预览，请切换到元数据或权限标签。" />

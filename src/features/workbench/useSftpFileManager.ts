@@ -2,7 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { pickDownloadTarget, pickUploadFiles } from '@/features/workbench/desktopFileDialogApi';
 import { buildSftpApprovalRequest } from '@/features/workbench/sftpActionGateModel';
-import { fetchSftpDirectory, fetchSftpTasks } from '@/features/workbench/sftpApi';
+import {
+  createSftpDirectory,
+  downloadSftpFile,
+  fetchSftpDirectory,
+  fetchSftpTasks,
+  uploadSftpBrowserFile,
+  uploadSftpLocalFile,
+} from '@/features/workbench/sftpApi';
 import {
   buildDefaultSftpDrawerTab,
   classifySftpActionRisk,
@@ -47,6 +54,30 @@ function buildParentSftpPath(path: string) {
 function getLocalFileName(filePath: string) {
   return filePath.split(/[/\\]/).filter(Boolean).pop() ?? filePath;
 }
+
+function joinSftpPath(basePath: string, name: string) {
+  const normalizedBasePath = normalizeSftpPath(basePath);
+  if (normalizedBasePath === '/') {
+    return `/${name}`;
+  }
+
+  return `${normalizedBasePath}/${name}`;
+}
+
+function triggerBrowserDownload(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+type PendingUploadItem = {
+  remotePath: string;
+  localPath?: string;
+  file?: File;
+};
 
 function readBatchDeleteRemotePaths(approval: InteractionRequest): string[] {
   if (approval.metadata.kind !== 'batch_delete' || !Array.isArray(approval.metadata.remotePaths)) {
@@ -140,6 +171,10 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
   const [drawerTab, setDrawerTab] = useState<SftpDrawerTab>('metadata');
   const [notice, setNotice] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState<InteractionRequest | null>(null);
+  const [pendingUploadItems, setPendingUploadItems] = useState<PendingUploadItem[]>([]);
+  const [createDirectoryDialogOpen, setCreateDirectoryDialogOpen] = useState(false);
+  const [createDirectoryName, setCreateDirectoryName] = useState('');
+  const [isCreateDirectorySubmitting, setIsCreateDirectorySubmitting] = useState(false);
 
   const directoryRequestIdRef = useRef(0);
   const tasksRequestIdRef = useRef(0);
@@ -201,6 +236,10 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
     setDrawerTab('metadata');
     setNotice(null);
     setPendingApproval(null);
+    setPendingUploadItems([]);
+    setCreateDirectoryDialogOpen(false);
+    setCreateDirectoryName('');
+    setIsCreateDirectorySubmitting(false);
   }, [nodeId, open]);
 
   const refreshDirectory = useCallback(async () => {
@@ -304,6 +343,35 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
     }
   }, [nodeId, open]);
 
+  const executeUploadItems = useCallback(
+    async (items: PendingUploadItem[]) => {
+      if (!nodeId) {
+        return;
+      }
+
+      let uploadedCount = 0;
+      for (const item of items) {
+        if (item.file) {
+          await uploadSftpBrowserFile(nodeId, item.remotePath, item.file);
+          uploadedCount += 1;
+          continue;
+        }
+
+        if (item.localPath) {
+          await uploadSftpLocalFile(nodeId, item.remotePath, item.localPath);
+          uploadedCount += 1;
+        }
+      }
+
+      await refreshDirectory();
+      await refreshTasks();
+      setDrawerOpen(true);
+      setDrawerTab('tasks');
+      setNotice(`已上传 ${uploadedCount} 个文件到 ${path}。`);
+    },
+    [nodeId, path, refreshDirectory, refreshTasks]
+  );
+
   useEffect(() => {
     if (!open || !nodeId) {
       return;
@@ -377,6 +445,7 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
     setSelectedPaths([]);
     setDrawerOpen(false);
     setDirectory(null);
+    setNotice(null);
   }, []);
 
   const openParentDirectory = useCallback(() => {
@@ -403,6 +472,7 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
         return;
       }
 
+      setPendingUploadItems([]);
       setPendingApproval(null);
       setNotice(buildApprovalNotice(pendingApproval, action));
     },
@@ -420,75 +490,147 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
         return;
       }
 
+      const approval = pendingApproval;
       setPendingApproval(null);
-      setNotice(buildApprovalNotice(pendingApproval, 'approve'));
+      if (approval.metadata.kind === 'overwrite_upload' && pendingUploadItems.length > 0) {
+        const items = [...pendingUploadItems];
+        setPendingUploadItems([]);
+        void executeUploadItems(items).catch((error) => {
+          setNotice(error instanceof Error ? error.message : '上传文件失败。');
+        });
+        return;
+      }
+
+      setNotice(buildApprovalNotice(approval, 'approve'));
     },
-    [dismissApproval, pendingApproval]
+    [dismissApproval, executeUploadItems, pendingApproval, pendingUploadItems]
   );
 
   const handleUploadIntent = useCallback(async () => {
     try {
       const result = await pickUploadFiles();
-      if (result.canceled || result.paths.length === 0) {
+      const selectedFiles = result.files ?? [];
+      const selectedNames =
+        selectedFiles.length > 0
+          ? selectedFiles.map((file) => file.name)
+          : result.paths.map((localPath) => getLocalFileName(localPath));
+      if (result.canceled || selectedNames.length === 0) {
         setNotice('已取消上传。');
         return;
       }
 
-      const itemByName = new Map(
-        (directory?.items ?? []).map((item) => [item.name, item])
-      );
-      const overwriteCandidate = result.paths
-        .map((localPath) => ({
-          localPath,
-          remoteEntry: itemByName.get(getLocalFileName(localPath)),
-        }))
-        .find((candidate) => candidate.remoteEntry);
+      const uploadItems: PendingUploadItem[] =
+        selectedFiles.length > 0
+          ? selectedFiles.map((file) => ({
+              file,
+              remotePath: joinSftpPath(path, file.name),
+            }))
+          : result.paths.map((localPath) => ({
+              localPath,
+              remotePath: joinSftpPath(path, getLocalFileName(localPath)),
+            }));
 
-      if (nodeId && overwriteCandidate?.remoteEntry) {
+      const existingPaths = new Set((directory?.items ?? []).map((item) => item.path));
+      const overwriteCandidate = uploadItems.find((item) => existingPaths.has(item.remotePath));
+
+      if (nodeId && overwriteCandidate) {
+        setPendingUploadItems(uploadItems);
         setPendingApproval(
           buildSftpApprovalRequest({
             kind: 'overwrite_upload',
             nodeId,
-            remotePath: overwriteCandidate.remoteEntry.path,
-            localPath: overwriteCandidate.localPath,
+            remotePath: overwriteCandidate.remotePath,
+            localPath:
+              overwriteCandidate.localPath ??
+              overwriteCandidate.file?.name ??
+              overwriteCandidate.remotePath,
           })
         );
         setNotice('检测到远端存在同名条目，需先确认覆盖。');
         return;
       }
 
-      setNotice(`已选择 ${result.paths.length} 个本地文件，传输入口将在下一步接入。`);
-      setDrawerOpen(true);
-      setDrawerTab('tasks');
+      await executeUploadItems(uploadItems);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '无法打开上传对话框。');
     }
-  }, [directory?.items, nodeId]);
+  }, [directory?.items, executeUploadItems, nodeId, path]);
 
   const handleDownloadIntent = useCallback(async () => {
     if (!selectedEntry || selectedEntry.kind !== 'file') {
-      setNotice('先选中文件，再选择下载保存位置。');
+      setNotice('先选中文件，再执行下载。');
       return;
     }
 
     try {
+      if (!nodeId) {
+        setNotice('当前未绑定节点，无法下载文件。');
+        return;
+      }
+
+      if (!window.__OPSCLAW_FILE_DIALOG__) {
+        const result = await downloadSftpFile(nodeId, selectedEntry.path);
+        triggerBrowserDownload(result.blob, result.fileName);
+        setNotice(`已开始下载 ${result.fileName}。`);
+        return;
+      }
+
       const result = await pickDownloadTarget(selectedEntry.name);
       if (result.canceled || !result.path) {
         setNotice('已取消下载。');
         return;
       }
 
-      setNotice(`已选择保存位置：${result.path}。下载接口将在下一步接入。`);
-      setDrawerOpen(true);
-      setDrawerTab('tasks');
+      const downloadResult = await downloadSftpFile(nodeId, selectedEntry.path);
+      triggerBrowserDownload(downloadResult.blob, result.path);
+      setNotice(`已开始下载 ${selectedEntry.name}。`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '无法打开下载对话框。');
     }
-  }, [selectedEntry]);
+  }, [nodeId, selectedEntry]);
 
   const handleCreateDirectoryIntent = useCallback(() => {
-    setNotice('目录创建接口已在服务端就绪，前端表单接入留到下一步。');
+    setCreateDirectoryName('');
+    setCreateDirectoryDialogOpen(true);
   }, []);
+
+  const closeCreateDirectoryDialog = useCallback(() => {
+    if (isCreateDirectorySubmitting) {
+      return;
+    }
+
+    setCreateDirectoryDialogOpen(false);
+    setCreateDirectoryName('');
+  }, [isCreateDirectorySubmitting]);
+
+  const submitCreateDirectory = useCallback(async () => {
+    const name = createDirectoryName.trim();
+    if (!nodeId) {
+      setNotice('当前未绑定节点，无法创建目录。');
+      return;
+    }
+
+    if (!name) {
+      setNotice('请输入目录名称。');
+      return;
+    }
+
+    setIsCreateDirectorySubmitting(true);
+
+    try {
+      const nextPath = joinSftpPath(path, name);
+      await createSftpDirectory(nodeId, nextPath);
+      await refreshDirectory();
+      setSelectedPaths([]);
+      setCreateDirectoryDialogOpen(false);
+      setCreateDirectoryName('');
+      setNotice(`已创建目录 ${nextPath}。`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '创建目录失败。');
+    } finally {
+      setIsCreateDirectorySubmitting(false);
+    }
+  }, [createDirectoryName, nodeId, path, refreshDirectory]);
 
   const handleDeleteIntent = useCallback(() => {
     if (!nodeId) {
@@ -523,13 +665,13 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
       return;
     }
 
-    setNotice(
-      `已请求删除 ${visibleSelectedPaths[0]}。当前版本尚未接入删除 API，未执行远端删除。`
-    );
   }, [directory?.items, nodeId, selectedPaths]);
 
   return {
+    closeCreateDirectoryDialog,
     confirmApproval,
+    createDirectoryDialogOpen,
+    createDirectoryName,
     closeDrawer,
     directory,
     directoryError,
@@ -540,6 +682,7 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
     handleDeleteIntent,
     handleDownloadIntent,
     handleUploadIntent,
+    isCreateDirectorySubmitting,
     isDirectoryLoading,
     isTasksLoading,
     notice,
@@ -555,7 +698,9 @@ export function useSftpFileManager(input: UseSftpFileManagerInput) {
     selectEntry,
     selectedEntry,
     selectedPaths,
+    setCreateDirectoryName,
     setSelectedPaths,
+    submitCreateDirectory,
     tasks,
     tasksError,
   };

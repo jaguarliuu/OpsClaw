@@ -1,4 +1,12 @@
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   ArrowLeft,
   ChevronRight,
   Download,
@@ -14,11 +22,9 @@ import { Button } from '@/components/ui/button';
 import { InteractionCard } from '@/features/workbench/InteractionCard';
 import { SftpRightDrawer } from '@/features/workbench/SftpRightDrawer';
 import {
-  buildTransferQueueSummary,
-} from '@/features/workbench/sftpModel';
-import {
   SETTINGS_PANEL_CLASS,
   SETTINGS_PANEL_MUTED_CLASS,
+  SETTINGS_INPUT_CLASS,
   SETTINGS_TEXT_PRIMARY_CLASS,
   SETTINGS_TEXT_SECONDARY_CLASS,
   SETTINGS_TEXT_TERTIARY_CLASS,
@@ -89,16 +95,55 @@ export function SftpFileManagerView({
   });
   const currentPath = model.directory?.path ?? model.path;
   const breadcrumbs = buildBreadcrumbs(currentPath);
-  const queueSummary = buildTransferQueueSummary(model.tasks);
-
   return (
-    <section
-      className={cn(
-        'grid min-h-screen min-w-0 flex-1 bg-[var(--app-bg-elevated)]',
-        model.drawerOpen ? 'grid-cols-[minmax(0,1fr)_360px]' : 'grid-cols-[minmax(0,1fr)]'
-      )}
-    >
-      <div className="flex min-w-0 flex-col">
+    <>
+      <Dialog open={model.createDirectoryDialogOpen} onOpenChange={model.closeCreateDirectoryDialog}>
+        <DialogContent className="w-[min(480px,calc(100vw-24px))]">
+          <DialogHeader>
+            <div>
+              <DialogTitle>新建目录</DialogTitle>
+              <DialogDescription className="mt-1">
+                在当前路径 `{currentPath}` 下创建新的远端目录。
+              </DialogDescription>
+            </div>
+          </DialogHeader>
+          <div className="px-6 py-5">
+            <input
+              autoFocus
+              className={cn('h-10 w-full rounded-md px-3 outline-none', SETTINGS_INPUT_CLASS)}
+              placeholder="例如 logs、releases、backup"
+              value={model.createDirectoryName}
+              onChange={(event) => model.setCreateDirectoryName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void model.submitCreateDirectory();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button onClick={model.closeCreateDirectoryDialog} type="button" variant="ghost">
+              取消
+            </Button>
+            <Button
+              onClick={() => void model.submitCreateDirectory()}
+              disabled={model.isCreateDirectorySubmitting}
+              type="button"
+            >
+              {model.isCreateDirectorySubmitting ? '创建中...' : '创建目录'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <section
+        className={cn(
+          'grid min-h-screen min-w-0 flex-1 bg-[var(--app-bg-elevated)]',
+          model.drawerOpen ? 'grid-cols-[minmax(0,1fr)_360px]' : 'grid-cols-[minmax(0,1fr)]'
+        )}
+      >
+        <div className="flex min-w-0 flex-col">
         <div className="border-b border-[var(--app-border-default)] bg-[var(--app-bg-elevated2)] px-5 py-4">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
@@ -225,67 +270,6 @@ export function SftpFileManagerView({
             </div>
           ) : null}
 
-          <div className="grid gap-3 md:grid-cols-4">
-            <button
-              type="button"
-              onClick={model.openTasksDrawer}
-              className={cn(
-                SETTINGS_PANEL_CLASS,
-                'px-4 py-3 text-left transition-colors hover:border-blue-500/30 hover:bg-blue-500/5'
-              )}
-            >
-              <div className={cn('text-xs uppercase tracking-[0.2em]', SETTINGS_TEXT_TERTIARY_CLASS)}>
-                Running
-              </div>
-              <div className={cn('mt-2 text-2xl font-semibold', SETTINGS_TEXT_PRIMARY_CLASS)}>
-                {queueSummary.runningCount}
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={model.openTasksDrawer}
-              className={cn(
-                SETTINGS_PANEL_CLASS,
-                'px-4 py-3 text-left transition-colors hover:border-blue-500/30 hover:bg-blue-500/5'
-              )}
-            >
-              <div className={cn('text-xs uppercase tracking-[0.2em]', SETTINGS_TEXT_TERTIARY_CLASS)}>
-                Failed
-              </div>
-              <div className="mt-2 text-2xl font-semibold text-red-200">{queueSummary.failedCount}</div>
-            </button>
-            <button
-              type="button"
-              onClick={model.openTasksDrawer}
-              className={cn(
-                SETTINGS_PANEL_CLASS,
-                'px-4 py-3 text-left transition-colors hover:border-blue-500/30 hover:bg-blue-500/5'
-              )}
-            >
-              <div className={cn('text-xs uppercase tracking-[0.2em]', SETTINGS_TEXT_TERTIARY_CLASS)}>
-                Queue
-              </div>
-              <div className={cn('mt-2 text-2xl font-semibold', SETTINGS_TEXT_PRIMARY_CLASS)}>
-                {queueSummary.queuedCount}
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={model.openTasksDrawer}
-              className={cn(
-                SETTINGS_PANEL_CLASS,
-                'px-4 py-3 text-left transition-colors hover:border-blue-500/30 hover:bg-blue-500/5'
-              )}
-            >
-              <div className={cn('text-xs uppercase tracking-[0.2em]', SETTINGS_TEXT_TERTIARY_CLASS)}>
-                Data
-              </div>
-              <div className={cn('mt-2 text-lg font-semibold', SETTINGS_TEXT_PRIMARY_CLASS)}>
-                {formatBytes(queueSummary.transferredBytes)} / {formatBytes(queueSummary.totalBytes)}
-              </div>
-            </button>
-          </div>
-
           <div className={cn(SETTINGS_PANEL_CLASS, 'min-h-0 overflow-hidden')}>
             <div className="grid grid-cols-[minmax(0,1.8fr)_120px_140px_180px] gap-3 border-b border-[var(--app-border-default)] px-4 py-3 text-xs uppercase tracking-[0.2em] text-neutral-500">
               <span>名称</span>
@@ -347,20 +331,22 @@ export function SftpFileManagerView({
             </div>
           </div>
         </div>
-      </div>
+        </div>
 
-      {model.drawerOpen ? (
-        <SftpRightDrawer
-          onClose={model.closeDrawer}
-          onSelectTab={model.selectDrawerTab}
-          open={model.drawerOpen}
-          selectedEntry={model.selectedEntry}
-          tab={model.drawerTab}
-          tasks={model.tasks}
-          tasksError={model.tasksError}
-          tasksLoading={model.isTasksLoading}
-        />
-      ) : null}
-    </section>
+        {model.drawerOpen ? (
+          <SftpRightDrawer
+            nodeId={nodeId}
+            onClose={model.closeDrawer}
+            onSelectTab={model.selectDrawerTab}
+            open={model.drawerOpen}
+            selectedEntry={model.selectedEntry}
+            tab={model.drawerTab}
+            tasks={model.tasks}
+            tasksError={model.tasksError}
+            tasksLoading={model.isTasksLoading}
+          />
+        ) : null}
+      </section>
+    </>
   );
 }

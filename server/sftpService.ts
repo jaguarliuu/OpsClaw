@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import type {
@@ -38,10 +39,11 @@ export type SftpMetadataItem = {
 
 type SftpConnectionProvider = Pick<
   SftpConnectionManager,
-  'listDirectory' | 'stat' | 'mkdir' | 'rename' | 'unlink' | 'rmdir'
+  'listDirectory' | 'stat' | 'readFile' | 'mkdir' | 'writeChunk' | 'rename' | 'unlink' | 'rmdir'
 >;
 
 const POSIX_PATH = path.posix;
+const DEFAULT_UPLOAD_CHUNK_SIZE = 256 * 1024;
 const FILE_TYPE_MASK = 0o170000;
 const MODE_DIRECTORY = 0o040000;
 const MODE_FILE = 0o100000;
@@ -166,6 +168,25 @@ export function createSftpService(dependencies: {
 }) {
   const { connectionManager } = dependencies;
 
+  const uploadChunks = async (input: { nodeId: string; path: string; content: Buffer }) => {
+    if (input.content.length === 0) {
+      await connectionManager.writeChunk(input.nodeId, input.path, Buffer.alloc(0), 0);
+      return;
+    }
+
+    let offset = 0;
+    while (offset < input.content.length) {
+      const nextOffset = Math.min(offset + DEFAULT_UPLOAD_CHUNK_SIZE, input.content.length);
+      await connectionManager.writeChunk(
+        input.nodeId,
+        input.path,
+        input.content.subarray(offset, nextOffset),
+        offset
+      );
+      offset = nextOffset;
+    }
+  };
+
   return {
     async listDirectory(input: { nodeId: string; path: string }) {
       const nodeId = normalizeNodeId(input.nodeId);
@@ -196,6 +217,63 @@ export function createSftpService(dependencies: {
       };
     },
 
+    async downloadFile(input: { nodeId: string; path: string }) {
+      const nodeId = normalizeNodeId(input.nodeId);
+      const normalizedPath = normalizePath(input.path, '文件路径');
+      const metadata = await connectionManager.stat(nodeId, normalizedPath);
+      if (inferPathType(metadata) !== 'file') {
+        throw new SftpServiceError(400, '当前仅支持下载文件。');
+      }
+
+      const buffer = await connectionManager.readFile(nodeId, normalizedPath);
+      return {
+        path: normalizedPath,
+        name: POSIX_PATH.basename(normalizedPath) || normalizedPath,
+        buffer,
+      };
+    },
+
+    async uploadBuffer(input: {
+      nodeId: string;
+      path: string;
+      content: Buffer;
+      fileName?: string | null;
+    }) {
+      const nodeId = normalizeNodeId(input.nodeId);
+      const normalizedPath = normalizePath(input.path, '远端路径');
+      await uploadChunks({
+        nodeId,
+        path: normalizedPath,
+        content: input.content,
+      });
+
+      return {
+        path: normalizedPath,
+        size: input.content.length,
+      };
+    },
+
+    async uploadLocalFile(input: { nodeId: string; localPath: string; remotePath: string }) {
+      const nodeId = normalizeNodeId(input.nodeId);
+      const localPath = input.localPath.trim();
+      if (!localPath) {
+        throw new SftpServiceError(400, '本地路径不能为空。');
+      }
+
+      const normalizedPath = normalizePath(input.remotePath, '远端路径');
+      const content = await fs.readFile(localPath);
+      await uploadChunks({
+        nodeId,
+        path: normalizedPath,
+        content,
+      });
+
+      return {
+        path: normalizedPath,
+        size: content.length,
+      };
+    },
+
     async createDirectory(input: { nodeId: string; path: string }) {
       const nodeId = normalizeNodeId(input.nodeId);
       const normalizedPath = normalizePath(input.path, '目录路径');
@@ -214,6 +292,23 @@ export function createSftpService(dependencies: {
         fromPath: normalizedSourcePath,
         toPath: normalizedTargetPath,
       };
+    },
+
+    async readFileText(input: { nodeId: string; path: string }) {
+      const nodeId = normalizeNodeId(input.nodeId);
+      const normalizedPath = normalizePath(input.path, '文件路径');
+      const metadata = await connectionManager.stat(nodeId, normalizedPath);
+      if (inferPathType(metadata) !== 'file') {
+        throw new SftpServiceError(400, '仅支持预览文件。');
+      }
+
+      const size = typeof metadata.size === 'number' ? metadata.size : null;
+      if (size !== null && size > 512 * 1024) {
+        throw new SftpServiceError(413, '文件超过 512 KB，无法预览。');
+      }
+
+      const buffer = await connectionManager.readFile(nodeId, normalizedPath);
+      return { path: normalizedPath, content: buffer.toString('utf-8') };
     },
 
     async deletePaths(input: { nodeId: string; paths: string[] }) {
