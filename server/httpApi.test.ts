@@ -45,6 +45,7 @@ void test('registerOpsClawHttpApi registers the core HTTP surface on the app', a
     sftpService: {} as never,
     fileMemoryStore: {} as never,
     agentRuntime: {} as never,
+    appLockStore: {} as never,
   });
 
   assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/health'));
@@ -53,6 +54,9 @@ void test('registerOpsClawHttpApi registers the core HTTP surface on the app', a
   assert.ok(routes.some((route) => route.method === 'post' && route.path === '/api/agent/runs'));
   assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/scripts'));
   assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/nodes/:id/sftp/list'));
+  assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/nodes/:id/sftp/file'));
+  assert.ok(routes.some((route) => route.method === 'post' && route.path === '/api/nodes/:id/sftp/file-content'));
+  assert.ok(routes.some((route) => route.method === 'post' && route.path === '/api/nodes/:id/sftp/file-local'));
   assert.ok(
     routes.some((route) => route.method === 'post' && route.path === '/api/nodes/:id/sftp/directories')
   );

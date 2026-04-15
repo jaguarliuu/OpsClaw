@@ -66,6 +66,7 @@ void test('route modules register their own route domains', async () => {
     sftpService: {} as never,
     fileMemoryStore: {} as never,
     agentRuntime: {} as never,
+    appLockStore: {} as never,
   };
 
   registerNodeRoutes(app as never, deps);
@@ -102,6 +103,9 @@ void test('route modules register their own route domains', async () => {
   assert.ok(routes.some((route) => route.method === 'put' && route.path === '/api/scripts/:id'));
   assert.ok(routes.some((route) => route.method === 'delete' && route.path === '/api/scripts/:id'));
   assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/nodes/:id/sftp/list'));
+  assert.ok(routes.some((route) => route.method === 'get' && route.path === '/api/nodes/:id/sftp/file'));
+  assert.ok(routes.some((route) => route.method === 'post' && route.path === '/api/nodes/:id/sftp/file-content'));
+  assert.ok(routes.some((route) => route.method === 'post' && route.path === '/api/nodes/:id/sftp/file-local'));
   assert.ok(
     routes.some((route) => route.method === 'post' && route.path === '/api/nodes/:id/sftp/directories')
   );

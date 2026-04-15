@@ -1,6 +1,8 @@
 import { Outlet } from 'react-router-dom';
 import { useEffect } from 'react';
 
+import { AppLockProvider, useAppLock } from '@/features/workbench/AppLockContext';
+import { LockScreen } from '@/features/workbench/LockScreen';
 import { TerminalSettingsProvider } from '@/features/workbench/TerminalSettingsContext';
 import { useTerminalSettings } from '@/features/workbench/useTerminalSettings';
 
@@ -29,11 +31,18 @@ function AppThemeApplier() {
   return null;
 }
 
+function AppLockGate() {
+  const { isLocked } = useAppLock();
+  return isLocked ? <LockScreen /> : <Outlet />;
+}
+
 export function AppLayout() {
   return (
     <TerminalSettingsProvider>
-      <AppThemeApplier />
-      <Outlet />
+      <AppLockProvider>
+        <AppThemeApplier />
+        <AppLockGate />
+      </AppLockProvider>
     </TerminalSettingsProvider>
   );
 }

@@ -902,6 +902,15 @@ function ensureNodeInspectionSnapshotsTable(database: SqlDatabaseHandle) {
   `);
 }
 
+function ensureAppSettingsTable(database: SqlDatabaseHandle) {
+  database.run(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `);
+}
+
 let databasePromise: Promise<SqliteDatabase> | null = null;
 
 function getDatabaseFilePath() {
@@ -952,6 +961,7 @@ async function createDatabase(): Promise<SqliteDatabase> {
   ensureScriptLibraryUsageColumn(database);
   ensureNodeInspectionProfilesTable(database);
   ensureNodeInspectionSnapshotsTable(database);
+  ensureAppSettingsTable(database);
 
   let persistQueue = Promise.resolve();
 

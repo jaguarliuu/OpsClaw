@@ -4,6 +4,7 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 
 import { createAgentRuntimeBundle } from './agent/runtimeBundle.js';
+import { createAppLockStore } from './appLockStore.js';
 import { createCommandHistoryStore } from './commandHistoryStore.js';
 import { registerOpsClawHttpApi } from './httpApi.js';
 import { createLlmProviderStore } from './llmProviderStore.js';
@@ -48,6 +49,7 @@ export async function createOpsClawServerApp(options: CreateOpsClawServerAppOpti
     getNodeById: (id) => nodeStore.getNode(id),
     getGroupById: (id) => nodeStore.getGroup(id),
   });
+  const appLockStore = await createAppLockStore();
   const app = express();
   const server = http.createServer(app);
   const websocketServer = new WebSocketServer({ noServer: true });
@@ -64,6 +66,7 @@ export async function createOpsClawServerApp(options: CreateOpsClawServerAppOpti
     sftpService,
     fileMemoryStore,
     agentRuntime,
+    appLockStore,
   });
 
   return {

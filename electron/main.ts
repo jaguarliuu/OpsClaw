@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain } from 'electron';
+import { app, dialog, ipcMain, screen } from 'electron';
 
 import {
   resolveRendererIndexHtmlPath,
@@ -67,6 +67,7 @@ async function bootstrapDesktopApp() {
   mainWindow = await createMainWindow({
     preloadPath,
     runtime: backendProcess.runtime,
+    screenWorkAreaHeight: screen.getPrimaryDisplay().workAreaSize.height,
     rendererUrl: app.isPackaged
       ? undefined
       : process.env.OPSCLAW_ELECTRON_RENDERER_URL ?? 'http://localhost:5173',
@@ -76,6 +77,13 @@ async function bootstrapDesktopApp() {
   });
   logger.info('window:ready', {
     preloadPath,
+  });
+
+  mainWindow.on('close', (event) => {
+    if (!quitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
   });
 }
 

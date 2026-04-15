@@ -19,3 +19,8 @@ export const LazyScriptSettingsTab = lazy(async () => {
   const module = await import('@/features/workbench/ScriptSettingsTab');
   return { default: module.ScriptSettingsTab };
 });
+
+export const LazyAppLockSettings = lazy(async () => {
+  const module = await import('@/features/workbench/AppLockSettings');
+  return { default: module.AppLockSettings };
+});

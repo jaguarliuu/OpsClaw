@@ -12,6 +12,7 @@ type CreateMainWindowInput = {
   preloadPath: string;
   rendererUrl?: string;
   runtime: OpsClawDesktopRuntime;
+  screenWorkAreaHeight?: number;
 };
 
 export async function createMainWindow(input: CreateMainWindowInput) {
@@ -20,6 +21,7 @@ export async function createMainWindow(input: CreateMainWindowInput) {
       platform: process.platform,
       preloadPath: input.preloadPath,
       runtimeArgument: encodeRuntimeArgument(input.runtime),
+      screenWorkAreaHeight: input.screenWorkAreaHeight,
     }),
   );
 

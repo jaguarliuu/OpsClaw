@@ -20,6 +20,7 @@ import {
   LazyMemorySettings,
   LazyScriptSettingsTab,
   LazyTerminalSettingsTab,
+  LazyAppLockSettings,
 } from '@/routes/settingsLazyTabs';
 
 export default function SettingsPage() {
@@ -37,6 +38,7 @@ export default function SettingsPage() {
   const shouldRenderLlmTab = useDeferredMount(activeTab === 'llm');
   const shouldRenderMemoryTab = useDeferredMount(activeTab === 'memory');
   const shouldRenderScriptsTab = useDeferredMount(activeTab === 'scripts');
+  const shouldRenderSecurityTab = useDeferredMount(activeTab === 'security');
 
   const handleTabChange = (nextTab: string) => {
     if (!isSettingsPageTab(nextTab)) {
@@ -112,6 +114,13 @@ export default function SettingsPage() {
             >
               脚本
             </TabsTrigger>
+            <TabsTrigger
+              value="security"
+              className={settingsTabClassName}
+              style={desktopWindowChrome.interactiveStyle}
+            >
+              安全
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent
@@ -158,6 +167,18 @@ export default function SettingsPage() {
             {shouldRenderScriptsTab ? (
               <Suspense fallback={null}>
                 <LazyScriptSettingsTab />
+              </Suspense>
+            ) : null}
+          </TabsContent>
+
+          <TabsContent
+            value="security"
+            forceMount={shouldRenderSecurityTab ? true : undefined}
+            className="space-y-6 animate-in fade-in-50 duration-300"
+          >
+            {shouldRenderSecurityTab ? (
+              <Suspense fallback={null}>
+                <LazyAppLockSettings />
               </Suspense>
             ) : null}
           </TabsContent>

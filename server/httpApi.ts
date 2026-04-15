@@ -1,4 +1,5 @@
 import express, { type Express } from 'express';
+import { registerAppLockRoutes } from './http/appLockRoutes.js';
 import { registerAgentRoutes } from './http/agentRoutes.js';
 import { registerCommandRoutes } from './http/commandRoutes.js';
 import { registerGroupRoutes } from './http/groupRoutes.js';
@@ -44,7 +45,7 @@ export function registerOpsClawHttpApi(app: Express, dependencies: HttpApiDepend
     }
 
     response.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    response.header('Access-Control-Allow-Headers', 'Content-Type');
+    response.header('Access-Control-Allow-Headers', 'Content-Type, X-OpsClaw-File-Name');
 
     if (request.method === 'OPTIONS') {
       response.sendStatus(204);
@@ -69,4 +70,5 @@ export function registerOpsClawHttpApi(app: Express, dependencies: HttpApiDepend
   registerMemoryRoutes(app, dependencies);
   registerScriptRoutes(app, dependencies);
   registerSftpRoutes(app, dependencies);
+  registerAppLockRoutes(app, dependencies);
 }

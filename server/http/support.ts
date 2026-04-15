@@ -22,6 +22,7 @@ import { createSftpStore } from '../sftpStore.js';
 import { createSftpService } from '../sftpService.js';
 import type { OpsAgentRuntime } from '../agent/agentRuntime.js';
 import type { FileMemoryStore } from '../agent/fileMemoryStore.js';
+import type { AppLockStore } from '../appLockStore.js';
 
 export type NodeStore = Awaited<ReturnType<typeof createNodeStore>>;
 export type CommandHistoryStore = Awaited<ReturnType<typeof createCommandHistoryStore>>;
@@ -43,6 +44,7 @@ export type HttpApiDependencies = {
   sftpService: SftpService;
   fileMemoryStore: FileMemoryStore;
   agentRuntime: OpsAgentRuntime;
+  appLockStore: AppLockStore;
 };
 
 export type HttpRouteApp = Pick<Express, 'get' | 'post' | 'put' | 'delete'>;
