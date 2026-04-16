@@ -76,3 +76,14 @@ void test('useSftpFileManager does not clear pending approval in upload cancel o
   assert.doesNotMatch(uploadSection, /setPendingApproval\(null\)/);
   assert.doesNotMatch(deleteSection, /if \(selectedPaths\.length === 0\) \{\s*setPendingApproval\(null\);/);
 });
+
+void test('useSftpFileManager wires real upload and download APIs instead of placeholder notices', () => {
+  const source = readUseSftpFileManagerSource();
+
+  assert.match(source, /uploadSftpBrowserFile|uploadSftpLocalFile/);
+  assert.match(source, /downloadSftpFile/);
+  assert.match(source, /createSftpDirectory/);
+  assert.doesNotMatch(source, /传输入口将在下一步接入/);
+  assert.doesNotMatch(source, /下载接口将在下一步接入/);
+  assert.doesNotMatch(source, /目录创建接口已在服务端就绪，前端表单接入留到下一步/);
+});

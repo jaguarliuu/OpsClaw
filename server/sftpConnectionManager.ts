@@ -34,6 +34,7 @@ export type SftpDirectoryEntry = {
 export type SftpConnectionClient = {
   readDirectory: (path: string) => Promise<SftpDirectoryEntry[]>;
   stat: (path: string) => Promise<SftpFileMetadata>;
+  readFile: (path: string) => Promise<Buffer>;
   mkdir: (path: string) => Promise<void>;
   writeChunk: (path: string, chunk: Buffer, offset: number) => Promise<void>;
   rename: (sourcePath: string, targetPath: string) => Promise<void>;
@@ -46,6 +47,7 @@ export type SftpConnectionManager = {
   getOrCreate: (nodeId: string) => Promise<SftpConnectionClient>;
   listDirectory: (nodeId: string, path: string) => Promise<SftpDirectoryEntry[]>;
   stat: (nodeId: string, path: string) => Promise<SftpFileMetadata>;
+  readFile: (nodeId: string, path: string) => Promise<Buffer>;
   mkdir: (nodeId: string, path: string) => Promise<void>;
   writeChunk: (nodeId: string, path: string, chunk: Buffer, offset: number) => Promise<void>;
   rename: (nodeId: string, sourcePath: string, targetPath: string) => Promise<void>;
@@ -189,6 +191,23 @@ function wrapSftpClient(client: Client, sftp: SFTPWrapper): SftpConnectionClient
           }
 
           resolve(mapStats(stats));
+        });
+      });
+    },
+
+    readFile(path) {
+      return new Promise((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        const stream = sftp.createReadStream(path);
+
+        stream.on('data', (chunk: Buffer | string) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        stream.on('error', (error: Error) => {
+          reject(error);
+        });
+        stream.on('end', () => {
+          resolve(Buffer.concat(chunks));
         });
       });
     },
@@ -503,6 +522,11 @@ export function createSftpConnectionManager(dependencies: {
     async stat(nodeId: string, path: string) {
       const connection = await this.getOrCreate(nodeId);
       return connection.stat(path);
+    },
+
+    async readFile(nodeId: string, path: string) {
+      const connection = await this.getOrCreate(nodeId);
+      return connection.readFile(path);
     },
 
     async mkdir(nodeId: string, path: string) {

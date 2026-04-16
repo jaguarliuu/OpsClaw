@@ -273,6 +273,91 @@ void test('sftp list route falls back to current directory when query path is mi
   }
 });
 
+void test('sftp download route returns binary payload without falling through', async () => {
+  const { createOpsClawServerApp } = await import('./serverApp.js');
+  const runtime = await createOpsClawServerApp();
+  const port = await listen(runtime.server);
+  let capturedInput: { nodeId: string; path: string } | null = null;
+
+  (runtime.sftpService as Record<string, unknown>).downloadFile = async (input: {
+    nodeId: string;
+    path: string;
+  }) => {
+    capturedInput = input;
+    return {
+      path: input.path,
+      name: 'readme.txt',
+      buffer: Buffer.from('hello-web-sftp', 'utf8'),
+    };
+  };
+
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/nodes/node-1/sftp/file?path=${encodeURIComponent('/srv/readme.txt')}`
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'application/octet-stream');
+    assert.match(response.headers.get('content-disposition') ?? '', /attachment; filename="readme.txt"/);
+    assert.equal(Buffer.from(await response.arrayBuffer()).toString('utf8'), 'hello-web-sftp');
+    assert.deepEqual(capturedInput, {
+      nodeId: 'node-1',
+      path: '/srv/readme.txt',
+    });
+  } finally {
+    await close(runtime.server);
+  }
+});
+
+void test('sftp browser upload route accepts raw file bytes', async () => {
+  const { createOpsClawServerApp } = await import('./serverApp.js');
+  const runtime = await createOpsClawServerApp();
+  const port = await listen(runtime.server);
+  let capturedInput:
+    | { nodeId: string; path: string; content: Buffer; fileName?: string | null }
+    | null = null;
+
+  (runtime.sftpService as Record<string, unknown>).uploadBuffer = async (input: {
+    nodeId: string;
+    path: string;
+    content: Buffer;
+    fileName?: string | null;
+  }) => {
+    capturedInput = input;
+    return {
+      path: input.path,
+      size: input.content.length,
+    };
+  };
+
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/nodes/node-1/sftp/file-content?path=${encodeURIComponent('/srv/upload.txt')}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-OpsClaw-File-Name': 'upload.txt',
+        },
+        body: Buffer.from('abc123', 'utf8'),
+      }
+    );
+
+    assert.equal(response.status, 201);
+    assert.deepEqual(await response.json(), {
+      path: '/srv/upload.txt',
+      size: 6,
+    });
+    assert.deepEqual(capturedInput, {
+      nodeId: 'node-1',
+      path: '/srv/upload.txt',
+      content: Buffer.from('abc123', 'utf8'),
+      fileName: 'upload.txt',
+    });
+  } finally {
+    await close(runtime.server);
+  }
+});
+
 void test('script management route returns raw node scripts for settings page', async () => {
   const { createOpsClawServerApp } = await import('./serverApp.js');
   const runtime = await createOpsClawServerApp();

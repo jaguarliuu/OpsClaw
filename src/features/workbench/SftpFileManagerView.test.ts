@@ -43,3 +43,12 @@ void test('sftp file manager renders row selected state from selectedPaths', () 
   assert.match(source, /const isSelected = model\.selectedPaths\.includes\(entry\.path\);/);
   assert.doesNotMatch(source, /const isSelected = model\.selectedEntry\?\.path === entry\.path;/);
 });
+
+void test('sftp file manager renders create-directory dialog with controlled input', () => {
+  const source = readSftpFileManagerViewSource();
+
+  assert.match(source, /<Dialog open=\{model\.createDirectoryDialogOpen\}/);
+  assert.match(source, /value=\{model\.createDirectoryName\}/);
+  assert.match(source, /onChange=\{\(event\) => model\.setCreateDirectoryName\(event\.target\.value\)\}/);
+  assert.match(source, /model\.submitCreateDirectory/);
+});

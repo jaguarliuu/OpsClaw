@@ -41,6 +41,10 @@ function createFakeConnection(): SftpConnectionClient & {
 
       return { mode: 0o100644, size: 128, mtime: 1710000100 };
     },
+    async readFile(path) {
+      operations.push(`readFile:${path}`);
+      return Buffer.from(`content:${path}`, 'utf8');
+    },
     async mkdir(path) {
       operations.push(`mkdir:${path}`);
     },
@@ -145,8 +149,14 @@ void test('sftpService listDirectory normalizes entry type, permissions and meta
       async stat(_nodeId, path) {
         return connection.stat(path);
       },
+      async readFile(_nodeId, path) {
+        return connection.readFile(path);
+      },
       async mkdir(_nodeId, path) {
         return connection.mkdir(path);
+      },
+      async writeChunk(_nodeId, path, chunk, offset) {
+        return connection.writeChunk(path, chunk, offset);
       },
       async rename(_nodeId, fromPath, toPath) {
         return connection.rename(fromPath, toPath);
@@ -200,7 +210,11 @@ void test('sftpService validates destructive operation inputs and rejects empty 
       async stat() {
         return { mode: 0o100644 };
       },
+      async readFile() {
+        return Buffer.alloc(0);
+      },
       async mkdir() {},
+      async writeChunk() {},
       async rename() {},
       async unlink() {},
       async rmdir() {},
@@ -243,7 +257,13 @@ void test('sftpService deletePaths dispatches file and directory deletions by me
       async stat(_nodeId, path) {
         return connection.stat(path);
       },
+      async readFile(_nodeId, path) {
+        return connection.readFile(path);
+      },
       async mkdir() {},
+      async writeChunk(_nodeId, path, chunk, offset) {
+        return connection.writeChunk(path, chunk, offset);
+      },
       async rename() {},
       async unlink(_nodeId, path) {
         return connection.unlink(path);
@@ -278,7 +298,11 @@ void test('sftpService getMetadata returns normalized metadata shape', async () 
 
         return { mode: 0o100644, size: 1, mtime: 1710000100 };
       },
+      async readFile() {
+        return Buffer.from('metadata');
+      },
       async mkdir() {},
+      async writeChunk() {},
       async rename() {},
       async unlink() {},
       async rmdir() {},
@@ -309,6 +333,10 @@ void test('sftpConnectionManager reuses connection by nodeId and exposes manager
       async stat(path) {
         operations.push(`stat:${node.id}:${path}`);
         return { mode: 0o100644 };
+      },
+      async readFile(path) {
+        operations.push(`readFile:${node.id}:${path}`);
+        return Buffer.from(path, 'utf8');
       },
       async mkdir(path) {
         operations.push(`mkdir:${node.id}:${path}`);
