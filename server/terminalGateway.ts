@@ -131,6 +131,7 @@ export function registerTerminalGateway({
     };
 
     const queueTerminalData = (chunk: string) => {
+      websocketAlive = true;
       pendingTerminalData += chunk;
 
       if (flushTimer !== null) {
@@ -203,6 +204,7 @@ export function registerTerminalGateway({
     });
 
     websocket.on('message', (rawMessage) => {
+      websocketAlive = true;
       let message: ClientMessage;
 
       try {
