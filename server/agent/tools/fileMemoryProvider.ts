@@ -68,6 +68,25 @@ const writeGroupMemorySchema = Type.Object({
   reason: Type.Optional(Type.String({ description: '写入原因的简短说明' })),
 });
 
+const writeGlobalMemorySchema = Type.Object({
+  content: Type.String({ minLength: 1, description: '要写入全局记忆文档的 Markdown 内容' }),
+  mode: Type.Optional(memoryWriteMode),
+  reason: Type.Optional(Type.String({ description: '写入原因的简短说明' })),
+});
+
+const memoryScopeEnum = StringEnum(['node', 'group', 'global'], {
+  description: '记忆文档范围',
+});
+
+const updateMemorySectionSchema = Type.Object({
+  scope: memoryScopeEnum,
+  nodeId: Type.Optional(Type.String({ minLength: 1, description: '节点 ID（scope=node 时使用；当前会话节点可省略）' })),
+  groupId: Type.Optional(Type.String({ minLength: 1, description: '分组 ID（scope=group 时必填）' })),
+  section: Type.String({ minLength: 1, description: '要更新的二级标题名称，不含 ## 前缀，例如：关键事实' }),
+  content: Type.String({ minLength: 1, description: '该小节的新内容（Markdown）' }),
+  reason: Type.Optional(Type.String({ description: '更新原因的简短说明' })),
+});
+
 export function createFileMemoryToolProvider(
   dependencies: FileMemoryProviderDependencies
 ): ToolProvider {
@@ -209,6 +228,67 @@ export function createFileMemoryToolProvider(
     },
   };
 
+  const readGlobalMemoryTool: ToolHandler = {
+    definition: {
+      name: 'memory.read_global_memory',
+      description: '读取全局 MEMORY.md 文档。全局记忆在任务开始时已注入上下文，仅在需要确认最新内容时调用。',
+      parameters: Type.Object({}),
+      category: 'system',
+      riskLevel: 'safe',
+      concurrencyMode: 'parallel-safe',
+      version: '1.0.0',
+      tags: ['memory', 'global', 'readonly'],
+    },
+    async execute(_args, ctx) {
+      return ctx.capabilities.fileMemory.readGlobalMemory();
+    },
+  };
+
+  const writeGlobalMemoryTool: ToolHandler<typeof writeGlobalMemorySchema> = {
+    definition: {
+      name: 'memory.write_global_memory',
+      description: '将跨节点、跨分组的全局长期知识写入全局 MEMORY.md。仅写入稳定、可复用的事实，不写入节点/分组专属信息。',
+      parameters: writeGlobalMemorySchema,
+      category: 'system',
+      riskLevel: 'safe',
+      concurrencyMode: 'serial',
+      version: '1.0.0',
+      tags: ['memory', 'global', 'write'],
+    },
+    async execute(args, ctx) {
+      return (args.mode ?? 'append') === 'replace'
+        ? ctx.capabilities.fileMemory.writeGlobalMemory(args.content)
+        : ctx.capabilities.fileMemory.appendGlobalMemory(args.content);
+    },
+  };
+
+  const updateMemorySectionTool: ToolHandler<typeof updateMemorySectionSchema> = {
+    definition: {
+      name: 'memory.update_memory_section',
+      description: '更新记忆文档中指定二级标题（## 小节）的内容，不影响其他小节。适合精准修改某一类知识而不覆盖整个文档。',
+      parameters: updateMemorySectionSchema,
+      category: 'system',
+      riskLevel: 'safe',
+      concurrencyMode: 'serial',
+      version: '1.0.0',
+      tags: ['memory', 'write'],
+    },
+    async execute(args, ctx) {
+      if (args.scope === 'global') {
+        return ctx.capabilities.fileMemory.updateMemorySection('global', '全局记忆', args.section, args.content);
+      }
+      if (args.scope === 'group') {
+        if (!args.groupId) throw new Error('scope=group 时必须提供 groupId。');
+        const group = dependencies.getGroupById(args.groupId);
+        if (!group) throw new Error('分组不存在。');
+        return ctx.capabilities.fileMemory.updateMemorySection('group', `分组记忆 · ${group.name}`, args.section, args.content, group.id);
+      }
+      const node = resolveNodeFromScope(args.nodeId, ctx, dependencies.getNodeById);
+      if (!node) throw new Error('节点不存在。');
+      return ctx.capabilities.fileMemory.updateMemorySection('node', `节点记忆 · ${node.name}`, args.section, args.content, node.id);
+    },
+  };
+
   return {
     id: 'builtin-file-memory-tools',
     version: '1.0.0',
@@ -218,6 +298,9 @@ export function createFileMemoryToolProvider(
       registry.register(readGroupMemoryTool);
       registry.register(writeNodeMemoryTool);
       registry.register(writeGroupMemoryTool);
+      registry.register(readGlobalMemoryTool);
+      registry.register(writeGlobalMemoryTool);
+      registry.register(updateMemorySectionTool);
     },
   };
 }

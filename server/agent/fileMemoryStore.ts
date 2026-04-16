@@ -112,7 +112,15 @@ function appendAutoSection(
     return `${baseContent}\n\n${sectionHeading}\n\n${entryMarkdown}\n`;
   }
 
-  return baseContent.replace(sectionHeading, `${sectionHeading}\n\n${entryMarkdown}`);
+  const sectionIndex = baseContent.indexOf(sectionHeading);
+  const afterHeading = baseContent.slice(sectionIndex + sectionHeading.length);
+  const nextSectionMatch = afterHeading.match(/\n##\s/);
+  if (nextSectionMatch?.index !== undefined) {
+    const insertAt = sectionIndex + sectionHeading.length + nextSectionMatch.index;
+    return `${baseContent.slice(0, insertAt)}\n\n${entryMarkdown}${baseContent.slice(insertAt)}`;
+  }
+
+  return `${baseContent.trimEnd()}\n\n${entryMarkdown}\n`;
 }
 
 export class FileMemoryStore {
@@ -122,6 +130,38 @@ export class FileMemoryStore {
 
   async writeGlobalMemory(content: string) {
     return writeDocument('global', '全局记忆', content);
+  }
+
+  async appendGlobalMemory(content: string) {
+    const existing = await this.readGlobalMemory();
+    return writeDocument('global', '全局记忆', `${existing.content.trim()}\n\n${content}`.trim());
+  }
+
+  async updateMemorySection(
+    scope: MemoryScope,
+    title: string,
+    section: string,
+    content: string,
+    id?: string
+  ): Promise<MemoryDocument> {
+    const existing = await readDocument(scope, title, id);
+    const baseContent = existing.content.trim() || buildInitialDocument(title).trim();
+    const heading = `## ${section}`;
+
+    if (!baseContent.includes(heading)) {
+      return writeDocument(scope, title, `${baseContent}\n\n${heading}\n\n${content}\n`, id);
+    }
+
+    const headingIndex = baseContent.indexOf(heading);
+    const afterHeading = baseContent.slice(headingIndex + heading.length);
+    const nextMatch = afterHeading.match(/\n##\s/);
+    if (nextMatch?.index !== undefined) {
+      const before = baseContent.slice(0, headingIndex);
+      const after = afterHeading.slice(nextMatch.index);
+      return writeDocument(scope, title, `${before}${heading}\n\n${content}${after}`, id);
+    }
+
+    return writeDocument(scope, title, `${baseContent.slice(0, headingIndex)}${heading}\n\n${content}\n`, id);
   }
 
   async readGroupMemory(groupId: string, groupName: string) {
