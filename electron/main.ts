@@ -23,7 +23,9 @@ function focusMainWindow() {
     return;
   }
 
-  if (mainWindow.isMinimized()) {
+  if (!mainWindow.isVisible()) {
+    mainWindow.show();
+  } else if (mainWindow.isMinimized()) {
     mainWindow.restore();
   }
 
@@ -82,7 +84,11 @@ async function bootstrapDesktopApp() {
   mainWindow.on('close', (event) => {
     if (!quitting) {
       event.preventDefault();
-      mainWindow?.hide();
+      if (process.platform === 'win32') {
+        mainWindow?.minimize();
+      } else {
+        mainWindow?.hide();
+      }
     }
   });
 }

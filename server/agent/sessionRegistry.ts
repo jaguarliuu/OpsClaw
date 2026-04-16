@@ -84,11 +84,10 @@ function buildAgentExecuteCommandPayload(
   startMarker: string,
   endMarkerPrefix: string
 ) {
-  const inlineCommand = command
-    .split(/\r?\n/g)
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .join('; ');
+  const trimmed = command.trim();
+  const inlineCommand = /\r?\n/.test(trimmed)
+    ? `bash -c '${trimmed.replace(/'/g, "'\\''")}'`
+    : trimmed;
 
   return (
     `printf '\\n${startMarker}\\n'; ` +
