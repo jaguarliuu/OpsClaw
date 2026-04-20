@@ -1,6 +1,12 @@
 type SessionStatus = 'connecting' | 'connected' | 'closed' | 'error';
 
 import { logSession } from './logger.js';
+import {
+  OSC133_A,
+  OSC133_C,
+  OSC133_D_PREFIX,
+  OSC133_BEL,
+} from '../shellIntegration.js';
 
 export type SessionSystemInfo = {
   distributionId: string;
@@ -37,6 +43,7 @@ type PendingExecution = {
   endMarkerPrefix: string;
   buffer: string;
   captureStarted: boolean;
+  useOsc133: boolean;
   resolve: (result: SessionCommandResult) => void;
   reject: (error: Error) => void;
   timeoutId: ReturnType<typeof setTimeout> | null;
@@ -52,6 +59,7 @@ type SessionEntry = RegisteredSessionSummary & {
   sendInput: (payload: string) => void;
   transcript: string;
   pendingExecution: PendingExecution | null;
+  shellIntegrationReady: boolean;
   lastError?: string;
 };
 
@@ -90,9 +98,9 @@ function buildAgentExecuteCommandPayload(
     : trimmed;
 
   return (
-    `printf '\\n${startMarker}\\n'; ` +
+    `printf '${startMarker}\\n'; ` +
     `${inlineCommand}; ` +
-    `printf '\\n${endMarkerPrefix}%s\\n' "$?"\n`
+    `printf '${endMarkerPrefix}%s\\n' "$?"\n`
   );
 }
 
@@ -281,6 +289,7 @@ export class SessionRegistry {
       sendInput: input.sendInput,
       transcript: '',
       pendingExecution: null,
+      shellIntegrationReady: false,
     });
   }
 
@@ -378,7 +387,81 @@ export class SessionRegistry {
         ? nextTranscript.slice(-MAX_TRANSCRIPT_LENGTH)
         : nextTranscript;
 
-    this.processPendingExecutionChunk(session, chunk);
+    if (chunk.includes('\x1b]133;')) {
+      this.processOsc133Chunk(session, chunk);
+    }
+
+    if (!session.pendingExecution?.useOsc133) {
+      this.processPendingExecutionChunk(session, chunk);
+    } else if (session.pendingExecution.captureStarted) {
+      const stripped = chunk.replace(/\x1b\][^\x07]*\x07/g, '');
+      session.pendingExecution.buffer += stripped;
+    }
+  }
+
+  private processOsc133Chunk(session: SessionEntry, chunk: string) {
+    if (!session.shellIntegrationReady && chunk.includes(OSC133_A)) {
+      session.shellIntegrationReady = true;
+      logSession('shell_integration_ready', { sessionId: session.sessionId });
+    }
+
+    const pending = session.pendingExecution;
+    if (!pending?.useOsc133) return;
+
+    if (!pending.captureStarted && chunk.includes(OSC133_C)) {
+      pending.captureStarted = true;
+      pending.buffer = '';
+      return;
+    }
+
+    const dIdx = chunk.indexOf(OSC133_D_PREFIX);
+    if (dIdx === -1) return;
+
+    const rest = chunk.slice(dIdx + OSC133_D_PREFIX.length);
+    const belIdx = rest.indexOf(OSC133_BEL);
+    if (belIdx === -1) return;
+
+    const exitCode = parseInt(rest.slice(0, belIdx), 10);
+    this.resolveOsc133Execution(session, pending, isNaN(exitCode) ? 1 : exitCode);
+  }
+
+  private resolveOsc133Execution(
+    session: SessionEntry,
+    pending: PendingExecution,
+    exitCode: number
+  ) {
+    if (pending.timeoutId) clearTimeout(pending.timeoutId);
+    pending.cleanupAbortListener?.();
+    pending.state = 'completed';
+    session.pendingExecution = null;
+
+    const completedAt = Date.now();
+    const rawOutput = stripAnsi(pending.buffer).trim();
+    const sanitizedOutput = redactManualInputLines(rawOutput, pending.redactedUserInputLines);
+    const truncated = sanitizedOutput.length > pending.maxOutputChars;
+    const output = truncated
+      ? `${sanitizedOutput.slice(0, pending.maxOutputChars)}\n...[输出已截断]`
+      : sanitizedOutput;
+
+    logSession('execute_command_completed', {
+      sessionId: session.sessionId,
+      command: pending.command,
+      exitCode,
+      durationMs: completedAt - pending.startedAt,
+      truncated,
+      outputPreview: output.slice(0, 200),
+    });
+
+    pending.resolve({
+      sessionId: session.sessionId,
+      command: pending.command,
+      exitCode,
+      output,
+      truncated,
+      startedAt: pending.startedAt,
+      completedAt,
+      durationMs: completedAt - pending.startedAt,
+    });
   }
 
   noteUserInput(sessionId: string, payload: string) {
@@ -613,6 +696,7 @@ export class SessionRegistry {
         endMarkerPrefix,
         buffer: '',
         captureStarted: false,
+        useOsc133: session.shellIntegrationReady,
         resolve,
         reject,
         timeoutId,
@@ -636,15 +720,25 @@ export class SessionRegistry {
         'execute_command_timeout'
       );
 
-      session.sendInput(
-        buildAgentExecuteCommandPayload(trimmedCommand, startMarker, endMarkerPrefix)
-      );
-      logSession('execute_command_payload_sent', {
-        sessionId,
-        command: trimmedCommand,
-        startMarker,
-        endMarkerPrefix,
-      });
+      if (session.shellIntegrationReady) {
+        session.sendInput(`${trimmedCommand}\n`);
+        logSession('execute_command_payload_sent', {
+          sessionId,
+          command: trimmedCommand,
+          mode: 'osc133',
+        });
+      } else {
+        session.sendInput(
+          buildAgentExecuteCommandPayload(trimmedCommand, startMarker, endMarkerPrefix)
+        );
+        logSession('execute_command_payload_sent', {
+          sessionId,
+          command: trimmedCommand,
+          startMarker,
+          endMarkerPrefix,
+          mode: 'legacy',
+        });
+      }
     });
   }
 

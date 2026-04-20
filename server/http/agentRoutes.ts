@@ -58,6 +58,17 @@ export function registerAgentRoutes(
           ? body.maxCommandOutputChars
           : undefined;
 
+      const conversationHistory = Array.isArray(body.conversationHistory)
+        ? (body.conversationHistory as unknown[]).filter(
+            (t): t is { role: 'user' | 'assistant'; text: string } =>
+              typeof t === 'object' &&
+              t !== null &&
+              (('role' in t && t.role === 'user') || ('role' in t && t.role === 'assistant')) &&
+              'text' in t &&
+              typeof (t as { text: unknown }).text === 'string'
+          )
+        : undefined;
+
       const provider = llmProviderStore.getProviderWithApiKey(providerId);
       if (!provider) {
         response.status(404).json({ message: 'LLM 配置不存在。' });
@@ -85,6 +96,7 @@ export function registerAgentRoutes(
             approvalMode,
             maxSteps,
             maxCommandOutputChars,
+            conversationHistory,
           },
           emitEvent,
           stream.signal

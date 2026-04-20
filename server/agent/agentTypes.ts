@@ -34,6 +34,11 @@ export type AgentPolicySummary = {
   }>;
 };
 
+export type ConversationTurn = {
+  role: 'user' | 'assistant';
+  text: string;
+};
+
 export type CreateAgentRunInput = {
   providerId: string;
   provider: StoredLlmProvider;
@@ -43,6 +48,7 @@ export type CreateAgentRunInput = {
   approvalMode?: AgentApprovalMode;
   maxSteps?: number;
   maxCommandOutputChars?: number;
+  conversationHistory?: ConversationTurn[];
 };
 
 export type ToolExecutionEnvelope = {

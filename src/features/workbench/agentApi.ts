@@ -14,6 +14,7 @@ type StreamAgentRunOptions = {
   approvalMode?: AgentApprovalMode;
   maxSteps?: number;
   maxCommandOutputChars?: number;
+  conversationHistory?: Array<{ role: 'user' | 'assistant'; text: string }>;
   signal?: AbortSignal;
   onEvent?: (event: AgentStreamEvent) => void;
 };
@@ -26,6 +27,7 @@ export async function streamAgentRun({
   approvalMode,
   maxSteps,
   maxCommandOutputChars,
+  conversationHistory,
   signal,
   onEvent,
 }: StreamAgentRunOptions) {
@@ -40,6 +42,7 @@ export async function streamAgentRun({
       approvalMode,
       maxSteps,
       maxCommandOutputChars,
+      conversationHistory,
     }),
     signal,
   });

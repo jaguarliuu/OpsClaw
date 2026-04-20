@@ -29,12 +29,20 @@ type RunAgentOptions = {
   maxSteps?: number;
   task: string;
   sessionId: string;
+  terminalSnapshot?: string;
 };
 
 export type UseAgentRunResult = ReturnType<typeof useAgentRun>;
 
 function createItemId() {
   return crypto.randomUUID();
+}
+
+function getRecentLines(transcript: string, maxChars = 3000): string {
+  if (transcript.length <= maxChars) return transcript;
+  const tail = transcript.slice(-maxChars);
+  const firstNewline = tail.indexOf('\n');
+  return firstNewline > 0 ? tail.slice(firstNewline + 1) : tail;
 }
 
 export function useAgentRun() {
@@ -49,6 +57,8 @@ export function useAgentRun() {
   const [pendingInteractions, setPendingInteractions] = useState<PendingInteractionItem[]>([]);
   const [pendingContinuationRunId, setPendingContinuationRunId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const conversationHistoryRef = useRef<Map<string, Array<{ role: 'user' | 'assistant'; text: string }>>>(new Map());
+  const currentRunTaskRef = useRef<{ sessionId: string; task: string } | null>(null);
   const eventStateRef = useRef({
     runId: null as string | null,
     runState: null as AgentRunState | null,
@@ -141,6 +151,17 @@ export function useAgentRun() {
       }
 
       if (event.type === 'run_completed') {
+        const runMeta = currentRunTaskRef.current;
+        if (runMeta) {
+          const history = conversationHistoryRef.current.get(runMeta.sessionId) ?? [];
+          const next = [
+            ...history,
+            { role: 'user' as const, text: runMeta.task },
+            { role: 'assistant' as const, text: event.finalAnswer },
+          ].slice(-20);
+          conversationHistoryRef.current.set(runMeta.sessionId, next);
+          currentRunTaskRef.current = null;
+        }
         setRunState('completed');
         setActiveInteraction(null);
         setPendingContinuationRunId(null);
@@ -223,11 +244,18 @@ export function useAgentRun() {
   );
 
   const runAgent = useCallback(
-    async ({ providerId, model, maxSteps, task, sessionId }: RunAgentOptions) => {
+    async ({ providerId, model, maxSteps, task, sessionId, terminalSnapshot }: RunAgentOptions) => {
       const normalizedTask = task.trim();
       if (!normalizedTask) {
         return;
       }
+
+      const recentSnapshot = terminalSnapshot?.trim()
+        ? getRecentLines(terminalSnapshot)
+        : null;
+      const taskWithContext = recentSnapshot
+        ? `[当前终端最近输出]\n\`\`\`\n${recentSnapshot}\n\`\`\`\n\n用户任务：${normalizedTask}`
+        : normalizedTask;
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -254,14 +282,16 @@ export function useAgentRun() {
         kind: 'user',
         text: normalizedTask,
       });
+      currentRunTaskRef.current = { sessionId, task: normalizedTask };
 
       try {
         await streamAgentRun({
           providerId,
           model,
           maxSteps,
-          task: normalizedTask,
+          task: taskWithContext,
           sessionId,
+          conversationHistory: conversationHistoryRef.current.get(sessionId),
           signal: controller.signal,
           onEvent: handleEvent,
         });

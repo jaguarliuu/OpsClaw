@@ -6,6 +6,7 @@ import { WebSocket, type WebSocketServer } from 'ws';
 
 import { SessionRegistry } from './agent/sessionRegistry.js';
 import { probeSessionSystemInfo } from './sessionSystemInfoProbe.js';
+import { SHELL_INTEGRATION_SCRIPT } from './shellIntegration.js';
 
 function logTerminalGateway(event: string, details: Record<string, unknown> = {}) {
   console.log(`[TerminalGateway] ${new Date().toISOString()} ${event}`, details);
@@ -284,6 +285,9 @@ export function registerTerminalGateway({
             send({ type: 'status', payload: { state: 'connected' } });
             sessionRegistry.updateSessionStatus(connectPayload.sessionId, 'connected');
             void probeAndCacheSessionSystemInfo(ssh, connectPayload.sessionId);
+            setTimeout(() => {
+              shellChannel?.write(`${SHELL_INTEGRATION_SCRIPT}\n`);
+            }, 300);
 
             channel.on('data', (chunk: Buffer) => {
               const content = chunk.toString('utf8');

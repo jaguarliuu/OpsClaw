@@ -351,6 +351,7 @@ type Props = {
   sessions: LiveSession[];
   activeSessionId: string | null;
   agentRun: UseAgentRunResult;
+  getActiveTranscript?: (sessionId: string) => string;
   requestedMode?: 'agent' | 'chat' | null;
   requestedRunId?: string | null;
   onRequestedModeApplied?: () => void;
@@ -363,6 +364,7 @@ export function AiAssistantPanel({
   sessions,
   activeSessionId,
   agentRun,
+  getActiveTranscript,
   requestedMode = null,
   requestedRunId = null,
   onRequestedModeApplied,
@@ -563,6 +565,7 @@ export function AiAssistantPanel({
         maxSteps: selectedAgentMaxSteps,
         task: input.trim(),
         sessionId: session.id,
+        terminalSnapshot: getActiveTranscript?.(session.id),
       });
       setInput('');
       return;
@@ -590,11 +593,9 @@ export function AiAssistantPanel({
     handleSend();
   };
 
-  if (!open) return null;
-
   return (
-    <div 
-      className="fixed inset-y-0 right-0 bg-[var(--app-bg-elevated2)] border-l border-[var(--app-border-default)] flex flex-col z-50 shadow-2xl"
+    <div
+      className={`fixed inset-y-0 right-0 bg-[var(--app-bg-elevated2)] border-l border-[var(--app-border-default)] flex flex-col z-50 shadow-2xl will-change-transform transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${open ? 'translate-x-0' : 'translate-x-full'}`}
       style={{ width: `${width}px` }}
     >
       <div 

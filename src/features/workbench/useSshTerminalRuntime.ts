@@ -217,7 +217,7 @@ export function useSshTerminalRuntime({
 
     const websocket = websocketRef.current;
     if (websocket?.readyState === WebSocket.OPEN) {
-      websocket.send(JSON.stringify({ type: 'input', payload: text }));
+      websocket.send(JSON.stringify({ type: 'input', payload: text.replace(/\r?\n/g, '\r') }));
     }
   }, [websocketRef]);
 

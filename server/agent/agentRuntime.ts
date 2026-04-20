@@ -387,6 +387,15 @@ export class OpsAgentRuntime {
             {
               type: 'text',
               text: [
+                ...(input.conversationHistory && input.conversationHistory.length > 0
+                  ? [
+                      '本次会话历史对话：',
+                      ...input.conversationHistory.map(
+                        (turn) => `[${turn.role === 'user' ? '用户' : '助手'}]: ${turn.text}`
+                      ),
+                      '',
+                    ]
+                  : []),
                 `用户任务：${input.task.trim()}`,
                 '',
                 '当前会话：',

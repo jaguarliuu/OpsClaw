@@ -579,6 +579,7 @@ export function WorkbenchPage() {
             sessions={sessions}
             activeSessionId={activeSessionId}
             agentRun={agentRun}
+            getActiveTranscript={terminalWorkspaceController.getActiveTranscript}
             requestedMode={aiAssistantRequestedMode}
             onRequestedModeApplied={() => setAiAssistantRequestedMode(null)}
             requestedRunId={aiAssistantRequestedRunId}

@@ -28,6 +28,7 @@ export type TerminalWorkspaceController = {
     command: string
   ) => Promise<TerminalCommandExecutionResult>;
   exitSplitMode: () => void;
+  getActiveTranscript: (sessionId: string) => string;
   handleDividerMouseDown: (event: ReactMouseEvent) => void;
   handleFocusEmptyPane: (paneIndex: FocusedPane) => void;
   handlePointerFocusPane: (paneIndex: FocusedPane) => void;
@@ -171,6 +172,10 @@ export function useTerminalWorkspaceController(input: {
     return terminal.executeCommand(command);
   }, []);
 
+  const getActiveTranscript = useCallback((sessionId: string): string => {
+    return terminalRefs.current[sessionId]?.getTranscript() ?? '';
+  }, []);
+
   return {
     focusedPane,
     paneSessionIds,
@@ -181,6 +186,7 @@ export function useTerminalWorkspaceController(input: {
     enterSplitMode,
     executeCommandOnSession,
     exitSplitMode,
+    getActiveTranscript,
     handleDividerMouseDown,
     handleFocusEmptyPane,
     handlePointerFocusPane,
